@@ -36,7 +36,8 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 		SilenceUsage: true,
 	}
 	root.AddCommand(
-		newSearchCmd(d.searcher),
+		newInitCmd(d.cfg),
+		newSearchCmd(d.searcher, d.cfg),
 		newSourcesCmd(d.registry),
 		newMetadataCmd(),
 		newManuscriptCmd(),

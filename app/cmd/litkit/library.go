@@ -27,8 +27,9 @@ type libPapersOutputFull struct {
 	Papers []model.Paper `json:"papers"`
 }
 
-// errNoStore 文献库不可用时 lib 子命令的公共错误（store 初始化失败降级场景）。
-var errNoStore = errors.New("本地文献库不可用（初始化失败）")
+// errNoStore 文献库不可用时 lib 子命令的公共错误。
+// 原因可能是未设置 LITKIT_WORK_DIR 或库初始化失败。
+var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKIT_WORK_DIR（可用 litkit init 初始化）")
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
 func newLibraryCmd(st *storage.Store) *cobra.Command {

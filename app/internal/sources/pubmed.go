@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"litkit/internal/model"
 	"litkit/internal/util/httpclient"
@@ -86,6 +87,17 @@ type pubmedArticle struct {
 	} `xml:"PubmedData"`
 }
 
+// pubmedTerm 按检索等级构造 PubMed 检索词（FR-SEARCH-12）。
+//
+//   - tiab（默认）：[Title/Abstract] + [Keyword]，题目+摘要+关键词三字段
+//   - full：裸词（NCBI 全字段，含全文/MeSH 等）
+func pubmedTerm(query, mode string) string {
+	if mode == modeFull {
+		return query
+	}
+	return "(" + query + `[Title/Abstract]) OR (` + query + "[Keyword])"
+}
+
 // Search 执行 PubMed 两阶段检索：esearch 取 PMID → efetch 取详情。
 func (p *PubmedSource) Search(ctx context.Context, query string, opts SearchOptions) ([]model.Paper, error) {
 	ids, err := p.esearch(ctx, query, opts)
@@ -109,7 +121,7 @@ func (p *PubmedSource) Search(ctx context.Context, query string, opts SearchOpti
 func (p *PubmedSource) esearch(ctx context.Context, query string, opts SearchOptions) ([]string, error) {
 	q := url.Values{}
 	q.Set("db", "pubmed")
-	q.Set("term", query)
+	q.Set("term", pubmedTerm(query, opts.Mode))
 	q.Set("retmax", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	q.Set("retmode", "xml")
 	if opts.Year != 0 {
@@ -117,6 +129,11 @@ func (p *PubmedSource) esearch(ctx context.Context, query string, opts SearchOpt
 		q.Set("datetype", "pdat")
 		q.Set("mindate", strconv.Itoa(opts.Year))
 		q.Set("maxdate", strconv.Itoa(opts.Year))
+	} else if opts.Since != 0 {
+		// 最近 N 年范围过滤（FR-SEARCH-13）
+		q.Set("datetype", "pdat")
+		q.Set("mindate", strconv.Itoa(opts.Since))
+		q.Set("maxdate", strconv.Itoa(time.Now().Year()))
 	}
 	if p.APIKey != "" {
 		q.Set("api_key", p.APIKey)

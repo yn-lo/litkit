@@ -17,14 +17,23 @@ import (
 
 // SearchOptions 检索参数（远程检索仅 keyword 模式，FR-SEARCH-07）。
 type SearchOptions struct {
-	MaxResults int // 每源最大条数；0 表示由源决定默认
-	Year       int // 年份过滤；0 表示不过滤
+	MaxResults int    // 每源最大条数；0 表示由源决定默认
+	Year       int    // 精确年份过滤；0 表示不过滤
+	Since      int    // 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Since 优先
+	Mode       string // 检索等级："" 或 "tiab"（题目+摘要+关键词，源支持时）；"full"（全文）
 }
 
 // 文档类型常量（FR-REF-03 引用渲染按类型区分；goconst 避免字面量重复）。
 const (
 	DocTypeArticle  = "article"
 	DocTypePreprint = "preprint"
+)
+
+// 检索等级常量（FR-SEARCH-12）。
+// tiab 为默认：题目+摘要+关键词（源支持时）；full 为全文（高级选项，误检率较高）。
+const (
+	modeTiab = "tiab"
+	modeFull = "full"
 )
 
 // 检索默认值。

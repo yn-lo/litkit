@@ -78,6 +78,8 @@ func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOpt
 	papers = filterBiorxivByKeyword(papers, query)
 	if opts.Year != 0 {
 		papers = filterByYear(papers, opts.Year)
+	} else if opts.Since != 0 {
+		papers = filterSince(papers, opts.Since)
 	}
 	if limit := opts.MaxResults; limit > 0 && len(papers) > limit {
 		papers = papers[:limit]

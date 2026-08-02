@@ -21,19 +21,38 @@ owner: litkit-core
 ### 1.2 子命令
 
 ```
-litkit search <query> [-s sources] [-n N] [-y year] [--keep-no-abstract]
+litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--full]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `-s, --sources` | 逗号分隔源列表（`litkit sources` 查看） | 全部默认源 |
 | `-n, --max-results` | 每源最大条数 | 5 |
-| `-y, --year` | 年份过滤（源支持时） | 无 |
+| `--mode` | 检索等级：`tiab`（题目+摘要+关键词）\| `full`（全文） | `tiab`（`LITKIT_DEFAULT_SEARCH_MODE`） |
+| `--years` | 最近 N 年；`0`=不限 | 3（`LITKIT_DEFAULT_RECENT_YEARS`） |
+| `--since` | 显式起始年份（含），优先于 `--years` | 无 |
+| `-y, --year` | 精确年份过滤（源支持时） | 无 |
 | `--keep-no-abstract` | 保留无摘要论文（默认过滤，FR-SEARCH-03） | 关 |
+| `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-04） | 关 |
 
 > 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `lib search`（二期）。
+> `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-04）。
+> **检索词语言**：必须使用英文（各源英文语料为主，中文命中率极低，FR-SEARCH-11）。
+> **检索等级**：默认 `tiab`（题目+摘要+关键词），全文检索 `--mode full`（FR-SEARCH-12）；**时间范围**默认最近 3 年（FR-SEARCH-13）。
 
 输出：`{ total, sourceResults, errors, papers[] }`
+
+```
+litkit init [--force]
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--force` | 覆盖已存在的 `.env` / `AGENTS.md` |
+
+> 初始化当前工作目录：生成 `.env`（默认配置）与 `AGENTS.md`（AI agent 使用说明，
+> 含检索策略：英文词 / `--mode full` / 时间范围放宽），并初始化 `litkit.db`。
+> 已存在文件默认不覆盖。换新工作目录 → `litkit init`。
 
 ```
 litkit metadata <id_type> <identifier>
@@ -98,7 +117,7 @@ litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbos
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
 | LITKIT_IEEE_API_KEY | 二期激活 IEEE 必需 | 启用 IEEE 源 |
 | LITKIT_ACM_API_KEY | 二期激活 ACM 必需 | 启用 ACM 源 |
-| LITKIT_WORK_DIR | 可选 | 统一工作目录（库/输出默认在此）。测试固化目录：`e:\Codes\litkit\workspace` |
+| LITKIT_WORK_DIR | 必填 | 统一工作目录（库/输出默认在此）。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。测试固化目录：`e:\Codes\litkit\workspace` |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api |

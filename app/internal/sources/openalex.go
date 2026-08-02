@@ -101,6 +101,9 @@ func (o *OpenAlexSource) buildURL(query string, opts SearchOptions) (string, err
 	if opts.Year != 0 {
 		// OpenAlex 原生年份过滤（filter 参数）
 		q.Set("filter", fmt.Sprintf("publication_year:%d", opts.Year))
+	} else if opts.Since != 0 {
+		// 最近 N 年范围过滤（FR-SEARCH-13）
+		q.Set("filter", fmt.Sprintf("from_publication_date:%d-01-01", opts.Since))
 	}
 	return o.BaseURL + "?" + q.Encode(), nil
 }

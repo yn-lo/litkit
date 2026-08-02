@@ -359,6 +359,45 @@ func TestSearch_SortedByYearDesc(t *testing.T) {
 	}
 }
 
+// ---- 错误精简（FR-IFACE-04）----
+
+func TestShortError_Timeout(t *testing.T) {
+	// arxiv 超时：完整错误含 URL，应精简为 timeout
+	got := ShortError(`arxiv search: http do: Get "https://export.arxiv.org/api/query?max_results=10&search_query=all%3Afear": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`)
+	if got != "timeout" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestShortError_RateLimited(t *testing.T) {
+	got := ShortError("semantic_scholar search: HTTP 429")
+	if got != "rate limited" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestShortError_Forbidden(t *testing.T) {
+	got := ShortError("source search: HTTP 403")
+	if got != "forbidden" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestShortError_OtherHTTPStatus(t *testing.T) {
+	got := ShortError("arxiv search: HTTP 500")
+	if got != "HTTP 500" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestShortError_FallbackOriginal(t *testing.T) {
+	// 非网络类错误保留原文（无 URL 噪声可精简）
+	got := ShortError("parse atom: unexpected EOF")
+	if got != "parse atom: unexpected EOF" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 // ---- mergePapers 行为 ----
 
 func TestMergePapers_PrefersNonEmptyFields(t *testing.T) {

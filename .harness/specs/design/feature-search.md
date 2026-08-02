@@ -70,4 +70,6 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - [ ] 入库测试：检索结果 upsert 进本地库并回填 cite_key；无摘要不入库（FR-LIB-01/06）
 - [ ] 排序测试：结果按年份倒序；year=0 排末尾（FR-SEARCH-10）
 - [ ] PaperSummary 测试：默认输出 5 字段；firstAuthor 为 "Family Given"；`--full` 输出完整字段（FR-IFACE-04）
+- [ ] 检索等级测试：arXiv `ti:`+`abs:`、PubMed `[Title/Abstract]`+`[Keyword]`；`--mode full` 回退全文（FR-SEARCH-12）
+- [ ] 时间范围测试：`--since`/`--years` 换算；arXiv/bioRxiv 本地过滤、PubMed/OpenAlex 服务端过滤（FR-SEARCH-13）
 - [ ] 限速测试：并发扇出不超每源上限（NFR-PERF-04）

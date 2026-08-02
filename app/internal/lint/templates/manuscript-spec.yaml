@@ -1,0 +1,27 @@
+# manuscript-spec.yaml — 撰写规范配置（litkit init 生成，可手动修改）
+# 修改后运行 `litkit init --refresh` 重新生成 AGENTS.md 的「撰写硬性规定」段
+# 规则全文见 .litkit/rules.md；字段定义见内层注释
+
+paper_type: empirical        # review（综述）| empirical（四段式实证）
+lang: zh                     # zh | en 撰写语言
+
+# 章节结构（按论文类型；可在下方追加/调整）
+sections:
+  review: [引言, 文献检索方法, 主题分析, 讨论与展望, 结论]
+  empirical: [引言, 资料与方法, 结果, 讨论, 结论]
+
+# 字数阈值 [min, max]
+word_counts:
+  total: [3000, 8000]        # 全文
+  abstract: [200, 500]       # 摘要
+  paragraph: [30, 500]       # 段落
+
+# 引用
+citation:
+  count: [30, 45]            # 全文引用篇数
+  style: gbt7714             # gbt7714 | apa | ieee
+
+# 标题
+heading:
+  max_level: 4               # 最大层级（1→1.1→1.1.1→1.1.1.1）
+  max_length: 15             # 标题最大字数

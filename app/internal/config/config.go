@@ -23,7 +23,9 @@ const (
 	DefaultHTTPTimeoutMS     = 15000
 	DefaultHTTPRetries       = 2
 	DefaultEmbeddingProvider = "local"
-	DefaultMaxResults        = 5 // 每源默认检索条数
+	DefaultMaxResults        = 5      // 每源默认检索条数
+	DefaultRecentYears       = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
+	DefaultSearchMode        = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
 )
 
 // Config litkit 运行配置。全部经环境变量读取（FR-CONFIG-01）。
@@ -34,6 +36,8 @@ type Config struct {
 	HTTPTimeoutMS         int    // 默认 15000
 	HTTPRetries           int    // 默认 2
 	DefaultMaxResults     int    // 每源默认检索条数，默认 5
+	RecentYears           int    // 默认检索时间范围（最近 N 年），默认 3
+	SearchMode            string // 默认检索等级，tiab|full，默认 tiab
 	SemanticScholarAPIKey string
 	IEEEAPIKey            string
 	ACMAPIKey             string
@@ -100,6 +104,8 @@ func loadFrom(envFile string) (*Config, error) {
 		HTTPTimeoutMS:         getenvInt("LITKIT_HTTP_TIMEOUT_MS", DefaultHTTPTimeoutMS),
 		HTTPRetries:           getenvInt("LITKIT_HTTP_RETRIES", DefaultHTTPRetries),
 		DefaultMaxResults:     getenvInt("LITKIT_DEFAULT_MAX_RESULTS", DefaultMaxResults),
+		RecentYears:           getenvInt("LITKIT_DEFAULT_RECENT_YEARS", DefaultRecentYears),
+		SearchMode:            getenvDefault("LITKIT_DEFAULT_SEARCH_MODE", DefaultSearchMode),
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
 		IEEEAPIKey:            os.Getenv("LITKIT_IEEE_API_KEY"),
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),

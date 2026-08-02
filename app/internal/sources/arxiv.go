@@ -89,19 +89,33 @@ func (a *ArxivSource) Search(ctx context.Context, query string, opts SearchOptio
 	}
 	if opts.Year != 0 {
 		papers = filterByYear(papers, opts.Year)
+	} else if opts.Since != 0 {
+		papers = filterSince(papers, opts.Since)
 	}
 	return papers, nil
 }
 
 // buildURL 构造 arXiv API URL。
+//
+// 检索等级（FR-SEARCH-12）：
+//   - tiab（默认）：ti:<q> OR abs:<q>，仅题目+摘要；引号包裹支持多词短语
+//   - full：all:<q>，全字段（含全文，误检率较高，作高级选项）
 func (a *ArxivSource) buildURL(query string, opts SearchOptions) (string, error) {
 	q := url.Values{}
-	q.Set("search_query", "all:"+query)
+	q.Set("search_query", arxivSearchQuery(query, opts.Mode))
 	q.Set("start", "0")
 	q.Set("max_results", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	q.Set("sortBy", "relevance")
 	q.Set("sortOrder", "descending")
 	return a.BaseURL + "?" + q.Encode(), nil
+}
+
+// arxivSearchQuery 按检索等级构造 arXiv 检索式。
+func arxivSearchQuery(query, mode string) string {
+	if mode == modeFull {
+		return "all:" + query
+	}
+	return `ti:"` + query + `" OR abs:"` + query + `"`
 }
 
 // parseArxivAtom 解析 arXiv Atom Feed 字节为 []Paper。
@@ -211,6 +225,17 @@ func filterByYear(papers []model.Paper, year int) []model.Paper {
 	out := papers[:0]
 	for _, p := range papers {
 		if p.Year == year {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// filterSince 客户端按起始年份（含）过滤。
+func filterSince(papers []model.Paper, since int) []model.Paper {
+	out := papers[:0]
+	for _, p := range papers {
+		if p.Year >= since {
 			out = append(out, p)
 		}
 	}

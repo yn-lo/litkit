@@ -88,6 +88,30 @@ func TestLoad_defaults(t *testing.T) {
 	if cfg.EmbeddingProvider != "local" {
 		t.Errorf("默认 EmbeddingProvider 应为 local，got %q", cfg.EmbeddingProvider)
 	}
+	if cfg.RecentYears != 3 {
+		t.Errorf("默认 RecentYears 应为 3，got %d", cfg.RecentYears)
+	}
+	if cfg.SearchMode != "tiab" {
+		t.Errorf("默认 SearchMode 应为 tiab，got %q", cfg.SearchMode)
+	}
+}
+
+func TestLoad_recentYearsAndSearchModeFromEnv(t *testing.T) {
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_WORK_DIR", "")
+	t.Setenv("LITKIT_DEFAULT_RECENT_YEARS", "10")
+	t.Setenv("LITKIT_DEFAULT_SEARCH_MODE", "full")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RecentYears != 10 {
+		t.Errorf("RecentYears 应为 10，got %d", cfg.RecentYears)
+	}
+	if cfg.SearchMode != "full" {
+		t.Errorf("SearchMode 应为 full，got %q", cfg.SearchMode)
+	}
 }
 
 func TestLoad_readsEnvFile(t *testing.T) {

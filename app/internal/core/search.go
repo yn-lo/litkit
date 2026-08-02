@@ -12,6 +12,7 @@ package core
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +34,10 @@ type SearchOptions struct {
 	MaxResults int `json:"maxResults,omitempty"`
 	// Year 年份过滤；0 表示不过滤。
 	Year int `json:"year,omitempty"`
+	// Since 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Since 优先。
+	Since int `json:"since,omitempty"`
+	// Mode 检索等级："" 或 "tiab"（默认，题目+摘要+关键词，源支持时）；"full"（全文）。
+	Mode string `json:"mode,omitempty"`
 	// KeepNoAbstract 保留无摘要论文（默认过滤，FR-SEARCH-03）。
 	KeepNoAbstract bool `json:"keepNoAbstract,omitempty"`
 }
@@ -133,6 +138,29 @@ func sortPapersByYearDesc(papers []model.Paper) {
 	})
 }
 
+// httpStatusRe 匹配错误信息中的 "HTTP <3位码>"。
+var httpStatusRe = regexp.MustCompile(`HTTP (\d{3})`)
+
+// ShortError 将完整源错误压缩为 AI 可读的简短原因（FR-IFACE-04）。
+//
+// 完整错误（含 URL / 内部细节）是调试噪声，默认输出只保留"失败类型"，
+// 源名由 SourceError.Source 字段负责。需要细查时用 search --full。
+func ShortError(errMsg string) string {
+	switch {
+	case strings.Contains(errMsg, "context deadline exceeded"),
+		strings.Contains(errMsg, "Client.Timeout"):
+		return "timeout"
+	case strings.Contains(errMsg, "HTTP 429"):
+		return "rate limited"
+	case strings.Contains(errMsg, "HTTP 403"):
+		return "forbidden"
+	case httpStatusRe.MatchString(errMsg):
+		return "HTTP " + httpStatusRe.FindStringSubmatch(errMsg)[1]
+	default:
+		return errMsg // 无网络噪声可精简，保留原文
+	}
+}
+
 // persist 将去重后的论文 upsert 进文献库，并回填 cite_key（FR-LIB-06）。
 //
 // 入库失败静默忽略（检索结果不受影响）。
@@ -174,6 +202,8 @@ func (s *Searcher) searchOne(ctx context.Context, src sources.PaperSource, query
 	sourceOpts := sources.SearchOptions{
 		MaxResults: opts.MaxResults,
 		Year:       opts.Year,
+		Since:      opts.Since,
+		Mode:       opts.Mode,
 	}
 	return src.Search(ctx, query, sourceOpts)
 }

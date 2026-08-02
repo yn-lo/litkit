@@ -61,21 +61,25 @@ owner: litkit-core
 
 **验收**：GB/T 7714 中英文混排样例通过；未解析占位符出现在 unresolved。
 
-## M4 撰写约束（lint）
+## M4 撰写约束（lint / harness）
 
-**范围**：lint 模板、zh/en 规则集、verify 命令。
+**范围**：.litkit 模板、事前指导（AGENTS.md 撰写硬性规定）、verify 命令。
 
 | 任务 | 对应 FR |
 |---|---|
-| templates/：rules.md、verify、checks/、checklist.md、specs、verifier_models.json | FR-LINT-01 |
-| zh 规则集实现（全半角/引号/句式冗余/的的地/编号/引用/AI 痕迹） | FR-LINT-02/04 |
-| en 规则集实现（语法/时态/冠词/措辞/引用/AI 痕迹） | FR-LINT-03/04 |
+| internal/lint：ManuscriptSpec 解析/校验、.litkit 生成、RenderWritingRules（事前指导） | FR-LINT-01/07/10 |
+| templates/：rules.md（R0-R9，langs 标注）、checklist.md、manuscript-spec.yaml、verifier_models.json | FR-LINT-01/06 |
+| `litkit init`：--type review/empirical（preset 阈值）、--lang zh/en、--refresh、--force | FR-LINT-01/09 |
+| zh 规则集实现（全半角/引号/句式冗余/的地得/AI 痕迹） | FR-LINT-02/04 |
+| en 规则集实现（语法/时态/冠词/措辞/AI 痕迹） | FR-LINT-03/04 |
 | `litkit verify`：--lang/--mode/--verbose/--rule | FR-LINT-05 |
-| checklist.md 人工审查清单、manuscript-spec.yaml 阈值配置 | FR-LINT-06/07 |
 
-**产出**：`litkit lint init` 在宿主项目生成约束基础设施；`litkit verify` 输出三要素 issues。
+> 已落地（M4 一期前段）：internal/lint 服务层 + 四件套模板 + init 全参数（含 AGENTS.md 撰写硬性规定）。
+> 待办：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs 过滤）。
 
-**验收**：zh/en 模式各自违规样例全部被检出；违规项含 rule_id/problem/suggestion。
+**产出**：`litkit init` 在宿主项目生成 `.litkit/` + AGENTS.md 撰写硬性规定（事前指导）；`litkit verify` 输出三要素 issues（事后兜底）。
+
+**验收**：zh/en 模式各自违规样例全部被检出；违规项含 rule_id/problem/suggestion；改 yaml 后 `init --refresh` 同步 AGENTS.md。
 
 ## M5 MCP 接口
 

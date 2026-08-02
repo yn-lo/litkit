@@ -9,6 +9,9 @@ litkit.db
 *.db-shm
 *.db-wal
 
+# 撰写约束密钥（verifier_models.json 三期可能含 LLM API key）
+.litkit/verifier_models.json
+
 # 测试工作目录（spec 固化：e:\Codes\litkit\workspace）
 workspace/
 

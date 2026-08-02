@@ -135,6 +135,9 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SEARCH-07 | `search` 统一接口（keyword 模式） | P0 | 远程检索仅 keyword；semantic 模式仅限本地文献库（FR-LIB-05） |
 | FR-SEARCH-08 | 远程语义重排（keyword top-K → 本地重排） | 不包含（二期可评估） | 远程检索保持 keyword 原生排序；语义能力集中在本地文献库，避免 top-K 召回局限 |
 | FR-SEARCH-10 | 结果默认年份倒序 | P0 | 最新在前；year=0 排末尾。各源原始顺序语义不一，跨源混合后必须显式排序 |
+| FR-SEARCH-11 | 检索词语言约束 | P0 | 检索词必须为英文（各源英文语料为主，中文命中率极低）；CLI help 与 api.md 显式声明 |
+| FR-SEARCH-12 | 检索等级 | P0 | 默认 tiab=题目+摘要+关键词（源支持时）；`--mode full` 全文作高级选项；由 AGENTS.md 告知 AI 结果不足时的升级路径 |
+| FR-SEARCH-13 | 默认时间范围 | P0 | 默认最近 3 年（`LITKIT_DEFAULT_RECENT_YEARS`）；`--years N` 放宽或 `--since YEAR` 显式起始年；0=不限 |
 | FR-SEARCH-09 | embedding 基础设施（provider 抽象 + 本地向量库） | P1 | 仅服务本地库语义检索（FR-LIB-05）；默认本地模型零 key 零网络；配置 API key 自动切换；向量存 SQLite 同库；本地库规模（万级）检索 < 1s |
 
 ### 4.3 FR-REF 引用与手稿处理
@@ -157,15 +160,16 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LINT-01 | `lint init` 初始化宿主项目约束基础设施 | P0 | 生成 CLAUDE.md + `.harness/`（rules.md / verify / checks/ / checklist.md / specs / verifier_models.json）；已存在时备份并提示 |
-| FR-LINT-02 | 中文规则集（zh 模式） | P0 | 覆盖：中文标点全半角、中文引号、句式冗余（"进行""通过…使"等）、"的/地/得"、"了/着/过"、编号层级、GB/T 7714—2025 引用规范、AI 痕迹 |
-| FR-LINT-03 | 英文规则集（en 模式） | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、APA/IEEE 引用、AI 痕迹 |
-| FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工） |
+| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（rules.md / checklist.md / specs/manuscript-spec.yaml / verifier_models.json，go:embed 编译进二进制）并渲染 AGENTS.md「撰写硬性规定」段；支持 `--type review\|empirical`（preset 阈值切换）、`--lang zh\|en`、`--refresh`（按现有 yaml 重渲染）、`--force` |
+| FR-LINT-02 | zh 专属规则 | P0 | 覆盖：全半角标点、中文引号、句式冗余（"进行""通过…使"）、"的/地/得"、"了/着/过"、AI 痕迹；规则标注 langs: zh |
+| FR-LINT-03 | en 专属规则 | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、AI 痕迹；规则标注 langs: en |
+| FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注；**规则代码单套按 langs 过滤，不设两套系统** |
 | FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--verbose`、`--rule`、`--mode`（chapter/draft/final）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单 checklist.md | P1 | 覆盖 M 类规则 |
-| FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数等阈值可配置 |
+| FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；改后 `litkit init --refresh` 同步 AGENTS.md |
 | FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。本期仅做接口预留与配置占位，不实现 |
 | FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令；MCP `verify_manuscript` 同步可用 |
+| FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | AGENTS.md 携带由 manuscript-spec.yaml 渲染的精简祈使句段落（非 yaml 数据复制），AI 写稿时自动遵守，事后 verify 兜底 |
 
 ### 4.5 FR-LIB 本地文献库
 
@@ -173,7 +177,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 |---|---|---|---|
 | FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 入库元数据必须含摘要；检索结果自动 upsert 入库 |
 | FR-LIB-02 | 增删查接口（CLI + MCP） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
-| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**测试固化目录：`e:\Codes\litkit\workspace`** |
+| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**未设置 LITKIT_WORK_DIR 时拒绝执行（errNoWorkDir），不退化为 CWD，避免污染任意目录**。**测试固化目录：`e:\Codes\litkit\workspace`** |
 | FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | M1 为 LIKE 检索（标题/作者/摘要）；FTS5+分词二期 |
 | FR-LIB-05 | 本地语义检索（跨语言） | P1 | 中文 query 可命中英文文献（导入时生成 embedding）；嵌入信息可重建 |
 | FR-LIB-06 | 引用标识 cite_key | P0 | 3 字母 a-zA-Z 唯一；入库自动分配；AI 引用与引用标记的唯一入口 |
@@ -314,7 +318,7 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final]
 |---|---|---|
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
 | LITKIT_IEEE_API_KEY / ACM_API_KEY | 二期激活对应源必需 | 启用源工具 |
-| LITKIT_WORK_DIR | 可选 | 统一工作目录。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
+| LITKIT_WORK_DIR | 必填 | 统一工作目录。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api；服务本地库语义检索 |

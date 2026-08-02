@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"litkit/internal/util/ratelimit"
 )
@@ -206,6 +208,52 @@ func TestPubmedSource_Search_yearServerSideFilter(t *testing.T) {
 	}
 	if capturedMindate != "2023" || capturedMaxdate != "2023" {
 		t.Errorf("year=2023 应转换为 mindate/maxdate=2023，got mindate=%s maxdate=%s", capturedMindate, capturedMaxdate)
+	}
+}
+
+func TestPubmedTerm_tiabDefault(t *testing.T) {
+	// 默认/空 mode → tiab：题目+摘要+关键词
+	got := pubmedTerm("fear of pain", "")
+	want := "(fear of pain[Title/Abstract]) OR (fear of pain[Keyword])"
+	if got != want {
+		t.Fatalf("tiab 检索词不符：got %q want %q", got, want)
+	}
+}
+
+func TestPubmedTerm_full(t *testing.T) {
+	got := pubmedTerm("fear of pain", "full")
+	if got != "fear of pain" {
+		t.Fatalf("full 检索词不符：%q", got)
+	}
+}
+
+func TestPubmedSource_Search_sinceServerSideFilter(t *testing.T) {
+	// Since 范围过滤（FR-SEARCH-13）：mindate=since，maxdate=当前年
+	var capturedMindate, capturedMaxdate string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "esearch") {
+			capturedMindate = r.URL.Query().Get("mindate")
+			capturedMaxdate = r.URL.Query().Get("maxdate")
+			_, _ = w.Write([]byte(pubmedESearchSample))
+		} else {
+			_, _ = w.Write([]byte(pubmedEFetchSample))
+		}
+	}))
+	defer srv.Close()
+
+	src := NewPubmedSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src.ESearchURL = srv.URL + "/esearch.fcgi"
+	src.EFetchURL = srv.URL + "/efetch.fcgi"
+
+	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1, Since: 2020})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if capturedMindate != "2020" {
+		t.Errorf("since=2020 应转换为 mindate=2020，got %s", capturedMindate)
+	}
+	if capturedMaxdate != strconv.Itoa(time.Now().Year()) {
+		t.Errorf("maxdate 应为当前年，got %s", capturedMaxdate)
 	}
 }
 

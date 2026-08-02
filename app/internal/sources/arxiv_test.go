@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"litkit/internal/model"
 	"litkit/internal/util/ratelimit"
 )
 
@@ -129,6 +130,33 @@ func TestArxivSource_Search_viaHTTP(t *testing.T) {
 	}
 	if papers[0].Source != "arxiv" {
 		t.Errorf("Source 应为 arxiv，got %q", papers[0].Source)
+	}
+}
+
+func TestArxivSearchQuery_tiabDefault(t *testing.T) {
+	// 默认/空 mode → tiab：仅题目+摘要
+	got := arxivSearchQuery("fear of pain", "")
+	if got != `ti:"fear of pain" OR abs:"fear of pain"` {
+		t.Fatalf("tiab 检索式不符：%q", got)
+	}
+}
+
+func TestArxivSearchQuery_full(t *testing.T) {
+	got := arxivSearchQuery("fear of pain", "full")
+	if got != "all:fear of pain" {
+		t.Fatalf("full 检索式不符：%q", got)
+	}
+}
+
+func TestFilterSince(t *testing.T) {
+	papers := []model.Paper{
+		{Title: "a", Year: 2020},
+		{Title: "b", Year: 2022},
+		{Title: "c", Year: 2019},
+	}
+	out := filterSince(papers, 2021)
+	if len(out) != 1 || out[0].Title != "b" {
+		t.Fatalf("应只留 2022，got %+v", out)
 	}
 }
 
