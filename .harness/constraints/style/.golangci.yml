@@ -1,15 +1,12 @@
 # golangci-lint 配置 — litkit
-
-# 在项目根运行：golangci-lint run
+#
+# 在 app/ 目录运行：golangci-lint run --config ../.harness/constraints/style/.golangci.yml
 # 版本：golangci-lint >= 2.0（version: "2" 配置格式）
 
 version: "2"
 
 run:
   timeout: 5m
-  # 跳过生成的约束层检查程序（其自带独立 go.mod）
-  exclude-dirs:
-    - .harness
   tests: false
 
 linters:
@@ -17,25 +14,52 @@ linters:
     - govet          # 编译器级检查
     - errcheck       # 禁止吞掉 error
     - staticcheck    # 静态分析
-    - unused         # 未使用代码
+    - unused         # 死代码检测（未使用的函数/变量/类型/常量）
     - ineffassign    # 无效赋值
     - gocritic       # 代码评审
     - revive         # 命名/风格（Go 惯例）
     - misspell       # 拼写
     - nolintlint     # nolint 注释使用规范
+    - gosec          # 安全扫描（密钥硬编码、SQL 注入、弱加密）
+    - bodyclose      # HTTP response body 必须关闭
+    - goconst        # 重复字符串/数字应提为常量
+    - gocyclo        # 圈复杂度检测
+    - mnd            # 魔法数字检测
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  revive:
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false  # 允许 _ = 忽略 error（cobra flag 读取、cache.Put、Body.Close 等有意忽略场景）
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          disabled: false
+        - name: package-comments
+          severity: warning
+          disabled: false
+    gocyclo:
+      min-complexity: 20  # 上限 20；超出需拆分（ponytail: 可按需上调，但低于 20 通常意味着可读性风险）
+    goconst:
+      min-len: 3
+      min-occurrences: 4  # 出现 4 次以上才报（避免噪音）
+    gosec:
+      excludes:
+        - G104  # 已由 errcheck 覆盖（未检查返回值）
+    mnd:
+      ignored-numbers: [0, 1, 2]  # 基础数字噪音太大（cobra.ExactArgs、索引等）
+      checks: [argument, case, condition, return, assign]  # 不检查 operation（算术运算中的数字通常无害）
+
+  exclusions:
+    dirs:
+      - .harness  # 约束层自身有独立 go.mod，不纳入 lint
     rules:
-      - name: exported
-        severity: warning
-        disabled: false
-      - name: package-comments
-        severity: warning
-        disabled: false
+      # gosec 误报：MD5 仅用于缓存键（G501/G401，非加密用途）；
+      # 缓存文件路径由 MD5 生成（G304，非用户可控）；
+      # 本地工具路径由用户配置（G703）；API 端点预定义（G704）；
+      # math/rand 用于重试抖动（G404，非安全随机）
+      - linters: [gosec]
+        text: "G501|G401|G304|G703|G704|G404"
 
 formatters:
   enable:

@@ -6,11 +6,11 @@ status: active
 owner: litkit-core
 ---
 
-对应 PRD：FR-SRC、FR-SEARCH、FR-CACHE
+对应 PRD：FR-SRC、FR-SEARCH、FR-LIB（结果入库）
 
 ## 目标
 
-单次调用并发跨多个国内可达学术平台检索，输出标准化元数据 + 摘要，结果去重合并，缓存复用。新源可插拔。
+单次调用并发跨多个国内可达学术平台检索，输出标准化元数据 + 摘要，结果去重合并，自动入库本地文献库。新源可插拔。
 
 ## 范围
 
@@ -19,7 +19,7 @@ owner: litkit-core
 - 默认 5 个一期源（均含摘要）：arXiv、PubMed、OpenAlex、Semantic Scholar、bioRxiv/medRxiv
 - 跨源并发检索、单源失败隔离、DOI→title→id 三级去重
 - 每源令牌桶限速（≥10 次/分钟）+ 429/503 指数退避重试
-- 搜索缓存（MD5 键 + 24h TTL + cache list/clear）
+- 检索结果去重后 upsert 进本地文献库（FR-LIB-01），回填 cite_key（FR-LIB-06）；无独立缓存层
 
 ### 不包含
 - 二期源（Zenodo、IEEE/ACM）本期不实现
@@ -32,15 +32,18 @@ owner: litkit-core
 ## 分层设计
 
 ### internal/model（叶子层）
-`Paper` 数据载体（含 Abstract/DOI/PMID/ArXivID/DocType），`SearchResult`、`SourceError`、`CacheEntry`。
+`Paper` 数据载体（含 Abstract/DOI/PMID/ArXivID/DocType/CiteKey），`SearchResult`、`SourceError`。
 
 ### internal/sources（适配层）
-- `source.go`：`PaperSource` 接口 + 缓存/降级/限速公共逻辑（源基类）
+- `source.go`：`PaperSource` 接口 + 降级/限速公共逻辑（源基类）
 - `registry.go`：源注册表，CLI 与 MCP 共用（FR-SRC-18、FR-IFACE-03）
 - 每源一文件：`arxiv.go`、`pubmed.go`、`crossref.go`、`openalex.go` 等
 
 ### internal/core（服务层）
-`search.go`：并发检索编排、去重、缓存读写；`cache.go`：TTL 缓存管理。
+`search.go`：并发检索编排、去重、结果入库（FR-LIB-01）。
+
+### internal/storage（叶子层）
+SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理（见 feature-cache.md）。
 
 ### 入口层
 `litkit search` 子命令 + `search_papers` / `search_<source>` MCP 工具。
@@ -62,5 +65,5 @@ owner: litkit-core
 - [ ] 去重测试：同文跨源合并为一条
 - [ ] 单源失败隔离测试：一个源挂掉不影响其他
 - [ ] 无摘要过滤测试：无摘要论文默认不出现；`--keep-no-abstract` 时保留（FR-SEARCH-03）
-- [ ] 缓存测试：命中零网络 IO；TTL 过期重新检索
+- [ ] 入库测试：检索结果 upsert 进本地库并回填 cite_key；无摘要不入库（FR-LIB-01/06）
 - [ ] 限速测试：并发扇出不超每源上限（NFR-PERF-04）

@@ -20,19 +20,22 @@
 
 ## 构建与验证
 
+Go 源码位于 `app/` 子目录。全量门禁（gofmt + golangci-lint + vet + test + govulncheck + arch-check）一步跑完：
+
 ```bash
-# 完整门禁（CI 等价）
-gofmt -l . && golangci-lint run && go vet ./... && go test ./... -cover && govulncheck ./...
+# 全量门禁（一步跑完 6 项检查）
+.harness/constraints/gate.ps1        # Windows PowerShell
+bash .harness/constraints/gate.sh     # Linux/macOS
 
-# 快速预检（门禁真子集）
-gofmt -l . && go test ./...
+# 快速预检（门禁真子集，在 app/ 执行）
+cd app && gofmt -l . && go test ./...
 
-# 触网测试（手动，不进 CI）
-go test -tags integration ./tests/integration/
+# 触网测试（手动，不进 CI，在 app/ 执行）
+cd app && go test -tags integration ./tests/integration/
 
-# 构建 / 发布
-go build -o litkit ./cmd/litkit
-goreleaser build --snapshot
+# 构建 / 发布（在 app/ 执行）
+cd app && go build -o litkit ./cmd/litkit
+cd app && goreleaser build --snapshot
 ```
 
 ## 硬性规则

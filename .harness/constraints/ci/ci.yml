@@ -6,7 +6,7 @@
 #   P2 文档腐化 / 文档断链
 #
 # 实际部署：复制本文件到 .github/workflows/ci.yml
-# 本地等价命令：gofmt -l . && golangci-lint run && go vet ./... && go test ./... -cover && govulncheck ./...
+# Go 源码位于 app/ 子目录，Go 工具链命令在 app/ 执行；架构约束在仓库根执行。
 
 name: ci
 
@@ -26,8 +26,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          working-directory: app
 
       - name: Format check (gofmt)
+        working-directory: app
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -39,9 +41,11 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --config .harness/constraints/style/.golangci.yml
+          working-directory: app
+          args: --config ../.harness/constraints/style/.golangci.yml
 
       - name: Vet
+        working-directory: app
         run: go vet ./...
 
   test:
@@ -54,11 +58,14 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          working-directory: app
 
       - name: Unit tests (offline hermetic)
+        working-directory: app
         run: go test ./...
 
       - name: Coverage gate (>= 60%)
+        working-directory: app
         run: |
           go test ./... -coverprofile=coverage.out
           go tool cover -func=coverage.out | tail -1
@@ -69,6 +76,7 @@ jobs:
           go run .
 
       - name: Registration sync check (CLI vs MCP)
+        working-directory: app
         run: |
           # 占位：新增功能必须 CLI 与 MCP 两处注册（FR-IFACE-03）
           # 实现建议：对比 cmd/litkit 子命令列表与 internal/mcp 工具注册列表
@@ -84,11 +92,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          working-directory: app
 
       - name: Dependency vulnerability scan
-        uses: golang/govulncheck-action@v1
-        with:
-          go-version-input: "1.26"
+        working-directory: app
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   docs:
     name: Docs freshness
@@ -121,6 +131,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          working-directory: app
 
       - name: Build
+        working-directory: app
         run: go build ./cmd/litkit

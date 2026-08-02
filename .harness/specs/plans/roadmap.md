@@ -17,29 +17,29 @@ owner: litkit-core
 | Go ≥ 1.26 工程初始化（go.mod / golangci-lint / go test / goreleaser） | NFR-MAINT-01 |
 | CLI 框架（cobra 子命令骨架，`--help` 自描述） | FR-IFACE-01 |
 | config 模块（.env 发现、密钥读取、LITKIT_ 前缀） | FR-CONFIG-01/02/03 |
-| models：Paper / Author / SearchResult / CacheEntry | C5 数据模型纯净 |
+| models：Paper / Author / SearchResult | C5 数据模型纯净 |
 | utils：网络（超时/重试）、日志、文本工具 | NFR-PERF-03 |
 
 **产出**：可运行 `litkit --help`；CI 门禁（gofmt/golangci-lint/go vet/go test/coverage）就绪。
 
 **验收**：`litkit --help` 输出全部子命令；`litkit sources` 返回空源表（待 M2 注册）。
 
-## M2 检索与缓存
+## M2 检索与本地文献库
 
-**范围**：PaperSource 抽象、首批源适配、跨源检索与去重、缓存。
+**范围**：PaperSource 抽象、首批源适配、跨源检索与去重、结果入库（SQLite 文献库）。
 
 | 任务 | 对应 FR |
 |---|---|
-| internal/sources/source.go：PaperSource 接口 + 缓存/降级公共逻辑 | FR-SRC-01、FR-CACHE-01/02/03 |
+| internal/sources/source.go：PaperSource 接口 + 降级公共逻辑 | FR-SRC-01 |
 | internal/util/ratelimit：每源令牌桶（x/time/rate）+ 429/503 指数退避重试 | NFR-PERF-04、NFR-REL-01/04 |
 | internal/sources/registry.go：源注册表（CLI 与 MCP 共用） | FR-SRC-18、FR-IFACE-03 |
 | 源适配：arXiv、PubMed、OpenAlex | FR-SRC-02/03/06 |
 | 源适配：bioRxiv/medRxiv、Semantic Scholar | FR-SRC-04/05 |
 | core/search：并发检索、单源失败隔离、三级去重、无摘要过滤 | FR-SEARCH-01/02/03/06 |
-| core/cache：TTL 缓存、cache list/clear | FR-CACHE-04/05 |
-| `litkit search` / `litkit sources` / `search_<source>` 工具 | FR-SEARCH-03/04 |
+| internal/storage：SQLite 文献库（schema/*.sql、dedup upsert、cite_key、paper_refs） | FR-LIB-01/02/03/06/07 |
+| core/search 入库回填 cite_key；`litkit search` / `litkit lib` / `litkit sources` | FR-LIB-01/06、FR-SEARCH-03/04 |
 
-**产出**：`litkit search "关键词"` 返回跨源去重结果；缓存命中零网络 IO。
+**产出**：`litkit search "关键词"` 返回跨源去重结果并自动入库；`litkit lib list` 可查看引用标识。
 
 **验收**：对 5 个默认源逐一实测（触网），平台能力矩阵与实测一致（PRD 第 8 章）；每源连续 10 次检索无 429/封禁（NFR-PERF-04）。
 
@@ -144,7 +144,7 @@ owner: litkit-core
 | 里程碑 | PRD 覆盖 | 依赖 | 阶段 |
 |---|---|---|---|
 | M1 骨架 | 接口/配置/模型 | 无 | 一期 |
-| M2 检索 | FR-SRC / FR-SEARCH / FR-CACHE | M1 | 一期 |
+| M2 检索 | FR-SRC / FR-SEARCH / FR-LIB | M1 | 一期 |
 | M3 引用 | FR-REF / FR-LIB | M2 | 一期 |
 | M4 lint | FR-LINT（除 08） | M1 | 一期 |
 | M5 MCP | FR-IFACE | M2/M3 | 一期 |

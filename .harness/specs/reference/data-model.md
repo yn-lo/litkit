@@ -6,7 +6,7 @@ status: active
 owner: litkit-core
 ---
 
-> Paper / SearchResult / CacheEntry / PaperSource 的 Go 类型定义与去重/缓存键约定。
+> Paper / SearchResult / PaperSource 的 Go 类型定义与去重/入库键约定。
 > 与接口契约（JSON 形态）见 [`api.md`](api.md)；分层归属见 [`../architecture/boundaries.md`](../architecture/boundaries.md)。
 
 ## 1. Paper（核心载体，最底层）
@@ -23,6 +23,7 @@ type Author struct {
 // Paper 论文元数据（摘要工作流核心载体）
 type Paper struct {
     ID        string   `json:"id"`        // 内部稳定唯一 id（hash）
+    CiteKey   string   `json:"citeKey,omitempty"` // 3 字母引用标识，入库时分配（FR-LIB-06）
     Title     string   `json:"title"`
     Authors   []Author `json:"authors"`
     Abstract  string   `json:"abstract"`  // 检索源必须提供；空串 = 无摘要（检索默认过滤）
@@ -64,23 +65,19 @@ type SourceError struct {
 DOI（非空）> Title（归一化）> ID（source:externalId）
 ```
 
-## 4. CacheEntry
+## 4. 入库键与引用标识（internal/storage）
 
-```go
-// CacheEntry 搜索缓存条目
-type CacheEntry struct {
-    Key       string          `json:"key"`       // hash(query|source|params)
-    Query     string          `json:"query"`
-    Source    string          `json:"source"`
-    Params    json.RawMessage `json:"params"`
-    Result    json.RawMessage `json:"result"`
-    Timestamp int64           `json:"timestamp"` // epoch ms
-    TTL       int64           `json:"ttl"`       // ms
-}
+文献库以 SQLite 存储（`WORK_DIR/litkit.db`），schema 由 `schema/schema.sql` 统一管理。
 
-// Expired 派生：now - Timestamp > TTL
-func (e CacheEntry) Expired() bool { ... }
 ```
+dedup_key（入库唯一键，FR-LIB-01）：
+    DOI（小写，非空）> Title（小写）+ Authors（小写）> Paper.ID
+cite_key（引用标识，FR-LIB-06）：
+    3 字母 a-zA-Z 唯一；入库自动分配；重复检索保持不变；AI 引用与引用标记唯一入口
+```
+
+`paper_refs` 表记录引用标记（FR-LIB-07）：`(cite_key, sentence_hash, manuscript)` 唯一，
+同句重复引用幂等；`sentence_hash` 为引用句的 sha256 前缀指纹。
 
 ## 5. PaperSource 接口
 

@@ -35,10 +35,10 @@ type layer int
 
 const (
 	layerUnknown layer = iota
-	layerEntry          // 入口层
-	layerService        // 服务层
-	layerAdapter        // 适配层
-	layerLeaf           // 叶子层
+	layerEntry         // 入口层
+	layerService       // 服务层
+	layerAdapter       // 适配层
+	layerLeaf          // 叶子层
 )
 
 // entryPrefixes / servicePrefixes / adapterPrefixes / leafPrefixes
@@ -158,13 +158,26 @@ func main() {
 }
 
 // checkFile 检查单个 Go 文件的 import 依赖方向。
+//
+// 以文件所属 go.mod 所在目录为模块根，计算相对模块根的路径判断层归属。
+// 这样 Go 代码无论放在仓库根还是子目录（如 app/），均能正确识别层。
 func checkFile(root, rel string, violations *[]string) {
-	// 将相对路径转换为 import 路径形式：internal/mcp/server.go → internal/mcp
-	dir := filepath.Dir(rel)
+	absPath := filepath.Join(root, rel)
+	moduleRoot := findModuleRoot(absPath, root)
+	if moduleRoot == "" {
+		return // 不在任何 Go 模块内（如已被 .harness 跳过的约束层自身）
+	}
+	relToModule, err := filepath.Rel(moduleRoot, absPath)
+	if err != nil {
+		return
+	}
+
+	// 将相对模块根的路径转换为目录形式：internal/mcp/server.go → internal/mcp
+	dir := filepath.Dir(relToModule)
 	dir = filepath.ToSlash(dir)
 	// cmd/ 下的 main 包视为入口层
 	var srcLayer layer
-	if strings.HasPrefix(dir, "cmd/") {
+	if strings.HasPrefix(dir, "cmd/") || dir == "cmd" {
 		srcLayer = layerEntry
 	} else {
 		srcLayer = dirLayer(dir)
@@ -174,7 +187,7 @@ func checkFile(root, rel string, violations *[]string) {
 	}
 
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ImportsOnly)
+	f, err := parser.ParseFile(fset, absPath, nil, parser.ImportsOnly)
 	if err != nil {
 		*violations = append(*violations, fmt.Sprintf("%s: 解析失败: %v", rel, err))
 		return
@@ -199,4 +212,26 @@ func checkFile(root, rel string, violations *[]string) {
 				pos, layerName(srcLayer), dir, layerName(dstLayer), dstPath))
 		}
 	}
+}
+
+// findModuleRoot 从 file 向上查找最近的 go.mod，返回其所在目录；
+// 查找范围不超过 root（项目根）。未找到返回空串。
+func findModuleRoot(file, root string) string {
+	dir := filepath.Dir(file)
+	for {
+		if fileExists(filepath.Join(dir, "go.mod")) {
+			return dir
+		}
+		if dir == root || dir == filepath.Dir(dir) {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+	return ""
+}
+
+// fileExists 报告路径是否存在且非目录。
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }

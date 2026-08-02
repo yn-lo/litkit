@@ -170,21 +170,26 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 入库元数据必须含摘要 |
-| FR-LIB-02 | 增删查接口（CLI + MCP） | P1 | 可按 DOI/title/关键词查询 |
-| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db |
-| FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | 中文文献可按关键词/标题/作者命中 |
+| FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 入库元数据必须含摘要；检索结果自动 upsert 入库 |
+| FR-LIB-02 | 增删查接口（CLI + MCP） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
+| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**测试固化目录：`e:\Codes\litkit\workspace`** |
+| FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | M1 为 LIKE 检索（标题/作者/摘要）；FTS5+分词二期 |
 | FR-LIB-05 | 本地语义检索（跨语言） | P1 | 中文 query 可命中英文文献（导入时生成 embedding）；嵌入信息可重建 |
+| FR-LIB-06 | 引用标识 cite_key | P0 | 3 字母 a-zA-Z 唯一；入库自动分配；AI 引用与引用标记的唯一入口 |
+| FR-LIB-07 | 引用标记 paper_refs | P1 | 记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿）；同句重复引用幂等 |
 
-### 4.6 FR-CACHE 缓存
+### 4.6 FR-CACHE 缓存（已并入 FR-LIB）
 
-| ID | 需求 | 优先级 | 验收标准 |
-|---|---|---|---|
-| FR-CACHE-01 | 搜索结果自动缓存 | P0 | 命中且未过 TTL 直接返回 |
-| FR-CACHE-02 | 缓存键确定性 | P0 | 同参数命中同条目 |
-| FR-CACHE-03 | 默认 TTL 24h，可覆盖 | P0 | CLI 参数 / 工具参数 |
-| FR-CACHE-04 | 缓存目录默认 WORK_DIR/.litkit_cache | P0 | 随项目迁移 |
-| FR-CACHE-05 | `cache list` / `cache clear` | P0 | list 返回 query/source/count/timestamp/is_expired |
+搜索结果不再使用独立 JSON 缓存与 TTL：检索结果直接 upsert 进本地文献库（SQLite），
+库生命周期由工作目录决定（删除工作目录即删除库）。原 FR-CACHE 需求去向：
+
+| 原需求 | 去向 |
+|---|---|
+| FR-CACHE-01 搜索结果自动缓存 | FR-LIB-01（检索结果自动入库，重复检索按 dedup_key 去重更新） |
+| FR-CACHE-02 缓存键确定性 | dedup_key（DOI > title+authors > paper_id） |
+| FR-CACHE-03 默认 TTL 24h 可覆盖 | 删除（无 TTL） |
+| FR-CACHE-04 缓存目录 WORK_DIR/.litkit_cache | FR-LIB-03（WORK_DIR/litkit.db） |
+| FR-CACHE-05 `cache list` / `cache clear` | `litkit lib list` / `litkit lib rm <cite_key>` |
 
 ### 4.7 FR-IFACE 接口
 
@@ -210,7 +215,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | ID | 需求 | 度量 |
 |---|---|---|
 | NFR-PERF-01 | 多源搜索并发执行 | 总耗时 ≈ 最慢源 |
-| NFR-PERF-02 | 缓存命中零网络 IO | < 100ms |
+| NFR-PERF-02 | 检索结果入库 | 单次检索去重入库 < 100ms 附加耗时 |
 | NFR-PERF-03 | 单源超时不阻塞整体 | 单源失败归入 errors |
 | NFR-PERF-04 | 每源稳定检索速率 | 单源 ≥ 10 次/分钟且不限速（不触发上游 429 / IP 封禁） |
 
@@ -298,7 +303,8 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final]
 | `lint_init` | project_dir, force, lang | 初始化状态 + next_steps |
 | `verify_manuscript` | manuscript_path, lang, mode | issues[]（问题/修复/规则编号） |
 | `search_<source>` | 各源特定 | 同 search_papers 结构 |
-| `cache_list` / `cache_clear` | — | 缓存清单 / 清除条数 |
+| `lib_list` / `lib_search` / `lib_rm` | source/keyword/limit / cite_key | 库内论文 / 命中 / 删除结果 |
+| `lib_stats` | — | 文献库统计 |
 
 ### 7.3 环境变量
 
@@ -306,7 +312,7 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final]
 |---|---|---|
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
 | LITKIT_IEEE_API_KEY / ACM_API_KEY | 二期激活对应源必需 | 启用源工具 |
-| LITKIT_WORK_DIR | 可选 | 统一工作目录 |
+| LITKIT_WORK_DIR | 可选 | 统一工作目录。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api；服务本地库语义检索 |

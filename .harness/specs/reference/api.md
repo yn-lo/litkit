@@ -7,7 +7,7 @@ owner: litkit-core
 ---
 
 > 本文件定义 CLI 命令、MCP 工具与环境变量。CLI 与 MCP 共享同一核心实现（同输入同输出）。
-> 数据模型（Paper/SearchResult/CacheEntry/PaperSource）见 [`data-model.md`](data-model.md)。
+> 数据模型（Paper/SearchResult/PaperSource）见 [`data-model.md`](data-model.md)。
 > 错误码与 VerifyIssue 结构见 [`error-codes.md`](error-codes.md)。
 
 ## 1. CLI
@@ -31,7 +31,7 @@ litkit search <query> [-s sources] [-n N] [-y year] [--keep-no-abstract]
 | `-y, --year` | 年份过滤（源支持时） | 无 |
 | `--keep-no-abstract` | 保留无摘要论文（默认过滤，FR-SEARCH-03） | 关 |
 
-> 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `library search`。
+> 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `lib search`（二期）。
 
 输出：`{ total, sourceResults, errors, papers[] }`
 
@@ -67,8 +67,10 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--docx] [-o output_dir]
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
-litkit cache list | clear
-litkit library add | rm | list | search <query> [--mode keyword|semantic]
+litkit lib list [--source S] [--limit N] [--offset N]
+litkit lib search <keyword> [--limit N]
+litkit lib rm <cite_key>          # 别名：forget
+litkit lib stats | path
 litkit lint init [project_dir] [--force] [--lang zh|en]
 litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbose] [--rule R1,R2]
 ```
@@ -86,7 +88,8 @@ litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbos
 | `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en | `{ status, files[], nextSteps }` |
 | `verify_manuscript` | manuscriptPath: string, lang?: zh\|en, mode?: chapter\|draft\|final | `{ passed, issues[] }` |
 | `search_<source>` | query: string, maxResults?: int | 单源 `SearchResult` |
-| `cache_list` / `cache_clear` | — | `{ entries }` / `{ cleared }` |
+| `lib_list` / `lib_search` / `lib_rm` | source?/keyword?/limit? / citeKey | 库内论文 / 命中 / 删除结果 |
+| `lib_stats` / `lib_path` | — | 统计 / 库路径 |
 
 ## 3. 环境变量
 
@@ -95,7 +98,7 @@ litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbos
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
 | LITKIT_IEEE_API_KEY | 二期激活 IEEE 必需 | 启用 IEEE 源 |
 | LITKIT_ACM_API_KEY | 二期激活 ACM 必需 | 启用 ACM 源 |
-| LITKIT_WORK_DIR | 可选 | 统一工作目录（库/缓存/输出默认在此） |
+| LITKIT_WORK_DIR | 可选 | 统一工作目录（库/输出默认在此）。测试固化目录：`e:\Codes\litkit\workspace` |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api |
