@@ -134,6 +134,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SEARCH-06 | 输出标准化字段集 | P0 | 字段集固定；列表字段可序列化往返无损 |
 | FR-SEARCH-07 | `search` 统一接口（keyword 模式） | P0 | 远程检索仅 keyword；semantic 模式仅限本地文献库（FR-LIB-05） |
 | FR-SEARCH-08 | 远程语义重排（keyword top-K → 本地重排） | 不包含（二期可评估） | 远程检索保持 keyword 原生排序；语义能力集中在本地文献库，避免 top-K 召回局限 |
+| FR-SEARCH-10 | 结果默认年份倒序 | P0 | 最新在前；year=0 排末尾。各源原始顺序语义不一，跨源混合后必须显式排序 |
 | FR-SEARCH-09 | embedding 基础设施（provider 抽象 + 本地向量库） | P1 | 仅服务本地库语义检索（FR-LIB-05）；默认本地模型零 key 零网络；配置 API key 自动切换；向量存 SQLite 同库；本地库规模（万级）检索 < 1s |
 
 ### 4.3 FR-REF 引用与手稿处理
@@ -198,6 +199,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-IFACE-01 | CLI 为第一接口 | P0 | 全部功能可经 CLI 完成；输出 JSON |
 | FR-IFACE-02 | MCP Server 为可选第二接口 | P0 | stdio 传输，注册全部工具；客户端可发现调用 |
 | FR-IFACE-03 | CLI 与 MCP 共享同一核心实现 | P0 | 新增功能两处注册（机械化检查防止遗漏） |
+| FR-IFACE-04 | 输出精简（AI-first） | P0 | search/lib 默认返回 PaperSummary（citeKey/title/firstAuthor/year/abstract）；`--full` 返回完整元数据。降低 AI agent 上下文噪声 |
 
 ### 4.8 FR-CONFIG 配置
 

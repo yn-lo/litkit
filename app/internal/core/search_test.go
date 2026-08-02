@@ -333,6 +333,32 @@ func TestSearch_EmptyRegistry(t *testing.T) {
 	}
 }
 
+// ---- 默认年份倒序排序（FR-SEARCH-10）----
+
+func TestSearch_SortedByYearDesc(t *testing.T) {
+	src := &fakeSource{name: "alpha", papers: []model.Paper{
+		{Title: "Old", Abstract: "a", Source: "alpha", Year: 2018},
+		{Title: "Newest", Abstract: "a", Source: "alpha", Year: 2024},
+		{Title: "Mid", Abstract: "a", Source: "alpha", Year: 2021},
+		{Title: "Unknown", Abstract: "a", Source: "alpha", Year: 0},
+	}}
+	reg := newFakeRegistry(src)
+	s := NewSearcher(reg, nil, 0)
+
+	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
+	if len(res.Papers) != 4 {
+		t.Fatalf("应返回 4 篇，got %d", len(res.Papers))
+	}
+	// 期望：2024 > 2021 > 2018 > 0
+	years := []int{res.Papers[0].Year, res.Papers[1].Year, res.Papers[2].Year, res.Papers[3].Year}
+	want := []int{2024, 2021, 2018, 0}
+	for i := range want {
+		if years[i] != want[i] {
+			t.Fatalf("排序不符，got %v want %v", years, want)
+		}
+	}
+}
+
 // ---- mergePapers 行为 ----
 
 func TestMergePapers_PrefersNonEmptyFields(t *testing.T) {

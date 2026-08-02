@@ -12,6 +12,7 @@ package core
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 
@@ -115,9 +116,21 @@ func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions)
 	if s.store != nil {
 		merged = s.persist(merged)
 	}
+	// 默认年份倒序（最新在前）；year=0 排末尾（FR-SEARCH-05）
+	sortPapersByYearDesc(merged)
 	result.Papers = merged
 	result.Total = len(merged)
 	return result, nil
+}
+
+// sortPapersByYearDesc 按年份倒序排列；year=0（未知）排末尾，保持稳定排序。
+//
+// 学术写作偏好近年成果，故默认年份倒序。各源原始返回顺序语义不一
+// （arXiv 按相关性、PubMed 按日期），跨源混合后无意义，必须显式排序。
+func sortPapersByYearDesc(papers []model.Paper) {
+	sort.SliceStable(papers, func(i, j int) bool {
+		return papers[i].Year > papers[j].Year
+	})
 }
 
 // persist 将去重后的论文 upsert 进文献库，并回填 cite_key（FR-LIB-06）。

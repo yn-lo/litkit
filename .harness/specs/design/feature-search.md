@@ -10,7 +10,7 @@ owner: litkit-core
 
 ## 目标
 
-单次调用并发跨多个国内可达学术平台检索，输出标准化元数据 + 摘要，结果去重合并，自动入库本地文献库。新源可插拔。
+单次调用并发跨多个国内可达学术平台检索，输出精简元数据 + 摘要（FR-IFACE-04），结果去重合并、年份倒序，自动入库本地文献库。新源可插拔。
 
 ## 范围
 
@@ -20,6 +20,8 @@ owner: litkit-core
 - 跨源并发检索、单源失败隔离、DOI→title→id 三级去重
 - 每源令牌桶限速（≥10 次/分钟）+ 429/503 指数退避重试
 - 检索结果去重后 upsert 进本地文献库（FR-LIB-01），回填 cite_key（FR-LIB-06）；无独立缓存层
+- 结果默认年份倒序（FR-SEARCH-10）：最新在前，year=0 排末尾
+- 默认输出 PaperSummary（citeKey/title/firstAuthor/year/abstract，FR-IFACE-04）；`--full` 输出完整 Paper
 
 ### 不包含
 - 二期源（Zenodo、IEEE/ACM）本期不实现
@@ -66,4 +68,6 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - [ ] 单源失败隔离测试：一个源挂掉不影响其他
 - [ ] 无摘要过滤测试：无摘要论文默认不出现；`--keep-no-abstract` 时保留（FR-SEARCH-03）
 - [ ] 入库测试：检索结果 upsert 进本地库并回填 cite_key；无摘要不入库（FR-LIB-01/06）
+- [ ] 排序测试：结果按年份倒序；year=0 排末尾（FR-SEARCH-10）
+- [ ] PaperSummary 测试：默认输出 5 字段；firstAuthor 为 "Family Given"；`--full` 输出完整字段（FR-IFACE-04）
 - [ ] 限速测试：并发扇出不超每源上限（NFR-PERF-04）

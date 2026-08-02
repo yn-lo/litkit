@@ -6,6 +6,8 @@
 
 国内学术写作场景的论文工具包：跨源检索摘要、生成规范引用（GB/T 7714—2025 / APA / IEEE）、排版手稿、AI 撰写合规门禁。Go 1.26 / cobra / modelcontextprotocol/go-sdk（官方 MCP SDK）/ modernc.org/sqlite；CLI 第一接口，MCP 可选第二接口。
 
+**AI-first 定位**：工具输出面向 AI agent 调用，接口设计以**降低上下文噪声**为第一约束——默认返回 AI 写作所需最小字段集（citeKey/title/firstAuthor/year/abstract），完整元数据落 SQLite 由 citeKey 句柄按需取回；`--full` 逃生口供人类调试。
+
 ## 知识导航
 
 | 你需要… | 去这里 |
@@ -20,10 +22,10 @@
 
 ## 构建与验证
 
-Go 源码位于 `app/` 子目录。全量门禁（gofmt + golangci-lint + vet + test + govulncheck + arch-check）一步跑完：
+Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁（7 项）：
 
 ```bash
-# 全量门禁（一步跑完 6 项检查）
+# 构建全量门禁（一步跑完 7 项：gofmt → build → lint → vet → test → vulncheck → arch-check）
 .harness/constraints/gate.ps1        # Windows PowerShell
 bash .harness/constraints/gate.sh     # Linux/macOS
 
@@ -33,8 +35,7 @@ cd app && gofmt -l . && go test ./...
 # 触网测试（手动，不进 CI，在 app/ 执行）
 cd app && go test -tags integration ./tests/integration/
 
-# 构建 / 发布（在 app/ 执行）
-cd app && go build -o litkit ./cmd/litkit
+# 发布（在 app/ 执行）
 cd app && goreleaser build --snapshot
 ```
 

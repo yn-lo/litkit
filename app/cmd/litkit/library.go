@@ -15,6 +15,18 @@ import (
 	"litkit/internal/storage"
 )
 
+// libPapersOutput lib list/search 默认输出（FR-IFACE-04：精简视图）。
+type libPapersOutput struct {
+	Total  int                  `json:"total"`
+	Papers []model.PaperSummary `json:"papers"`
+}
+
+// libPapersOutputFull lib list/search --full 输出（完整元数据）。
+type libPapersOutputFull struct {
+	Total  int           `json:"total"`
+	Papers []model.Paper `json:"papers"`
+}
+
 // errNoStore 文献库不可用时 lib 子命令的公共错误（store 初始化失败降级场景）。
 var errNoStore = errors.New("本地文献库不可用（初始化失败）")
 
@@ -37,7 +49,7 @@ func newLibraryCmd(st *storage.Store) *cobra.Command {
 func newLibListCmd(st *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "列出库内论文（最新在前）",
+		Short: "列出库内论文（最新在前，默认精简视图）",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if st == nil {
 				return errNoStore
@@ -45,43 +57,47 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 			source, _ := cmd.Flags().GetString("source")
 			limit, _ := cmd.Flags().GetInt("limit")
 			offset, _ := cmd.Flags().GetInt("offset")
+			full, _ := cmd.Flags().GetBool("full")
 			papers, err := st.ListPapers(source, limit, offset)
 			if err != nil {
 				return err
 			}
-			return printJSON(struct {
-				Total  int           `json:"total"`
-				Papers []model.Paper `json:"papers"`
-			}{Total: len(papers), Papers: papers})
+			if full {
+				return printJSON(libPapersOutputFull{Total: len(papers), Papers: papers})
+			}
+			return printJSON(libPapersOutput{Total: len(papers), Papers: model.SummarizePapers(papers)})
 		},
 	}
 	cmd.Flags().String("source", "", "按来源过滤")
 	cmd.Flags().Int("limit", 0, "最大条数（默认 100）")
 	cmd.Flags().Int("offset", 0, "偏移量")
+	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
 	return cmd
 }
 
 func newLibSearchCmd(st *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <keyword>",
-		Short: "本地库关键词检索（标题/作者/摘要，FR-LIB-04）",
+		Short: "本地库关键词检索（标题/作者/摘要，FR-LIB-04；默认精简视图）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if st == nil {
 				return errNoStore
 			}
 			limit, _ := cmd.Flags().GetInt("limit")
+			full, _ := cmd.Flags().GetBool("full")
 			papers, err := st.SearchLocal(args[0], limit)
 			if err != nil {
 				return err
 			}
-			return printJSON(struct {
-				Total  int           `json:"total"`
-				Papers []model.Paper `json:"papers"`
-			}{Total: len(papers), Papers: papers})
+			if full {
+				return printJSON(libPapersOutputFull{Total: len(papers), Papers: papers})
+			}
+			return printJSON(libPapersOutput{Total: len(papers), Papers: model.SummarizePapers(papers)})
 		},
 	}
 	cmd.Flags().Int("limit", 0, "最大条数（默认 50）")
+	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
 	return cmd
 }
 

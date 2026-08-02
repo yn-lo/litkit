@@ -6,8 +6,11 @@ status: active
 owner: litkit-core
 ---
 
-> Paper / SearchResult / PaperSource 的 Go 类型定义与去重/入库键约定。
+> Paper / PaperSummary / SearchResult / PaperSource 的 Go 类型定义与去重/入库键约定。
 > 与接口契约（JSON 形态）见 [`api.md`](api.md)；分层归属见 [`../architecture/boundaries.md`](../architecture/boundaries.md)。
+>
+> **AI-first 设计**（FR-IFACE-04）：search/lib 默认输出 PaperSummary（5 字段），
+> 完整 Paper 落 SQLite 由 citeKey 按需取回；`--full` 输出完整 Paper 供调试。
 
 ## 1. Paper（核心载体，最底层）
 
@@ -40,6 +43,25 @@ type Paper struct {
 ```
 
 > 约定：可选字段用零值（空串 / 0）表示"不可用"，JSON 输出中空串等价于 null 语义。
+
+## 1b. PaperSummary（AI agent 默认输出，FR-IFACE-04）
+
+```go
+// PaperSummary 面向 AI agent 的精简论文视图。
+// citeKey 是 AI 与本地文献库之间唯一的握手协议——AI 写 [cite:Kxq] 占位符，
+// manuscript 流水线（M3）按 citeKey 从库中取完整 Paper 做引用格式化。
+type PaperSummary struct {
+    CiteKey     string `json:"citeKey"`             // 引用句柄（写 [cite:Kxq]）
+    Title       string `json:"title"`               // 相关性判断主信号
+    FirstAuthor string `json:"firstAuthor"`         // "Family Given" 格式；空串表示未知
+    Year        int    `json:"year"`                // 相关性 + 默认排序依据；0 表示未知
+    Abstract    string `json:"abstract,omitempty"`  // 相关性判断次信号
+}
+```
+
+字段选择依据：仅保留"判断是否引用 + 写占位符"所需的最小集。
+完整元数据（DOI/PMID/ArXivID/URL/Venue/DocType/全部作者）落 SQLite，
+由 `lib get <citeKey>`（M3）或 `--full` 取回。
 
 ## 2. SearchResult / SourceError
 
