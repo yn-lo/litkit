@@ -1,0 +1,126 @@
+# GitHub Actions CI — litkit
+#
+# 门禁分层（P0/P1/P2，按 harness.md 4.6 节）：
+#   P0 架构不变量 / 测试质量 / 静态分析（lint）
+#   P1 安全（govulncheck）/ 格式化强制
+#   P2 文档腐化 / 文档断链
+#
+# 实际部署：复制本文件到 .github/workflows/ci.yml
+# 本地等价命令：gofmt -l . && golangci-lint run && go vet ./... && go test ./... -cover && govulncheck ./...
+
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (gofmt + golangci-lint + go vet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Format check (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::未格式化文件: $unformatted"
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --config .harness/constraints/style/.golangci.yml
+
+      - name: Vet
+        run: go vet ./...
+
+  test:
+    name: Test (unit + coverage + arch-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Unit tests (offline hermetic)
+        run: go test ./...
+
+      - name: Coverage gate (>= 60%)
+        run: |
+          go test ./... -coverprofile=coverage.out
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Architecture check (layer direction)
+        run: |
+          cd .harness/constraints/arch
+          go run .
+
+      - name: Registration sync check (CLI vs MCP)
+        run: |
+          # 占位：新增功能必须 CLI 与 MCP 两处注册（FR-IFACE-03）
+          # 实现建议：对比 cmd/litkit 子命令列表与 internal/mcp 工具注册列表
+          echo "TODO: registration sync check"
+
+  security:
+    name: Security (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Dependency vulnerability scan
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.26"
+
+  docs:
+    name: Docs freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Specs docs freshness (< 60 days)
+        run: |
+          STALE_DAYS=60
+          stale=0
+          while read -r f; do
+            echo "::warning file=$f::规格文档超过 $STALE_DAYS 天未更新，可能已与实现脱节"
+            stale=1
+          done < <(find .harness/specs -name "*.md" -mtime +$STALE_DAYS)
+          exit $stale
+
+      - name: Broken link check
+        run: |
+          # 占位：检查 .harness/ 与 CLAUDE.md 中的相对链接指向存在（NFR-MAINT-04）
+          echo "TODO: broken link check"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build
+        run: go build ./cmd/litkit

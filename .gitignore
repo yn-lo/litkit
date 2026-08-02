@@ -1,0 +1,32 @@
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+
+# 运行时数据（缓存 / 本地文献库）
+.litkit_cache/
+litkit.db
+*.db
+*.db-shm
+*.db-wal
+
+# 构建产物
+litkit
+litkit.exe
+dist/
+
+# 约束层构建产物（archcheck 由 go run 构建，不入库）
+.harness/constraints/arch/archcheck.exe
+
+# Python demo 产物（paper_toolkit_mcp 为参考 demo）
+__pycache__/
+*.pyc
+*.pyo
+
+# OS / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+paper_toolkit_mcp/

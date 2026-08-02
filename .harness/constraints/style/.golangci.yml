@@ -1,0 +1,43 @@
+# golangci-lint 配置 — litkit
+
+# 在项目根运行：golangci-lint run
+# 版本：golangci-lint >= 2.0（version: "2" 配置格式）
+
+version: "2"
+
+run:
+  timeout: 5m
+  # 跳过生成的约束层检查程序（其自带独立 go.mod）
+  exclude-dirs:
+    - .harness
+  tests: false
+
+linters:
+  enable:
+    - govet          # 编译器级检查
+    - errcheck       # 禁止吞掉 error
+    - staticcheck    # 静态分析
+    - unused         # 未使用代码
+    - ineffassign    # 无效赋值
+    - gocritic       # 代码评审
+    - revive         # 命名/风格（Go 惯例）
+    - misspell       # 拼写
+    - nolintlint     # nolint 注释使用规范
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+      - name: package-comments
+        severity: warning
+        disabled: false
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
