@@ -6,12 +6,12 @@ import "strings"
 //
 // 设计动机：litkit 的输出对象是 AI agent，完整 Paper 字段（DOI/PMID/ArXivID/
 // URL/Venue/DocType/Source/全部作者）对相关性判断与引用占位无用，反而是上下文噪声。
-// citeKey 是 AI 与本地文献库之间唯一的握手协议——AI 写 [cite:Kxq] 占位符，
+// citeKey 是 AI 与本地文献库之间唯一的握手协议——AI 写 [@Kxq] 占位符，
 // manuscript 流水线（M3）按 citeKey 从库中取完整 Paper 做引用格式化。
 //
 // 字段选择依据：仅保留"判断是否引用 + 写占位符"所需的最小集。
 type PaperSummary struct {
-	CiteKey     string `json:"citeKey"`            // 引用句柄（写 [cite:Kxq]）
+	CiteKey     string `json:"citeKey"`            // 引用句柄（写 [@Kxq]）
 	Title       string `json:"title"`              // 相关性判断主信号
 	FirstAuthor string `json:"firstAuthor"`        // "Family Given" 格式；空串表示未知
 	Year        int    `json:"year"`               // 相关性 + 默认排序依据；0 表示未知

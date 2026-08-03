@@ -150,6 +150,25 @@ func TestLoad_invalidIntFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestLoad_negativeValuesClamped(t *testing.T) {
+	// 负重试次数/非正超时应钳制到安全下界，避免 httpclient panic 或无超时
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_WORK_DIR", "")
+	t.Setenv("LITKIT_HTTP_RETRIES", "-1")
+	t.Setenv("LITKIT_HTTP_TIMEOUT_MS", "-5")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPRetries != 0 {
+		t.Errorf("HTTPRetries=-1 应钳制为 0，got %d", cfg.HTTPRetries)
+	}
+	if cfg.HTTPTimeoutMS != DefaultHTTPTimeoutMS {
+		t.Errorf("负超时应回退默认 %d，got %d", DefaultHTTPTimeoutMS, cfg.HTTPTimeoutMS)
+	}
+}
+
 func TestLoad_secretsFromEnv(t *testing.T) {
 	t.Setenv("LITKIT_ENV_FILE", "")
 	t.Setenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY", "key-xyz")

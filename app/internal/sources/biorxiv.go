@@ -15,10 +15,11 @@ import (
 
 // BiorxivSource bioRxiv/medRxiv 适配器（FR-SRC-04）。
 //
-// 端点：https://api.biorxiv.org/details/{server}/{interval}/{cursor}
-// server ∈ {biorxiv, medrxiv}。
+// 端点：https://api.biorxiv.org/details/{server}/{interval}[/{cursor}]
+// server ∈ {biorxiv, medrxiv}；interval 仅支持：数字 N（最近 N 篇）、
+// YYYY-MM-DD/YYYY-MM-DD、Nd（最近 N 天）。
 // bioRxiv API 无原生关键词检索，采用：拉取最近批次 + 客户端关键词过滤。
-// ponytail: 仅取首页（cursor=0），适合"返回结果"的验收场景；
+// ponytail: 仅取首页（cursor 省略，默认 0），适合"返回结果"的验收场景；
 // 升级路径：分页拉取多页 + 索引服务，避免单次首页召回不足。
 type BiorxivSource struct {
 	BaseSource
@@ -35,9 +36,18 @@ func NewBiorxivSource(server string, httpClient *httpclient.Client, limiter *rat
 	}
 }
 
+// biorxivDefaultResults MaxResults 未指定时的默认拉取条数（interval 取数字 N 形式）。
+const biorxivDefaultResults = 100
+
 // biorxivResponse bioRxiv API 响应结构。
 type biorxivResponse struct {
-	Collection []biorxivEntry `json:"collection"`
+	Messages   []biorxivMessage `json:"messages"`
+	Collection []biorxivEntry   `json:"collection"`
+}
+
+// biorxivMessage API 级状态消息；status 为 "ok" 表示成功。
+type biorxivMessage struct {
+	Status string `json:"status"`
 }
 
 type biorxivEntry struct {
@@ -52,7 +62,8 @@ type biorxivEntry struct {
 
 // Search 拉取 bioRxiv/medRxiv 最近批次并按关键词过滤。
 func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOptions) ([]model.Paper, error) {
-	u := fmt.Sprintf("%s/details/%s/NA/0", b.BaseURL, b.Server)
+	// interval 用数字 N（最近 N 篇）；MaxResults=0 回退 100，而非不截断
+	u := fmt.Sprintf("%s/details/%s/%d", b.BaseURL, b.Server, ensureMax(opts.MaxResults, biorxivDefaultResults))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("biorxiv search: %w", err)
@@ -93,6 +104,10 @@ func parseBiorxivJSON(data []byte, server string) ([]model.Paper, error) {
 	var r biorxivResponse
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("parse biorxiv: %w", err)
+	}
+	// messages[0].status 为 API 级状态（HTTP 200 也可能携带错误，如参数非法）
+	if len(r.Messages) == 0 || r.Messages[0].Status != "ok" {
+		return nil, fmt.Errorf("biorxiv api status not ok: %v", r.Messages)
 	}
 	papers := make([]model.Paper, 0, len(r.Collection))
 	for _, e := range r.Collection {

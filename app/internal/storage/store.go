@@ -20,6 +20,7 @@ import (
 	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动
 
 	"litkit/internal/model"
+	"litkit/internal/util/textutil"
 )
 
 //go:embed schema/*.sql
@@ -75,6 +76,10 @@ func Open(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage open: %w", err)
 	}
+	// PRAGMA 是 per-connection 的，连接池新连接不继承；限制单连接保证
+	// PRAGMA 始终生效，同时串行化全部操作，消除 check-then-act 竞态。
+	// SQLite 写入本就要串行，读并发由 WAL 保证。
+	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("storage open ping: %w", err)
@@ -136,7 +141,7 @@ func dedupKey(p model.Paper) string {
 	if doi := strings.ToLower(strings.TrimSpace(p.DOI)); doi != "" {
 		return "doi:" + doi
 	}
-	if title := strings.ToLower(strings.TrimSpace(p.Title)); title != "" {
+	if title := textutil.NormalizeTitle(p.Title); title != "" {
 		return "title:" + title + "|authors:" + authorsText(p.Authors)
 	}
 	return "id:" + strings.ToLower(strings.TrimSpace(p.ID))
@@ -190,13 +195,21 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		return citeKey, true, nil
 	}
 
-	// 已存在：以最新数据覆盖字段，cite_key 保持不变
+	// 已存在：以最新数据覆盖字段，cite_key 保持不变；
+	// abstract/venue/doi/pmid/arxiv_id/url/doc_type 新值为空时保留旧值，
+	// 防止部分字段的再次入库擦除已有数据（NULLIF 空串转 NULL，COALESCE 回退旧值）
 	_, err = s.db.Exec(`UPDATE papers SET
-		doi=?, paper_id=?, title=?, authors=?, abstract=?, year=?, venue=?, source=?,
-		doc_type=?, url=?, pmid=?, arxiv_id=?, citations=?, fetched_at=?
+		doi=COALESCE(NULLIF(?, ''), doi), paper_id=?, title=?, authors=?,
+		abstract=COALESCE(NULLIF(?, ''), abstract), year=?,
+		venue=COALESCE(NULLIF(?, ''), venue), source=?,
+		doc_type=COALESCE(NULLIF(?, ''), doc_type), url=COALESCE(NULLIF(?, ''), url),
+		pmid=COALESCE(NULLIF(?, ''), pmid), arxiv_id=COALESCE(NULLIF(?, ''), arxiv_id),
+		citations=?, fetched_at=?
 		WHERE id=?`,
-		p.DOI, p.ID, p.Title, string(authorsJSON), p.Abstract, p.Year,
-		p.Venue, p.Source, p.DocType, p.URL, p.PMID, p.ArXivID, p.Citations, now, id)
+		p.DOI, p.ID, p.Title, string(authorsJSON),
+		p.Abstract, p.Year, p.Venue, p.Source,
+		p.DocType, p.URL, p.PMID, p.ArXivID,
+		p.Citations, now, id)
 	if err != nil {
 		return "", false, fmt.Errorf("storage upsert update: %w", err)
 	}

@@ -91,8 +91,50 @@ litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
 litkit lint init [project_dir] [--force] [--lang zh|en]
-litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbose] [--rule R1,R2]
 ```
+
+```
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--rule R2.1,R7.1] [--skip R4.2]
+```
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
+| `--lang` | 写作语言模式 | zh |
+| `--mode` | 验证深度：`chapter`（结构）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
+| `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
+| `--skip` | 跳过指定规则（逗号分隔） | 无 |
+
+> 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
+> 19 条规则（16 A 类 + 3 S 类）；M 类（R2.4/R4.3）仅输出人工核对提示，不判 fail。
+> 模式递增：chapter → draft → final，高模式包含低模式全部规则。
+> Markdown 分段：排除代码块/参考文献/表格后检查 Body。
+
+输出：
+
+```json
+{
+  "files": [
+    {
+      "path": "chapter1.md",
+      "violations": [
+        { "ruleId": "R2.1", "line": 42, "problem": "...", "suggestion": "..." }
+      ]
+    }
+  ],
+  "passed": false,
+  "exitHint": "fix_and_rerun",
+  "manualChecklist": ["R2.4: 核对统计量与原文一致", "R4.3: 确认引用与论述对应"]
+}
+```
+
+| exitHint | 含义 |
+|---|---|
+| `pass` | 全部通过 |
+| `fix_and_rerun` | 有 A 类违规，修复后重跑 |
+| `manual_review` | 仅需人工复核（M 类提示） |
+
+退出码：`0` = 通过或仅需人工复核；`1` = 有 A 类违规需修复。
 
 ## 2. MCP 工具
 
@@ -105,7 +147,7 @@ litkit verify <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--verbos
 | `process_manuscript` | text: string, lang?: zh\|en, style?: string, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList, citationMap, unresolved, files }` |
 | `export_references` | papers: []Paper, format: bibtex\|ris\|text, style?: string | `{ success, content }` |
 | `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en | `{ status, files[], nextSteps }` |
-| `verify_manuscript` | manuscriptPath: string, lang?: zh\|en, mode?: chapter\|draft\|final | `{ passed, issues[] }` |
+| `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |
 | `search_<source>` | query: string, maxResults?: int | 单源 `SearchResult` |
 | `lib_list` / `lib_search` / `lib_rm` | source?/keyword?/limit? / citeKey | 库内论文 / 命中 / 删除结果 |
 | `lib_stats` / `lib_path` | — | 统计 / 库路径 |

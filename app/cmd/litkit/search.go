@@ -11,6 +11,7 @@ import (
 	"litkit/internal/config"
 	"litkit/internal/core"
 	"litkit/internal/model"
+	"litkit/internal/sources"
 )
 
 // exitCodePartialFailure 部分源失败但部分成功的退出码（api.md §1.1）。
@@ -47,7 +48,7 @@ func shortErrors(errs []model.SourceError) []model.SourceError {
 // 默认输出 PaperSummary（FR-IFACE-04）；--full 输出完整 Paper。
 // 默认检索等级 tiab（题目+摘要+关键词）、默认最近 N 年（FR-SEARCH-12/13）。
 // 退出码：3 表示部分源失败但部分成功（api.md §1.1）。
-func newSearchCmd(s *core.Searcher, cfg *config.Config) *cobra.Command {
+func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--full]",
 		Short: "跨源并发检索文献",
@@ -69,10 +70,6 @@ func newSearchCmd(s *core.Searcher, cfg *config.Config) *cobra.Command {
 --full 输出完整元数据（含 doi/pmid/arxivId/url/venue/全部作者）与完整错误。`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 工作目录必须显式设置（FR-LIB-03）：结果需自动入库回填 citeKey
-			if err := requireWorkDir(cfg); err != nil {
-				return err
-			}
 			query := args[0]
 			sourcesFlag, _ := cmd.Flags().GetString("sources")
 			maxResults, _ := cmd.Flags().GetInt("max-results")
@@ -83,8 +80,13 @@ func newSearchCmd(s *core.Searcher, cfg *config.Config) *cobra.Command {
 			keepNoAbstract, _ := cmd.Flags().GetBool("keep-no-abstract")
 			full, _ := cmd.Flags().GetBool("full")
 
-			if mode != "" && mode != "tiab" && mode != "full" {
-				return fmt.Errorf("无效 --mode %q（支持 tiab|full）", mode)
+			if err := validateSearchParams(query, maxResults, years, sinceFlag, year, mode); err != nil {
+				return err
+			}
+
+			// 工作目录必须显式设置（FR-LIB-03）：结果需自动入库回填 citeKey
+			if err := requireWorkDir(cfg); err != nil {
+				return err
 			}
 
 			opts := core.SearchOptions{
@@ -100,6 +102,12 @@ func newSearchCmd(s *core.Searcher, cfg *config.Config) *cobra.Command {
 					if s != "" {
 						opts.Sources = append(opts.Sources, s)
 					}
+				}
+			}
+			// 源名校验：未知源直接报错，避免静默忽略（返回空结果误导调用方）
+			for _, name := range opts.Sources {
+				if _, ok := reg.Get(name); !ok {
+					return &paramError{msg: fmt.Sprintf("search: 未知源 %q（可用源见 litkit sources）", name)}
 				}
 			}
 
@@ -132,9 +140,13 @@ func newSearchCmd(s *core.Searcher, cfg *config.Config) *cobra.Command {
 					return perr
 				}
 			}
-			// 部分源失败：退出码 3（api.md §1.1）
-			if len(res.Errors) > 0 {
+			// 部分源失败但部分成功：退出码 3（api.md §1.1）
+			if len(res.Errors) > 0 && res.Total > 0 {
 				os.Exit(exitCodePartialFailure)
+			}
+			// 全部源失败：返回错误，由 main 以退出码 1 结束
+			if len(res.Errors) > 0 {
+				return fmt.Errorf("search: 所有源均失败")
 			}
 			return nil
 		},
@@ -160,4 +172,27 @@ func computeSince(sinceFlag, years int) int {
 		return time.Now().Year() - years + 1
 	}
 	return 0
+}
+
+// validateSearchParams 校验 search 命令参数（无效返回 paramError，退出码 2）。
+func validateSearchParams(query string, maxResults, years, sinceFlag, year int, mode string) error {
+	if query == "" {
+		return &paramError{msg: "search: 检索词不能为空"}
+	}
+	if maxResults < 0 {
+		return &paramError{msg: "search: -n 不能为负数"}
+	}
+	if years < 0 {
+		return &paramError{msg: "search: --years 不能为负数"}
+	}
+	if sinceFlag < 0 {
+		return &paramError{msg: "search: --since 不能为负数"}
+	}
+	if year < 0 {
+		return &paramError{msg: "search: -y 不能为负数"}
+	}
+	if mode != "" && mode != "tiab" && mode != "full" {
+		return &paramError{msg: fmt.Sprintf("search: 无效 --mode %q（支持 tiab|full）", mode)}
+	}
+	return nil
 }

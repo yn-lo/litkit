@@ -34,7 +34,7 @@ type SearchOptions struct {
 	MaxResults int `json:"maxResults,omitempty"`
 	// Year 年份过滤；0 表示不过滤。
 	Year int `json:"year,omitempty"`
-	// Since 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Since 优先。
+	// Since 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Year 优先。
 	Since int `json:"since,omitempty"`
 	// Mode 检索等级："" 或 "tiab"（默认，题目+摘要+关键词，源支持时）；"full"（全文）。
 	Mode string `json:"mode,omitempty"`
@@ -128,13 +128,17 @@ func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions)
 	return result, nil
 }
 
-// sortPapersByYearDesc 按年份倒序排列；year=0（未知）排末尾，保持稳定排序。
+// sortPapersByYearDesc 按年份倒序排列，同年份按标题升序（消除 goroutine
+// 完成顺序带来的不确定性）；year=0（未知）排末尾。
 //
 // 学术写作偏好近年成果，故默认年份倒序。各源原始返回顺序语义不一
 // （arXiv 按相关性、PubMed 按日期），跨源混合后无意义，必须显式排序。
 func sortPapersByYearDesc(papers []model.Paper) {
 	sort.SliceStable(papers, func(i, j int) bool {
-		return papers[i].Year > papers[j].Year
+		if papers[i].Year != papers[j].Year {
+			return papers[i].Year > papers[j].Year
+		}
+		return papers[i].Title < papers[j].Title
 	})
 }
 

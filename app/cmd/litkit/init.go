@@ -61,7 +61,7 @@ const agentsHead = "# litkit — AI agent 使用说明\n" +
 const agentsTail = "## 验证与引用\n" +
 	"\n" +
 	"- 成稿后运行 `litkit verify manuscript/*.md`；人工复核 `.litkit/checklist.md`\n" +
-	"- 引用时写 `[cite:<citeKey>]` 占位符，不展开元数据；manuscript 流水线按 citeKey\n" +
+	"- 引用时写 `[@<citeKey>]` 占位符，不展开元数据；manuscript 流水线按 citeKey\n" +
 	"  生成 GB/T 7714 / APA / IEEE 规范引用\n"
 
 // 文件权限常量（mnd：避免魔法值）。
@@ -85,6 +85,13 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 			refresh, _ := cmd.Flags().GetBool("refresh")
 			paperType, _ := cmd.Flags().GetString("type")
 			lang, _ := cmd.Flags().GetString("lang")
+			// 枚举校验：无效值直接拒绝，避免写入 manuscript-spec.yaml
+			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
+				return &paramError{msg: fmt.Sprintf("init: 无效 --type %q（可选 review|empirical）", paperType)}
+			}
+			if lang != "" && lang != lint.LangZH && lang != lint.LangEN {
+				return &paramError{msg: fmt.Sprintf("init: 无效 --lang %q（可选 zh|en）", lang)}
+			}
 			// 工作目录必须显式设置（FR-LIB-03）：拒绝就地生成污染 CWD
 			if err := requireWorkDir(cfg); err != nil {
 				return err

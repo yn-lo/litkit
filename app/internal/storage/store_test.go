@@ -60,7 +60,7 @@ func TestOpen_ReopenKeepsData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("重开 Open: %v", err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	got, err := s2.GetByDOI("10.1/persist")
 	if err != nil {
 		t.Fatalf("GetByDOI: %v", err)
@@ -85,7 +85,7 @@ func TestUpsertPaper_NewInsert_AssignsCiteKey(t *testing.T) {
 		t.Fatalf("cite_key 应为 3 字母，got %q", citeKey)
 	}
 	for _, c := range citeKey {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
 			t.Fatalf("cite_key 应仅含字母 a-zA-Z，got %q", citeKey)
 		}
 	}
@@ -155,6 +155,47 @@ func TestUpsertPaper_SameTitleDifferentAuthors_NotDedup(t *testing.T) {
 	}
 	if !inserted2 {
 		t.Fatal("同标题不同作者（无 DOI）应视为不同论文")
+	}
+}
+
+func TestUpsertPaper_TitleWhitespaceNormalized_Dedup(t *testing.T) {
+	s := newTestStore(t)
+	_, inserted1, err := s.UpsertPaper(paper("Deep  Learning   Pain", "", "Lee"))
+	if err != nil || !inserted1 {
+		t.Fatalf("首次: inserted=%v err=%v", inserted1, err)
+	}
+	// 仅内部空白不同：归一化后应命中同 dedup_key（与内存去重 NormalizeTitle 一致）
+	_, inserted2, err := s.UpsertPaper(paper("deep learning pain", "", "Lee"))
+	if err != nil {
+		t.Fatalf("二次: %v", err)
+	}
+	if inserted2 {
+		t.Fatal("标题内部空白归一化后应去重，inserted=false")
+	}
+}
+
+func TestUpsertPaper_UpdateKeepsOldValueForEmptyFields(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("Full", "10.1/full"))
+	if err != nil {
+		t.Fatalf("首次: %v", err)
+	}
+	// 再次入库：摘要为空、venue 非空
+	p := paper("Full", "10.1/full")
+	p.Abstract = ""
+	p.Venue = "Nature"
+	if _, _, err := s.UpsertPaper(p); err != nil {
+		t.Fatalf("二次: %v", err)
+	}
+	got, err := s.GetByCiteKey(k)
+	if err != nil {
+		t.Fatalf("GetByCiteKey: %v", err)
+	}
+	if got.Abstract != "abs-Full" {
+		t.Fatalf("空摘要不应擦除旧值，got %q", got.Abstract)
+	}
+	if got.Venue != "Nature" {
+		t.Fatalf("非空 venue 应正常更新，got %q", got.Venue)
 	}
 }
 

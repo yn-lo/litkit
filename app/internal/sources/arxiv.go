@@ -156,9 +156,9 @@ func extractArxivID(idURL string) string {
 		return strings.TrimSpace(idURL)
 	}
 	s := idURL[idx+5:] // 跳过 "/abs/" 或 "/pdf/"
-	// 去除版本号 vN
-	if i := strings.Index(s, "v"); i > 0 {
-		// 仅当 v 后是数字时才剥离
+	// 去除版本号 vN：用 LastIndex 定位最后一个 v，旧式归档名本身可能含 'v'
+	// （如 solv-int/9612001v2），且仅当 v 后全为数字时才剥离
+	if i := strings.LastIndex(s, "v"); i > 0 {
 		rest := s[i+1:]
 		if _, err := strconv.Atoi(rest); err == nil {
 			s = s[:i]

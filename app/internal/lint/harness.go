@@ -114,7 +114,7 @@ func RenderWritingRules(spec *ManuscriptSpec) string {
 		spec.PaperType, strings.Join(spec.SectionList(), " → "))
 	fmt.Fprintf(&b, "- 标题层级 ≤%d 级，标题 ≤%d 字，末尾无标点\n",
 		spec.Heading.MaxLevel, spec.Heading.MaxLength)
-	fmt.Fprintf(&b, "- 引用：全文 %d-%d 篇，用 [cite:citeKey] 占位符（%s），不展开元数据\n",
+	fmt.Fprintf(&b, "- 引用：全文 %d-%d 篇，用 [@citeKey] 占位符（%s），不展开元数据\n",
 		spec.Citation.Count[0], spec.Citation.Count[1], spec.StyleLabel())
 	fmt.Fprintf(&b, "- 字数：全文 %d-%d；摘要 %d-%d；段落 %d-%d\n",
 		spec.WordCount.Total[0], spec.WordCount.Total[1],

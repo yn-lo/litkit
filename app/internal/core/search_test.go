@@ -235,7 +235,7 @@ func TestSearch_UpsertsPapersIntoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	s := NewSearcher(reg, store, 0)
 
 	res1, _ := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5})
@@ -280,7 +280,7 @@ func TestSearch_KeepNoAbstract_NoUpsert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	s := NewSearcher(reg, store, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5, KeepNoAbstract: true})

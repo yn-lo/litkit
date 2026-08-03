@@ -72,10 +72,11 @@ owner: litkit-core
 | `litkit init`：--type review/empirical（preset 阈值）、--lang zh/en、--refresh、--force | FR-LINT-01/09 |
 | zh 规则集实现（全半角/引号/句式冗余/的地得/AI 痕迹） | FR-LINT-02/04 |
 | en 规则集实现（语法/时态/冠词/措辞/AI 痕迹） | FR-LINT-03/04 |
-| `litkit verify`：--lang/--mode/--verbose/--rule | FR-LINT-05 |
+| `litkit verify`：--lang/--mode/--rule/--skip，19 条规则（16A+3S），三值 exitHint | FR-LINT-05 |
 
 > 已落地（M4 一期前段）：internal/lint 服务层 + 四件套模板 + init 全参数（含 AGENTS.md 撰写硬性规定）。
-> 待办：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs 过滤）。
+> 已落地（M4 一期后段）：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs 过滤）；
+> 纯函数 lint.Run() 无 IO，CLI 薄壳；模式递增 chapter→draft→final；Markdown 分段排除代码块/参考文献/表格。
 
 **产出**：`litkit init` 在宿主项目生成 `.litkit/` + AGENTS.md 撰写硬性规定（事前指导）；`litkit verify` 输出三要素 issues（事后兜底）。
 

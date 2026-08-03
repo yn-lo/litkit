@@ -19,7 +19,7 @@ import (
 type SearchOptions struct {
 	MaxResults int    // 每源最大条数；0 表示由源决定默认
 	Year       int    // 精确年份过滤；0 表示不过滤
-	Since      int    // 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Since 优先
+	Since      int    // 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Year 优先
 	Mode       string // 检索等级："" 或 "tiab"（题目+摘要+关键词，源支持时）；"full"（全文）
 }
 

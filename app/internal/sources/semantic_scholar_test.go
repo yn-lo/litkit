@@ -149,6 +149,26 @@ func TestSemanticScholarSource_Search_yearFilter(t *testing.T) {
 	}
 }
 
+func TestSemanticScholarSource_Search_sinceFilter(t *testing.T) {
+	var capturedYear string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedYear = r.URL.Query().Get("year")
+		_, _ = w.Write([]byte(semanticScholarSample))
+	}))
+	defer srv.Close()
+
+	src := NewSemanticScholarSource("", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src.BaseURL = srv.URL + "/search"
+
+	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1, Since: 2023})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if capturedYear != "2023-" {
+		t.Errorf("since=2023 应转开区间 2023-，got %q", capturedYear)
+	}
+}
+
 func TestSemanticScholarSource_Search_403WithKeyRetriesAnonymous(t *testing.T) {
 	// 403 应自动降级匿名（重试不带 key）
 	var calls int32

@@ -73,7 +73,7 @@ func (o *OpenAlexSource) Search(ctx context.Context, query string, opts SearchOp
 	if err != nil {
 		return nil, fmt.Errorf("openalex search: %w", err)
 	}
-	req.Header.Set("User-Agent", "litkit/0.1 (mailto:litkit@example.com)")
+	req.Header.Set("User-Agent", "litkit/0.1 (mailto:litkit-tool@users.noreply.github.com)")
 
 	resp, err := o.Do(ctx, req)
 	if err != nil {

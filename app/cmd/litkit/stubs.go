@@ -59,19 +59,3 @@ func newLintCmd() *cobra.Command {
 	})
 	return cmd
 }
-
-func newVerifyCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "verify <manuscript>",
-		Short: "验证文稿合规性（zh/en 规则集）",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return notImplemented("verify")
-		},
-	}
-	cmd.Flags().String("lang", "zh", "写作语言模式 zh|en")
-	cmd.Flags().String("mode", "draft", "验证模式 chapter|draft|final")
-	cmd.Flags().Bool("verbose", false, "详细输出")
-	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔）")
-	return cmd
-}

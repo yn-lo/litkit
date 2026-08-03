@@ -5,24 +5,40 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 )
 
+// paramError 表示参数校验错误（退出码 2）。
+type paramError struct{ msg string }
+
+func (e *paramError) Error() string { return e.msg }
+
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
-		// cobra 已自行输出错误信息；按 api.md 退出码语义
-		os.Exit(1)
+	os.Exit(run())
+}
+
+// run 执行 CLI 并返回退出码（避免 os.Exit 跳过 defer）。
+func run() int {
+	d := loadDeps()
+	defer d.Close()
+	if err := newRootCmd(d).Execute(); err != nil {
+		var pe *paramError
+		if errors.As(err, &pe) {
+			return 2
+		}
+		return 1
 	}
+	return 0
 }
 
 // newRootCmd 构造根命令并注册全部子命令。
 //
 // 子命令清单与 PRD 7.1 一致；新增功能须同步 MCP 注册（FR-IFACE-03）。
-func newRootCmd() *cobra.Command {
-	d := loadDeps()
+func newRootCmd(d *deps) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "litkit",
 		Short: "国内学术写作场景的论文工具包",
@@ -37,14 +53,14 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 	}
 	root.AddCommand(
 		newInitCmd(d.cfg),
-		newSearchCmd(d.searcher, d.cfg),
+		newSearchCmd(d.searcher, d.registry, d.cfg),
 		newSourcesCmd(d.registry),
 		newMetadataCmd(),
 		newManuscriptCmd(),
 		newExportCmd(),
 		newLibraryCmd(d.store),
 		newLintCmd(),
-		newVerifyCmd(),
+		newVerifyCmd(d.cfg),
 	)
 	return root
 }

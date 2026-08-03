@@ -99,10 +99,10 @@ func TestParseBiorxivJSON_invalidJSON(t *testing.T) {
 
 func TestBiorxivSource_Search_filtersByKeyword(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 验证请求路径含 server 与 NA interval
+		// 验证请求路径为 /details/{server}/{数字 interval}
 		path := r.URL.Path
-		if !strings.Contains(path, "/biorxiv/") {
-			t.Errorf("路径应含 /biorxiv/，got %q", path)
+		if want := "/details/biorxiv/5"; !strings.HasSuffix(path, want) {
+			t.Errorf("路径应以 %s 结尾（interval=MaxResults），got %q", want, path)
 		}
 		_, _ = w.Write([]byte(biorxivSample))
 	}))
@@ -150,5 +150,25 @@ func TestBiorxivSource_Search_medrxivName(t *testing.T) {
 	src := NewBiorxivSource("medrxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
 	if src.Name() != "medrxiv" {
 		t.Errorf("Name 应为 medrxiv，got %q", src.Name())
+	}
+}
+
+func TestBiorxivSource_Search_zeroMaxResultsFallsBackTo100(t *testing.T) {
+	// MaxResults=0 时 interval 回退 100（不是不截断）
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_, _ = w.Write([]byte(biorxivSample))
+	}))
+	defer srv.Close()
+
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src.BaseURL = srv.URL
+
+	if _, err := src.Search(context.Background(), "", SearchOptions{}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if want := "/details/biorxiv/100"; !strings.HasSuffix(path, want) {
+		t.Errorf("MaxResults=0 应回退 interval=100，got %q", path)
 	}
 }

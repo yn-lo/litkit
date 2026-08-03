@@ -29,13 +29,21 @@ type deps struct {
 	searcher *core.Searcher
 }
 
+// Close 释放依赖持有的资源（文献库连接）。
+func (d *deps) Close() {
+	if d.store != nil {
+		_ = d.store.Close()
+	}
+}
+
 // loadDeps 加载配置并组装依赖。
 // 配置加载失败时退化为默认值并打印告警，不阻断 CLI（优雅降级）。
 // 未设置 LITKIT_WORK_DIR 时 store 为空：init/search/lib 在命令层拒绝（errNoWorkDir）。
 func loadDeps() *deps {
 	cfg, err := config.Load()
 	if err != nil {
-		// 配置加载失败不阻断：用默认值继续，让 CLI 仍可用
+		// 配置加载失败不阻断：用默认值继续，让 CLI 仍可用；
+		// WorkDir 仍从环境变量读取，避免丢失用户已声明的工作目录
 		cfg = &config.Config{
 			Lang:              config.DefaultLang,
 			HTTPTimeoutMS:     config.DefaultHTTPTimeoutMS,
@@ -43,8 +51,9 @@ func loadDeps() *deps {
 			DefaultMaxResults: config.DefaultMaxResults,
 			RecentYears:       config.DefaultRecentYears,
 			SearchMode:        config.DefaultSearchMode,
+			WorkDir:           os.Getenv("LITKIT_WORK_DIR"),
 		}
-		fmt.Fprintf(os.Stderr, "litkit: config load failed, using defaults: %v\n", err)
+		fmt.Fprintf(os.Stderr, "litkit: 配置加载失败，使用默认值: %v\n", err)
 	}
 	reg := sources.NewDefaultRegistry(cfg)
 

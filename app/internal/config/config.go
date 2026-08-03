@@ -112,6 +112,14 @@ func loadFrom(envFile string) (*Config, error) {
 		EmbeddingProvider:     getenvDefault("LITKIT_EMBEDDING_PROVIDER", DefaultEmbeddingProvider),
 		EmbeddingAPIKey:       os.Getenv("LITKIT_EMBEDDING_API_KEY"),
 	}
+	// 负数/零值下界钳制：负重试次数会使 httpclient 重试循环不执行而返回 nil 响应；
+	// 非正超时会退化为无超时
+	if cfg.HTTPRetries < 0 {
+		cfg.HTTPRetries = 0
+	}
+	if cfg.HTTPTimeoutMS <= 0 {
+		cfg.HTTPTimeoutMS = DefaultHTTPTimeoutMS
+	}
 	return cfg, nil
 }
 

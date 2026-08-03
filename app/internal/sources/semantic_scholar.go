@@ -123,8 +123,11 @@ func (s *SemanticScholarSource) buildURL(query string, opts SearchOptions) (stri
 	q.Set("limit", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	q.Set("fields", "title,abstract,year,venue,externalIds,authors,citationCount")
 	if opts.Year != 0 {
-		// S2 年份过滤：YYYY-YYYY 范围
+		// S2 年份过滤：YYYY-YYYY 范围（Year 优先于 Since）
 		q.Set("year", fmt.Sprintf("%d-%d", opts.Year, opts.Year))
+	} else if opts.Since != 0 {
+		// S2 支持开区间写法：YYYY- 表示 Since 年及以后
+		q.Set("year", fmt.Sprintf("%d-", opts.Since))
 	}
 	return s.BaseURL + "?" + q.Encode(), nil
 }

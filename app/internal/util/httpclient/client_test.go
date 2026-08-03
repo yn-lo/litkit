@@ -26,7 +26,7 @@ func TestClient_Do_successNoRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: %d", resp.StatusCode)
 	}
@@ -55,7 +55,7 @@ func TestClient_Do_retriesOn429(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("重试后应 200，got %d", resp.StatusCode)
 	}
@@ -82,7 +82,7 @@ func TestClient_Do_retriesOn503(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("503 重试后应 200，got %d", resp.StatusCode)
 	}
@@ -102,7 +102,7 @@ func TestClient_Do_givesUpAfterMaxRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("应返回最后的 429，got %d", resp.StatusCode)
 	}
@@ -126,7 +126,7 @@ func TestClient_Do_doesNotRetryOn400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("应返回 400，got %d", resp.StatusCode)
 	}

@@ -80,6 +80,20 @@ func TestParseArxivAtom(t *testing.T) {
 	}
 }
 
+func TestExtractArxivID(t *testing.T) {
+	cases := map[string]string{
+		"http://arxiv.org/abs/2301.00001v1":       "2301.00001",
+		"http://arxiv.org/pdf/2402.00002v3":       "2402.00002",
+		"http://arxiv.org/abs/solv-int/9612001v2": "solv-int/9612001", // 旧式归档名含 'v'，不得误切归档名
+		"http://arxiv.org/abs/solv-int/9612001":   "solv-int/9612001", // 无版本号时归档名保持完整
+	}
+	for in, want := range cases {
+		if got := extractArxivID(in); got != want {
+			t.Errorf("extractArxivID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestParseArxivAtom_emptyFeed(t *testing.T) {
 	papers, err := parseArxivAtom([]byte(`<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom"></feed>`))

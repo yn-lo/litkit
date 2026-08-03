@@ -74,7 +74,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
 	got := string(data)
-	for _, want := range []string{"litkit search", "--mode", "撰写硬性规定", "[cite:citeKey]", "litkit verify"} {
+	for _, want := range []string{"litkit search", "--mode", "撰写硬性规定", "[@citeKey]", "litkit verify"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}

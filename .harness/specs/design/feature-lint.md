@@ -27,7 +27,7 @@ AGENTS.md 携带由 manuscript-spec.yaml 渲染的「撰写硬性规定」段（
   - zh 专属：全半角标点、中文引号、的地得、句式冗余、AI 痕迹（FR-LINT-02）
   - en 专属：冠词、时态、学术措辞（FR-LINT-03）
   - 通用：编号层级、P 值/统计量/百分率、引用占位符、字数阈值
-- `verify`：--lang/--verbose/--rule/--mode（chapter/draft/final），三要素报错（FR-LINT-05）
+- `verify`：--lang/--mode（chapter/draft/final）/--rule/--skip，三要素报错（FR-LINT-05）
 - checklist.md 人工审查清单（M 类规则）（FR-LINT-06）
 - manuscript-spec.yaml 阈值配置：字数/引用数/章节/标题层级/引用样式（FR-LINT-07）
 - 引用验证（LLM 评分，增量缓存）（FR-LINT-08，三期）
@@ -42,14 +42,15 @@ AGENTS.md 携带由 manuscript-spec.yaml 渲染的「撰写硬性规定」段（
 ### internal/lint
 `spec.go`：ManuscriptSpec 类型 + yaml 解析/校验/默认值。
 `harness.go`：.litkit 目录生成（go:embed 模板）+ RenderWritingRules（yaml → AGENTS.md 事前指导段）。
-服务层；后续 verify 规则函数注册表也落于此（FR-LINT-05）。
+`verify.go`：规则函数注册表 + lint.Run() 纯函数入口（无 IO，CLI 是薄壳）。
+服务层；verify 规则函数注册表已落地（FR-LINT-05）。
 
 ### templates（go:embed 编译进二进制）
 `internal/lint/templates/`：rules.md（R0-R9 通用规则，langs 标注）、checklist.md、
 manuscript-spec.yaml、verifier_models.json。
 
 ### 入口层
-`litkit init`（--type/--lang/--refresh/--force）+ 后续 `litkit verify`（FR-IFACE-03 两处注册）。
+`litkit init`（--type/--lang/--refresh/--force）+ `litkit verify`（--lang/--mode/--rule/--skip，FR-IFACE-03 两处注册）。
 
 ## 关键规则/约束
 
@@ -63,12 +64,20 @@ manuscript-spec.yaml、verifier_models.json。
 - verify 报错含三要素：问题 / 修复 / 规则编号（FR-LINT-05）
 - lint init 产物零外部文件依赖（go:embed）
 
+## verify 实现要点（已落地）
+
+- **19 条规则**：16 A 类（自动判定）+ 3 S 类（半自动）；M 类（R2.4/R4.3）仅输出人工核对提示，不计入 violations
+- **模式递增**：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文），高模式包含低模式全部规则
+- **Markdown 分段**：排除代码块/参考文献/表格后检查 Body
+- **纯函数设计**：lint.Run() 无 IO，接收文本与配置返回 Report；CLI 是薄壳（读文件 → Run → 输出 JSON）
+- **exitHint 三值**：pass / fix_and_rerun / manual_review；退出码 0=通过或仅需人工复核，1=有 A 类违规
+
 ## 测试要求
 
 - [x] manuscript-spec.yaml 解析：默认值 / 自定义 / 非法配置报错（FR-LINT-07）
 - [x] RenderWritingRules：zh/en 各自渲染、阈值注入、章节按类型
 - [x] init 集成：.litkit 四件套、--type review 生效、--refresh 重渲染且不改 yaml、无 force 不覆盖
-- [ ] zh/en 各自违规样例全部被检出（FR-LINT-02/03 验收，verify 实现时）
-- [ ] 三要素完整性测试：rule_id / problem / suggestion 全有（verify 实现时）
-- [ ] mode 递增范围测试：chapter/draft/final 启用规则递增（verify 实现时）
+- [x] zh/en 各自违规样例全部被检出（FR-LINT-02/03 验收）
+- [x] 三要素完整性测试：rule_id / problem / suggestion 全有
+- [x] mode 递增范围测试：chapter/draft/final 启用规则递增
 - [ ] CLI 与 MCP 一致性测试（FR-IFACE-03，M5）
