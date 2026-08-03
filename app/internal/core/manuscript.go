@@ -1,0 +1,159 @@
+// manuscript.go 手稿占位符解析流水线（FR-REF-09）。
+//
+// 正文中 [@token] 形式的占位符（Pandoc 风格）：
+//   - 裸 token 视为 citeKey，查本地库（先精确匹配，未命中再大写重试一次）
+//   - 带前缀 doi:/pmid:/arxiv:/title: 的 token 经 MetadataFetcher 现场反查，成功后 UpsertPaper 入库取 citeKey
+//   - 解析失败（库未命中、Fetch 未命中或错误）记入 Unresolved，不静默丢弃
+//
+// 同一论文（ComputeID 去重）无论被引用几次只占一个编号，按首次出现顺序编号。
+
+package core
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"litkit/internal/model"
+)
+
+// PaperStore 手稿流水线所需的最小存储接口（便于测试注入 fake）。
+type PaperStore interface {
+	GetByCiteKey(citeKey string) (*model.Paper, error)
+	UpsertPaper(p model.Paper) (string, bool, error)
+}
+
+// ManuscriptResult 手稿处理产物。
+type ManuscriptResult struct {
+	Text        string            // 占位符替换后的正文
+	CitationMap map[string]string // token（原文写法）→ 正文引用标记，如 "[1]" 或 "(Vaswani, 2017)"
+	Papers      []model.Paper     // 按首次出现顺序、去重后的论文（第 i 篇引用编号 = i+1）
+	Unresolved  []string          // 未解析 token（原文出现顺序、去重）
+}
+
+// placeholderRe 匹配 [@token] 占位符（token 内不含 [ 与 ]；空 token [@] 天然不匹配）。
+var placeholderRe = regexp.MustCompile(`\[@([^\[\]]+)\]`)
+
+// idTypePrefixes 支持的反查前缀（小写，与 MetadataFetcher.Fetch 的 id_type 对应）。
+var idTypePrefixes = []string{"doi:", "pmid:", "arxiv:", "title:"}
+
+// ProcessManuscript 解析手稿中 [@token] 占位符并生成引用表。
+//
+// style 决定正文引用标记：GB7714/IEEE 用 "[n]"；APA 用 "(Author, Year)"。
+// per-token 解析失败只记入 Unresolved 不中断流水线；仅参数级错误（未知 style）返回 error。
+func ProcessManuscript(ctx context.Context, store PaperStore, fetcher *MetadataFetcher, src string, style Style) (*ManuscriptResult, error) {
+	switch style {
+	case StyleGB7714, StyleAPA, StyleIEEE:
+	default:
+		return nil, fmt.Errorf("manuscript: 未知样式 %q（支持 gb7714-2025|apa|ieee）", style)
+	}
+
+	res := &ManuscriptResult{CitationMap: make(map[string]string)}
+	seen := make(map[string]int)    // paper.ID → Papers 下标
+	unseen := make(map[string]bool) // 已记入 Unresolved 的 token（去重）
+
+	res.Text = placeholderRe.ReplaceAllStringFunc(src, func(m string) string {
+		token := m[2 : len(m)-1] // 去掉 "[@" 与 "]"
+		p, err := resolvePaper(ctx, store, fetcher, token)
+		if err != nil || p == nil {
+			if !unseen[token] {
+				unseen[token] = true
+				res.Unresolved = append(res.Unresolved, token)
+			}
+			return m // 保留原占位符不动
+		}
+		if p.ID == "" {
+			p.ID = p.ComputeID()
+		}
+		idx, ok := seen[p.ID]
+		if !ok {
+			idx = len(res.Papers)
+			seen[p.ID] = idx
+			res.Papers = append(res.Papers, *p)
+		}
+		mark := citationMark(res.Papers[idx], style, idx+1)
+		res.CitationMap[token] = mark
+		return mark
+	})
+	return res, nil
+}
+
+// resolvePaper 解析单个 token 为论文；失败返回 (nil, nil)。
+//
+// 裸 token → 视为 citeKey 查库（先精确，未命中再 strings.ToUpper 一次）；
+// 带前缀 → MetadataFetcher.Fetch 现场反查，成功后 UpsertPaper 入库并以返回的 citeKey 补回。
+func resolvePaper(ctx context.Context, store PaperStore, fetcher *MetadataFetcher, token string) (*model.Paper, error) {
+	if idType, ident, ok := splitPrefixed(token); ok {
+		if ident == "" || fetcher == nil {
+			return nil, nil
+		}
+		p, err := fetcher.Fetch(ctx, idType, ident)
+		if err != nil || p == nil {
+			return nil, nil
+		}
+		key, _, err := store.UpsertPaper(*p)
+		if err != nil {
+			return nil, nil
+		}
+		p.CiteKey = key
+		return p, nil
+	}
+	p, err := store.GetByCiteKey(token)
+	if err != nil || p != nil {
+		return p, err
+	}
+	return store.GetByCiteKey(strings.ToUpper(token))
+}
+
+// splitPrefixed 识别带前缀 token，返回 (idType, identifier, 是否带前缀)。
+// 前缀大小写不敏感（如 DOI: 等同 doi:）；identifier 去首尾空白。
+func splitPrefixed(token string) (string, string, bool) {
+	lower := strings.ToLower(token)
+	for _, pfx := range idTypePrefixes {
+		if strings.HasPrefix(lower, pfx) {
+			return strings.TrimSuffix(pfx, ":"), strings.TrimSpace(token[len(pfx):]), true
+		}
+	}
+	return "", "", false
+}
+
+// citationMark 生成正文引用标记：GB7714/IEEE 为 "[n]"，APA 为 "(Author, Year)"。
+func citationMark(p model.Paper, style Style, number int) string {
+	if style == StyleAPA {
+		return apaInline(p)
+	}
+	return "[" + strconv.Itoa(number) + "]"
+}
+
+// apaInline 生成 APA 正文标记：
+// 1 作者 → (Family, Year)；2 作者 → (A & B, Year)；≥3 → (A et al., Year)；
+// year<=0 → n.d.；无作者 → (Title 首词, Year) 的简化形式。
+func apaInline(p model.Paper) string {
+	name := ""
+	if len(p.Authors) > 0 {
+		name = authorLastName(p.Authors[0])
+		switch {
+		case len(p.Authors) == 2:
+			name += " & " + authorLastName(p.Authors[1])
+		case len(p.Authors) > 2:
+			name += " et al."
+		}
+	} else if words := strings.Fields(p.Title); len(words) > 0 {
+		name = words[0]
+	}
+	year := "n.d."
+	if p.Year > 0 {
+		year = strconv.Itoa(p.Year)
+	}
+	return "(" + name + ", " + year + ")"
+}
+
+// authorLastName 取作者姓（Family），缺省回落 Given。
+func authorLastName(a model.Author) string {
+	if f := strings.TrimSpace(a.Family); f != "" {
+		return f
+	}
+	return strings.TrimSpace(a.Given)
+}

@@ -43,16 +43,16 @@ owner: litkit-core
 
 **验收**：对 5 个默认源逐一实测（触网），平台能力矩阵与实测一致（PRD 第 8 章）；每源连续 10 次检索无 429/封禁（NFR-PERF-04）。
 
-## M3 元数据与引用
+## M3 元数据与引用（已完成）
 
 **范围**：占位符解析、元数据反查、引用渲染、手稿流水线。
 
 | 任务 | 对应 FR |
 |---|---|
 | core/metadata：doi/pmid/arxiv/title → Paper | FR-REF-01/02 |
-| 引用渲染：内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL | FR-REF-03/04/07 |
+| 引用渲染：内置格式化器（GB/T 7714—2025 / APA / IEEE，原生实现；CSL 留 P1） | FR-REF-03/04/07 |
 | BibTeX / RIS 生成 | FR-REF-05/06 |
-| core/manuscript：占位符解析、citation_map、unresolved | FR-REF-08/09 |
+| core/manuscript：`[@citeKey]` 占位符解析、citation_map、unresolved | FR-REF-08/09 |
 | Pandoc docx 可选转换与降级 | FR-REF-11 |
 | `litkit metadata` / `litkit manuscript` / `litkit export` | FR-REF-10 |
 | core/library：SQLite 入库（含摘要）、增删查 | FR-LIB-01/02/03 |

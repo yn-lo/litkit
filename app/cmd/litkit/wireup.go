@@ -14,6 +14,7 @@ import (
 	"litkit/internal/core"
 	"litkit/internal/sources"
 	"litkit/internal/storage"
+	"litkit/internal/util/httpclient"
 )
 
 // errNoWorkDir 未设置 LITKIT_WORK_DIR 的公共错误。
@@ -27,6 +28,7 @@ type deps struct {
 	registry *sources.Registry
 	store    *storage.Store
 	searcher *core.Searcher
+	fetcher  *core.MetadataFetcher // 标识符反查（metadata/manuscript 用）
 }
 
 // Close 释放依赖持有的资源（文献库连接）。
@@ -71,6 +73,10 @@ func loadDeps() *deps {
 		registry: reg,
 		store:    store,
 		searcher: core.NewSearcher(reg, store, cfg.DefaultMaxResults),
+		fetcher: core.NewMetadataFetcher(httpclient.New(httpclient.Options{
+			TimeoutMS:  cfg.HTTPTimeoutMS,
+			MaxRetries: cfg.HTTPRetries,
+		})),
 	}
 }
 

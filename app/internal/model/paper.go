@@ -12,6 +12,22 @@ type Author struct {
 	Family string `json:"family,omitempty"`
 }
 
+// DocType 文献类型标识（GB/T 7714—2025 新文献类型，C3）。
+const (
+	DocTypeArticle        = "article"
+	DocTypeJournalArticle = "journal-article"
+	DocTypePreprint       = "preprint"
+	DocTypeDataset        = "dataset"
+	DocTypeBook           = "book"
+	DocTypeMonograph      = "monograph"
+	DocTypeConference     = "conference"
+	DocTypeProceedings    = "proceedings"
+	DocTypeReport         = "report"
+	DocTypeThesis         = "thesis"
+	DocTypePatent         = "patent"
+	DocTypeSoftware       = "software"
+)
+
 // Paper 论文元数据，摘要工作流的核心载体。
 //
 // 可选字段用零值（空串 / 0）表示"不可用"，JSON 输出中空串等价于 null 语义。
@@ -28,9 +44,12 @@ type Paper struct {
 	PMID      string   `json:"pmid"`
 	ArXivID   string   `json:"arxivId"`
 	URL       string   `json:"url"`
-	Source    string   `json:"source"`    // 来源平台标识
-	DocType   string   `json:"docType"`   // 文献类型：article/preprint/dataset/...（GB/T 7714—2025）
-	Citations int      `json:"citations"` // 源提供时
+	Source    string   `json:"source"`           // 来源平台标识
+	DocType   string   `json:"docType"`          // 文献类型：article/preprint/dataset/...（GB/T 7714—2025）
+	Volume    string   `json:"volume,omitempty"` // 卷（GB/T 7714 卷）
+	Number    string   `json:"number,omitempty"` // 期（GB/T 7714 期）
+	Pages     string   `json:"pages,omitempty"`  // 页码（如 "123-135" 或 "e1234"）
+	Citations int      `json:"citations"`        // 源提供时
 }
 
 // ComputeID 按可用标识符优先级生成稳定内部 ID（sha256 前缀）。

@@ -132,6 +132,43 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("storage migrate: exec %s: %w", e.Name(), xerr)
 		}
 	}
+	return s.ensureColumns()
+}
+
+// ensureColumns 为旧库补充新增列（ALTER TABLE ADD COLUMN 幂等：先查 PRAGMA table_info）。
+func (s *Store) ensureColumns() error {
+	const table = "papers"
+	rows, err := s.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return fmt.Errorf("storage ensure columns: %w", err)
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("storage ensure columns scan: %w", err)
+		}
+		have[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	adds := []struct{ name, ddl string }{
+		{"volume", "ALTER TABLE papers ADD COLUMN volume TEXT NOT NULL DEFAULT ''"},
+		{"number", "ALTER TABLE papers ADD COLUMN number TEXT NOT NULL DEFAULT ''"},
+		{"pages", "ALTER TABLE papers ADD COLUMN pages TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, a := range adds {
+		if !have[a.name] {
+			if _, err := s.db.Exec(a.ddl); err != nil {
+				return fmt.Errorf("storage ensure columns %s: %w", a.name, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -185,10 +222,11 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		}
 		_, err = s.db.Exec(`INSERT INTO papers
 			(dedup_key, cite_key, doi, paper_id, title, authors, abstract, year, venue,
-			 source, doc_type, url, pmid, arxiv_id, citations, fetched_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			key, citeKey, p.DOI, p.ID, p.Title, string(authorsJSON), p.Abstract, p.Year,
-			p.Venue, p.Source, p.DocType, p.URL, p.PMID, p.ArXivID, p.Citations, now)
+			p.Venue, p.Source, p.DocType, p.URL, p.PMID, p.ArXivID, p.Volume, p.Number, p.Pages,
+			p.Citations, now)
 		if err != nil {
 			return "", false, fmt.Errorf("storage upsert insert: %w", err)
 		}
@@ -204,11 +242,15 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		venue=COALESCE(NULLIF(?, ''), venue), source=?,
 		doc_type=COALESCE(NULLIF(?, ''), doc_type), url=COALESCE(NULLIF(?, ''), url),
 		pmid=COALESCE(NULLIF(?, ''), pmid), arxiv_id=COALESCE(NULLIF(?, ''), arxiv_id),
+		volume=COALESCE(NULLIF(?, ''), volume),
+		number=COALESCE(NULLIF(?, ''), number),
+		pages=COALESCE(NULLIF(?, ''), pages),
 		citations=?, fetched_at=?
 		WHERE id=?`,
 		p.DOI, p.ID, p.Title, string(authorsJSON),
 		p.Abstract, p.Year, p.Venue, p.Source,
 		p.DocType, p.URL, p.PMID, p.ArXivID,
+		p.Volume, p.Number, p.Pages,
 		p.Citations, now, id)
 	if err != nil {
 		return "", false, fmt.Errorf("storage upsert update: %w", err)
@@ -233,7 +275,7 @@ func (s *Store) UpsertPapers(papers []model.Paper) (int, error) {
 
 // 查询列集合（Upsert 与查询共用，字段顺序必须与 scanPaper 一致）。
 const paperCols = "cite_key, doi, paper_id, title, authors, abstract, year, venue, " +
-	"source, doc_type, url, pmid, arxiv_id, citations, fetched_at"
+	"source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at"
 
 // scanPapers 将结果行扫描为 []model.Paper。
 func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
@@ -246,7 +288,7 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 		)
 		if err := rows.Scan(&p.CiteKey, &p.DOI, &p.ID, &p.Title, &authorsJSON, &p.Abstract,
 			&p.Year, &p.Venue, &p.Source, &p.DocType, &p.URL, &p.PMID, &p.ArXivID,
-			&p.Citations, &fetchedAt); err != nil {
+			&p.Volume, &p.Number, &p.Pages, &p.Citations, &fetchedAt); err != nil {
 			return nil, err
 		}
 		if len(authorsJSON) > 0 {

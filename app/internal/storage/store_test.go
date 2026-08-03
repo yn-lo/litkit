@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -67,6 +68,59 @@ func TestOpen_ReopenKeepsData(t *testing.T) {
 	}
 	if got == nil || got.Title != "Persist" {
 		t.Fatalf("重开后数据应仍在，got %+v", got)
+	}
+}
+
+// TestOpen_OldSchemaAddsNewColumns 旧库迁移：Open 前手工建不含
+// volume/number/pages 的旧版 papers 表，迁移后应自动补列。
+func TestOpen_OldSchemaAddsNewColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultDBName)
+	old, err := sql.Open("sqlite", filepath.ToSlash(path))
+	if err != nil {
+		t.Fatalf("open old db: %v", err)
+	}
+	if _, err := old.Exec(`CREATE TABLE papers (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		dedup_key  TEXT UNIQUE NOT NULL,
+		cite_key   TEXT UNIQUE NOT NULL,
+		doi        TEXT NOT NULL DEFAULT '',
+		paper_id   TEXT NOT NULL DEFAULT '',
+		title      TEXT NOT NULL,
+		authors    TEXT NOT NULL DEFAULT '[]',
+		abstract   TEXT NOT NULL DEFAULT '',
+		year       INTEGER NOT NULL DEFAULT 0,
+		venue      TEXT NOT NULL DEFAULT '',
+		source     TEXT NOT NULL DEFAULT '',
+		doc_type   TEXT NOT NULL DEFAULT '',
+		url        TEXT NOT NULL DEFAULT '',
+		pmid       TEXT NOT NULL DEFAULT '',
+		arxiv_id   TEXT NOT NULL DEFAULT '',
+		citations  INTEGER NOT NULL DEFAULT 0,
+		fetched_at TEXT NOT NULL
+	)`); err != nil {
+		_ = old.Close()
+		t.Fatalf("create old papers: %v", err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatalf("close old db: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	for _, col := range []string{"volume", "number", "pages"} {
+		var n int
+		if err := s.db.QueryRow(
+			"SELECT COUNT(*) FROM pragma_table_info('papers') WHERE name = ?", col,
+		).Scan(&n); err != nil {
+			t.Fatalf("查列 %s: %v", col, err)
+		}
+		if n != 1 {
+			t.Fatalf("旧库迁移后应含列 %s，got %d", col, n)
+		}
 	}
 }
 
@@ -171,6 +225,43 @@ func TestUpsertPaper_TitleWhitespaceNormalized_Dedup(t *testing.T) {
 	}
 	if inserted2 {
 		t.Fatal("标题内部空白归一化后应去重，inserted=false")
+	}
+}
+
+// TestUpsertPaper_RoundTripVolumeNumberPages 卷/期/页 round-trip：
+// 入库带卷期页的论文，取回应一致；二次入库空值不擦除旧值。
+func TestUpsertPaper_RoundTripVolumeNumberPages(t *testing.T) {
+	s := newTestStore(t)
+	p := paper("Vol", "10.1/vol")
+	p.Volume = "42"
+	p.Number = "3"
+	p.Pages = "123-135"
+	k, _, err := s.UpsertPaper(p)
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	got, err := s.GetByCiteKey(k)
+	if err != nil {
+		t.Fatalf("GetByCiteKey: %v", err)
+	}
+	if got.Volume != "42" || got.Number != "3" || got.Pages != "123-135" {
+		t.Fatalf("round-trip 后卷期页应一致，got %+v", got)
+	}
+	// UPDATE 路径：非空 volume 更新、空 number/pages 保留旧值
+	p2 := paper("Vol", "10.1/vol")
+	p2.Volume = "43"
+	if _, _, err := s.UpsertPaper(p2); err != nil {
+		t.Fatalf("二次 UpsertPaper: %v", err)
+	}
+	got, err = s.GetByCiteKey(k)
+	if err != nil {
+		t.Fatalf("GetByCiteKey: %v", err)
+	}
+	if got.Volume != "43" {
+		t.Fatalf("非空 volume 应更新，got %q", got.Volume)
+	}
+	if got.Number != "3" || got.Pages != "123-135" {
+		t.Fatalf("空 number/pages 不应擦除旧值，got %+v", got)
 	}
 }
 

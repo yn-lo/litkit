@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS papers (
     url        TEXT NOT NULL DEFAULT '',
     pmid       TEXT NOT NULL DEFAULT '',
     arxiv_id   TEXT NOT NULL DEFAULT '',
+    volume     TEXT NOT NULL DEFAULT '',
+    number     TEXT NOT NULL DEFAULT '',
+    pages      TEXT NOT NULL DEFAULT '',
     citations  INTEGER NOT NULL DEFAULT 0,
     fetched_at TEXT NOT NULL
 );

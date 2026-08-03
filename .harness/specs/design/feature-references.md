@@ -15,8 +15,8 @@ owner: litkit-core
 ## 范围
 
 ### 包含
-- 占位符解析：`[@doi:]` / `[@pmid:]` / `[@arxiv:]` / `[@title:]`（FR-REF-01）
-- 按标识符取元数据：DOI→CrossRef/OpenAlex，PMID→PubMed，arXiv→Atom，title→CrossRef（FR-REF-02）
+- 占位符解析：裸 `[@citeKey]`（Pandoc 风格，查本地库；FR-REF-01 方案 B）与带前缀 `[@doi:]` / `[@pmid:]` / `[@arxiv:]` / `[@title:]`（现场反查并入库）
+- 按标识符取元数据：DOI→CrossRef，PMID→PubMed，arXiv→Atom，title→CrossRef（FR-REF-02）
 - 引用渲染：zh→GB/T 7714—2025（含预印本[PP]/数据集[DS]类型）、en→APA 7th/IEEE（FR-REF-03/04）
 - BibTeX / RIS 生成（FR-REF-05/06）
 - `manuscript` 完整流水线：formatted.md + refs.bib + refs.ris + references.txt +（可选）docx（FR-REF-08）
@@ -51,9 +51,9 @@ owner: litkit-core
 
 ## 测试要求
 
-- [ ] 占位符解析测试：位置与全文匹配（FR-REF-01）
-- [ ] 内置格式化器测试：GB/T 7714 中英文混排样例；APA/IEEE 编号列表
-- [ ] BibTeX/RIS 生成测试：字段完整性（author/title/year/journal/volume/number/pages/doi/url）
-- [ ] unresolved 测试：未解析占位符出现在列表
+- [x] 占位符解析测试：位置与全文匹配（FR-REF-01）
+- [x] 内置格式化器测试：GB/T 7714 中英文混排样例；APA/IEEE 编号列表
+- [x] BibTeX/RIS 生成测试：字段完整性（author/title/year/journal/volume/number/pages/doi/url）
+- [x] unresolved 测试：未解析占位符出现在列表
 - [ ] Pandoc 缺失降级测试：跳过 docx，其余产物正常
 - [ ] CLI 与 MCP 一致性测试（FR-IFACE-03）
