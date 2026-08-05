@@ -1,7 +1,8 @@
-// agents.go AGENTS.md 渲染：固定头 + 撰写硬性规定（RenderWritingRules）+ 固定尾。
+// agents.go AGENTS.md 渲染。
 //
-// AGENTS.md 由 `litkit init` / `litkit lint init` / MCP `lint_init` 生成，
-// AI agent 在本工作目录工作时自动加载，是「事前指导」的唯一载体。
+// 根 AGENTS.md（项目级通用信息）由 InitProjectInfra 生成。
+// 类型 AGENTS.md（撰写硬性规定）由 InitPaperType 生成，采用方案 C：
+// 自动区（从 yaml 渲染，--refresh 覆盖）+ 人类追加区（自由编辑，不检查）。
 
 package lint
 
@@ -10,70 +11,80 @@ import (
 	"strings"
 )
 
-// agentsHead AGENTS.md 固定头部（配置/命令/检索策略）。
-const agentsHead = "# litkit — AI agent 使用说明\n" +
-	"\n" +
-	"> 本文件由 `litkit init` 生成，AI 在本工作目录工作时自动加载。\n" +
-	"\n" +
-	"## 配置\n" +
-	"\n" +
-	"- 运行 litkit 前须设置 `LITKIT_WORK_DIR=<本目录>`（未设置时 init/search/lib 拒绝执行，FR-LIB-03）\n" +
-	"- 配置文件：`.env`（本目录）；所有默认值可在其中调整\n" +
-	"- 文献库：`litkit.db`（本目录）；删除工作目录即删除文献库（无 TTL）\n" +
-	"- 撰写规范：`.litkit/`（rules.md 规则 / checklist.md 人工清单 / specs/manuscript-spec.yaml 阈值配置）\n" +
-	"\n" +
-	"## 核心命令\n" +
-	"\n" +
-	"- `litkit search \"<英文关键词>\"` 跨源检索（自动入库，输出精简视图）\n" +
-	"  - `-s arxiv,pubmed` 源过滤；`-n 5` 每源条数\n" +
-	"  - `--mode tiab|full` 检索等级（默认 tiab）\n" +
-	"  - `--years N` / `--since YEAR` 时间范围\n" +
-	"  - `--full` 完整元数据与错误\n" +
-	"- `litkit sources` 查看可用源\n" +
-	"- `litkit lib list / search / rm <citeKey> / stats / path` 文献库管理\n" +
-	"- `litkit verify manuscript/*.md` 成稿后机械化验证（三要素：问题/修复/规则编号）\n" +
-	"\n" +
-	"## 检索策略\n" +
-	"\n" +
-	"- 检索词**必须英文**（各源英文语料为主，中文命中率极低，FR-SEARCH-11）\n" +
-	"- 默认 tiab=题目+摘要+关键词；结果不足时用 `--mode full` 全文检索\n" +
-	"- 默认最近 3 年；可 `--years 10` 或 `--since 2015` 放宽\n" +
-	"- 单源失败不阻断整体：`errors` 字段说明原因，退出码 3 = 部分源成功\n"
+// RootAgentsMD 根 AGENTS.md 内容（项目级通用信息，精炼地图文件）。
+// 由 `init` 首次创建，writeIfAbsent 不覆盖用户修改。
+// 引导 AI 去 .litkit/<type>/ 查看详细撰写规定。
+func RootAgentsMD() string {
+	var b strings.Builder
+	b.WriteString("# litkit — AI agent 使用说明\n\n")
+	b.WriteString("> 本文件是项目地图，由 `litkit init` 生成，**不会覆盖用户手动修改**。\n")
+	b.WriteString("> 详细撰写规定请查看 `.litkit/<type-lang>/AGENTS.md`。\n\n")
 
-// agentsTail AGENTS.md 固定尾部（验证与引用）。
-const agentsTail = "## 验证与引用\n" +
-	"\n" +
-	"- 成稿后运行 `litkit verify manuscript/*.md`；人工复核 `.litkit/checklist.md`\n" +
-	"- 引用时写 `[@<citeKey>]` 占位符，不展开元数据；manuscript 流水线按 citeKey\n" +
-	"  生成 GB/T 7714 / APA / IEEE 规范引用\n"
+	b.WriteString("## 配置\n\n")
+	b.WriteString("- 工作目录：`LITKIT_WORK_DIR=<本目录>`\n")
+	b.WriteString("- 配置文件：`.env`（本目录）\n")
+	b.WriteString("- 文献库：`litkit.db`（本目录）\n\n")
 
-// 固定高频硬性规定（zh/en 各一套，写死模板；阈值类从 spec 取可变值）。
-var (
-	zhFixedRules = []string{
+	b.WriteString("## 核心命令\n\n")
+	b.WriteString("- `litkit search \"<英文关键词>\"` 跨源检索（自动入库）\n")
+	b.WriteString("  - `-s arxiv,pubmed` 源过滤；`-n 5` 每源条数\n")
+	b.WriteString("  - `--mode tiab|full` 检索等级；`--years N` 时间范围\n")
+	b.WriteString("  - `--full` 完整元数据与错误\n")
+	b.WriteString("- `litkit sources` 查看可用源\n")
+	b.WriteString("- `litkit lib list / search / rm <citeKey> / stats / path` 文献库管理\n")
+	b.WriteString("- `litkit verify manuscript/*.md --type <type> --lang <lang>` 验证文稿\n\n")
+
+	b.WriteString("## 论文类型与撰写规定\n\n")
+	b.WriteString("每种论文类型有独立的撰写规定，位于 `.litkit/<type-lang>/` 目录下：\n")
+	b.WriteString("- `AGENTS.md` — 撰写硬性规定（AI 每次写作前必读）\n")
+	b.WriteString("- `manuscript-spec.yaml` — 阈值配置（字数/引用数/章节等）\n\n")
+	b.WriteString("查看已注册类型：`ls .litkit/`\n")
+	b.WriteString("追加类型：`litkit init --type review|empirical --lang zh|en`\n\n")
+
+	b.WriteString("## 检索策略\n\n")
+	b.WriteString("- 检索词**必须英文**（各源英文语料为主，中文命中率极低）\n")
+	b.WriteString("- 默认 tiab=题目+摘要+关键词；结果不足时用 `--mode full` 全文检索\n")
+	b.WriteString("- 默认最近 3 年；可 `--years 10` 或 `--since 2015` 放宽\n")
+	b.WriteString("- 单源失败不阻断整体：`errors` 字段说明原因，退出码 3 = 部分源成功\n\n")
+
+	b.WriteString("## 验证与引用\n\n")
+	b.WriteString("- 成稿后运行 `litkit verify` 检查\n")
+	b.WriteString("- 引用用 `[@<citeKey>]` 占位符，不展开元数据\n\n")
+
+	b.WriteString("## 撰写注意事项\n\n")
+	b.WriteString("- 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表\n")
+	b.WriteString("- 摘要和参考文献由 litkit 流水线自动生成，写入手稿会干扰 lint 实体检查\n")
+	return b.String()
+}
+
+// RenderWritingRules 渲染类型 AGENTS.md 的「撰写硬性规定」段（自动区）。
+//
+// 固定高频规则 + spec 可变阈值（字数/引用数/章节/标题）→ 精简祈使句。
+// 自动区由 <!-- lint:auto-start --> 和 <!-- lint:auto-end --> 包裹。
+func RenderWritingRules(spec *ManuscriptSpec) string {
+	zhFixedRules := []string{
 		"全文中文撰写；英文仅限专业术语首次括注",
 		"正文禁止：列表、加粗、回引（如\"见本文2.3节\"）、AI 痕迹词（\"首次证实\"\"颠覆性\"）",
 		"P 值：≥0.01 保留 2 位（P=0.03）；0.001≤P<0.01 保留 3 位（P=0.006）；P<0.001 写 \"P<0.001\"",
 		"统计量保留 2 位小数（χ²=68.40）；表格 % 提取到表头统一标注",
 	}
-	enFixedRules = []string{
+	enFixedRules := []string{
 		"Write in academic English; define abbreviations at first use",
 		"No lists or bold in body text; no back-references or self-promotion",
 		"Report statistics with consistent decimals; percentages rounded to 1 decimal",
 	}
-)
 
-// RenderWritingRules 渲染 AGENTS.md 的「撰写硬性规定」段（事前指导）。
-//
-// 固定高频规则 + spec 可变阈值（字数/引用数/章节/标题）→ 精简祈使句。
-// 不是 yaml 的翻译，而是 AI 写稿时可执行的硬性规定。
-func RenderWritingRules(spec *ManuscriptSpec) string {
 	rules := zhFixedRules
 	if spec.Lang == LangEN {
 		rules = enFixedRules
 	}
 
 	var b strings.Builder
-	b.WriteString("## 撰写硬性规定（事前指导，源自 .litkit/specs/manuscript-spec.yaml）\n\n")
+	b.WriteString("<!-- lint:auto-start -->\n")
+	b.WriteString("> **自动生成，请勿手动编辑**\n")
+	b.WriteString("> 修改阈值请编辑 `.litkit/<type-lang>/manuscript-spec.yaml`，然后运行\n")
+	b.WriteString("> `litkit init --refresh --type <type> --lang <lang>` 重新生成本段。\n\n")
+	b.WriteString("## 撰写硬性规定（事前指导，源自 manuscript-spec.yaml）\n\n")
 	// 论文类型与目标期刊
 	typeLabel := "四段式实证"
 	if spec.PaperType == PaperTypeReview {
@@ -96,10 +107,19 @@ func RenderWritingRules(spec *ManuscriptSpec) string {
 		spec.WordCount.Total[0], spec.WordCount.Total[1],
 		spec.WordCount.Abstract[0], spec.WordCount.Abstract[1],
 		spec.WordCount.Paragraph[0], spec.WordCount.Paragraph[1])
+	b.WriteString("<!-- lint:auto-end -->\n\n")
 	return b.String()
 }
 
-// RenderAgentsMD 渲染完整 AGENTS.md（固定头 + 撰写硬性规定 + 固定尾）。
+// TypeAgentsMD 渲染类型论文的完整 AGENTS.md（自动区 + 追加区）。
+func TypeAgentsMD(spec *ManuscriptSpec) string {
+	return RenderWritingRules(spec) +
+		"## 附加撰写要求（人类自由编辑，verify 不检查此段）\n\n" +
+		"- \n"
+}
+
+// RenderAgentsMD 保留向后兼容：渲染完整 AGENTS.md（根级 + 撰写规定）。
+// 新代码应使用 RootAgentsMD + TypeAgentsMD。
 func RenderAgentsMD(spec *ManuscriptSpec) string {
-	return agentsHead + "\n" + RenderWritingRules(spec) + "\n" + agentsTail
+	return RootAgentsMD() + "\n" + RenderWritingRules(spec) + "\n"
 }

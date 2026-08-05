@@ -34,6 +34,7 @@ func newMcpCmd(d *deps) *cobra.Command {
 				Store:    d.store,
 				Searcher: d.searcher,
 				Fetcher:  d.fetcher,
+				Fulltext: d.fulltext,
 			}); err != nil && !errors.Is(err, context.Canceled) {
 				return err
 			}

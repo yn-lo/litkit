@@ -23,6 +23,9 @@ const (
 	StyleAPA Style = "apa"
 	// StyleIEEE 英文模式：IEEE（编号列表输出，FR-REF-04）。
 	StyleIEEE Style = "ieee"
+	// StylePreview 预览模式：内联标记自描述（[@doi:{DOI} — {标题}] 或 [@标题]），
+	// 便于人工核查引用指向，不生成引用列表。
+	StylePreview Style = "preview"
 )
 
 // docTypeMark 文献类型标志（GB/T 7714—2025 新文献类型，C3）。

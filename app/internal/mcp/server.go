@@ -31,6 +31,7 @@ type Deps struct {
 	Store    *storage.Store
 	Searcher *core.Searcher
 	Fetcher  core.Fetcher
+	Fulltext *core.FulltextFetcher // 全文获取（fetch_paper，FR-FETCH）
 }
 
 // errNoStore 文献库不可用时 lib/manuscript 类工具的公共错误。
@@ -58,6 +59,7 @@ func New(deps Deps) *gomcp.Server {
 
 	registerSearchPapers(s, deps)
 	registerGetPaperMetadata(s, deps)
+	registerFetchPaper(s, deps)
 	registerProcessManuscript(s, deps)
 	registerExportReferences(s, deps)
 	registerLintInit(s, deps)
@@ -81,6 +83,7 @@ type searchPapersIn struct {
 	Since               int      `json:"since,omitempty" jsonschema:"起始年份（含）；与 year 互斥，year 优先"`
 	Mode                string   `json:"mode,omitempty" jsonschema:"检索等级 tiab|full（默认 tiab）"`
 	KeepNoAbstract      bool     `json:"keepNoAbstract,omitempty" jsonschema:"保留无摘要论文（默认过滤，FR-SEARCH-03）"`
+	Exclude             []string `json:"exclude,omitempty" jsonschema:"排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库）"`
 	Full                bool     `json:"full,omitempty" jsonschema:"返回完整元数据（默认精简视图 PaperSummary，FR-IFACE-04）"`
 }
 
@@ -112,6 +115,7 @@ func registerSearchPapers(s *gomcp.Server, deps Deps) {
 			Since:          in.Since,
 			Mode:           in.Mode,
 			KeepNoAbstract: in.KeepNoAbstract,
+			Exclude:        in.Exclude,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -163,12 +167,35 @@ func registerGetPaperMetadata(s *gomcp.Server, deps Deps) {
 	})
 }
 
+// ---- fetch_paper（FR-FETCH）----
+
+type fetchPaperIn struct {
+	Ref string `json:"ref" jsonschema:"论文引用：cite_key（3 字母）或 DOI；论文须已入库"`
+}
+
+func registerFetchPaper(s *gomcp.Server, deps Deps) {
+	gomcp.AddTool[fetchPaperIn, any](s, &gomcp.Tool{
+		Name:        "fetch_paper",
+		Description: "取回论文全文：Unpaywall OA 优先 → Sci-Hub 兜底（失败静默）→ PDF 落盘 + 全文缓存入库；库中已缓存直接返回（via=cache）",
+	}, func(ctx context.Context, _ *gomcp.CallToolRequest, in fetchPaperIn) (*gomcp.CallToolResult, any, error) {
+		if deps.Store == nil || deps.Fulltext == nil {
+			return nil, nil, errNoStore
+		}
+		res, err := deps.Fulltext.Fetch(ctx, in.Ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, res, nil
+	})
+}
+
 // ---- process_manuscript ----
 
 type processManuscriptIn struct {
 	Text         string `json:"text" jsonschema:"手稿正文，引用写 [@citeKey] 或 [@doi:]/[@pmid:]/[@arxiv:]/[@title:] 占位符"`
 	Lang         string `json:"lang,omitempty" jsonschema:"写作语言模式 zh|en（默认 zh）"`
 	Style        string `json:"style,omitempty" jsonschema:"引用样式 gb7714-2025|apa|ieee（默认按 lang：zh→gb7714-2025、en→apa）"`
+	Preview      bool   `json:"preview,omitempty" jsonschema:"预览模式：内联标记自描述，不生成引用列表"`
 	GenerateDocx bool   `json:"generateDocx,omitempty" jsonschema:"是否生成 docx（需安装 pandoc；缺 pandoc 时静默跳过）"`
 	OutputDir    string `json:"outputDir,omitempty" jsonschema:"产物输出目录（默认工作目录；目录为空时只返回文本不写文件）"`
 }
@@ -198,19 +225,25 @@ func registerProcessManuscript(s *gomcp.Server, deps Deps) {
 		if err != nil {
 			return nil, out, err
 		}
-		res, err := core.ProcessManuscript(ctx, deps.Store, deps.Fetcher, in.Text, style)
-		if err != nil {
-			return nil, out, err
+		if in.Preview {
+			style = core.StylePreview
 		}
-		refList, err := core.RenderReferenceList(res.Papers, style)
+		res, err := core.ProcessManuscript(ctx, deps.Store, deps.Fetcher, in.Text, style)
 		if err != nil {
 			return nil, out, err
 		}
 		out = processManuscriptOut{
 			ProcessedText: res.Text,
-			ReferenceList: refList,
 			CitationMap:   res.CitationMap,
 			Unresolved:    res.Unresolved,
+		}
+		// preview 模式：正文标记已自描述，不生成引用列表。
+		if !in.Preview {
+			refList, err := core.RenderReferenceList(res.Papers, style)
+			if err != nil {
+				return nil, out, err
+			}
+			out.ReferenceList = refList
 		}
 
 		outDir := in.OutputDir
@@ -305,7 +338,7 @@ type lintInitOut struct {
 func registerLintInit(s *gomcp.Server, deps Deps) {
 	gomcp.AddTool[lintInitIn, lintInitOut](s, &gomcp.Tool{
 		Name:        "lint_init",
-		Description: "初始化撰写约束（.litkit/ 四件套 + AGENTS.md 撰写段）",
+		Description: "初始化撰写约束（.litkit/<type>/ + AGENTS.md 撰写段）",
 	}, func(_ context.Context, _ *gomcp.CallToolRequest, in lintInitIn) (*gomcp.CallToolResult, lintInitOut, error) {
 		out := lintInitOut{}
 		dir := in.ProjectDir
@@ -330,39 +363,52 @@ func registerLintInit(s *gomcp.Server, deps Deps) {
 			return nil, out, fmt.Errorf("mcp: lint_init: 无效 paperType %q（可选 review|empirical）", paperType)
 		}
 
-		created, err := lint.InitHarness(dir, in.Force)
+		// 项目基础设施（幂等）
+		created, err := lint.InitProjectInfra(dir, in.Force)
 		if err != nil {
 			return nil, out, err
 		}
 
-		// AGENTS.md：优先加载现有 yaml（保持用户阈值），否则按 type/lang 生成默认
-		specPath := lint.SpecPath(dir)
+		// 论文类型目录
+		typeCreated, err := lint.InitPaperType(dir, paperType, lang, in.Force)
+		if err != nil {
+			return nil, out, err
+		}
+		created = append(created, typeCreated...)
+
+		// 加载 spec，写入 journal
+		specPath := lint.SpecPath(dir, paperType, lang)
 		spec, err := lint.LoadSpec(specPath)
 		if err != nil {
 			spec = lint.SpecForType(paperType, lang)
 		}
-		// 传入的 paperType/journal 覆盖 spec（首次 init 或 force 时生效）
 		if in.PaperType != "" {
 			spec.PaperType = paperType
 		}
 		if in.Journal != "" {
 			spec.Journal = in.Journal
 		}
-		// 将覆盖后的 spec 写回 yaml
 		if err := lint.WriteSpec(specPath, spec); err != nil {
 			return nil, out, fmt.Errorf("mcp: lint_init: 写入 spec: %w", err)
 		}
-		agentsPath := filepath.Join(dir, "AGENTS.md")
+
+		// 类型 AGENTS.md（自动区 + 追加区）
+		agentsDir := lint.PapersDirPath(dir, paperType, lang)
+		if err := os.MkdirAll(agentsDir, agentsFilePerm); err != nil {
+			return nil, out, err
+		}
+		agentsPath := filepath.Join(agentsDir, "AGENTS.md")
+		agentsContent := lint.TypeAgentsMD(spec)
 		if !fileExists(agentsPath) || in.Force {
-			if err := os.WriteFile(agentsPath, []byte(lint.RenderAgentsMD(spec)), agentsFilePerm); err != nil {
+			if err := os.WriteFile(agentsPath, []byte(agentsContent), agentsFilePerm); err != nil {
 				return nil, out, fmt.Errorf("mcp: lint_init: 写入 AGENTS.md: %w", err)
 			}
-			created = append(created, "AGENTS.md")
+			created = append(created, filepath.Join(lint.LitkitDir, lint.TypeLangDir(paperType, lang), "AGENTS.md"))
 		}
 
 		out.Status = "ok"
 		out.Files = created
-		out.NextSteps = []string{"阅读 .litkit/rules.md 与 checklist.md", "成稿后运行 verify_manuscript 检查"}
+		out.NextSteps = []string{"阅读 .litkit/<type>/AGENTS.md 获取撰写规定", "成稿后运行 verify_manuscript 检查"}
 		return nil, out, nil
 	})
 }
@@ -410,8 +456,17 @@ func registerVerifyManuscript(s *gomcp.Server, deps Deps) {
 
 		spec := lint.DefaultSpec()
 		if deps.Cfg != nil && deps.Cfg.WorkDir != "" {
-			if s, err := lint.LoadSpec(lint.SpecPath(deps.Cfg.WorkDir)); err == nil {
-				spec = s
+			if paperType != "" {
+				if s, err := lint.LoadSpec(lint.SpecPath(deps.Cfg.WorkDir, paperType, in.Lang)); err == nil {
+					spec = s
+				}
+			} else {
+				// 自动检测唯一类型
+				if types, err := lint.ListPaperTypes(deps.Cfg.WorkDir); err == nil && len(types) == 1 {
+					if s, err := lint.LoadSpec(lint.TypeSpecPath(deps.Cfg.WorkDir, types[0])); err == nil {
+						spec = s
+					}
+				}
 			}
 		}
 		report, err := lint.RunFiles(in.Files, spec, lint.Options{
@@ -464,12 +519,17 @@ func registerSourceTool(s *gomcp.Server, deps Deps, name string) {
 
 type libListIn struct {
 	Source string `json:"source,omitempty" jsonschema:"按来源过滤"`
+	Sort   string `json:"sort,omitempty" jsonschema:"排序方式 year（年份倒序，默认）| id（入库倒序）"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"最大条数（默认 100）"`
+	Offset int    `json:"offset,omitempty" jsonschema:"偏移量（分页用）"`
+	Full   bool   `json:"full,omitempty" jsonschema:"返回完整元数据（默认精简视图 PaperSummary，FR-IFACE-04）"`
 }
 
 type libSearchIn struct {
 	Keyword string `json:"keyword" jsonschema:"本地库关键词（标题/作者/摘要 LIKE 匹配）"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"最大条数（默认 50）"`
+	Offset  int    `json:"offset,omitempty" jsonschema:"偏移量（分页用）"`
+	Full    bool   `json:"full,omitempty" jsonschema:"返回完整元数据（默认精简视图 PaperSummary，FR-IFACE-04）"`
 }
 
 type libRmIn struct {
@@ -479,6 +539,11 @@ type libRmIn struct {
 type libPapersOut struct {
 	Total  int                  `json:"total"`
 	Papers []model.PaperSummary `json:"papers"`
+}
+
+type libPapersFullOut struct {
+	Total  int           `json:"total"`
+	Papers []model.Paper `json:"papers"`
 }
 
 type libRmOut struct {
@@ -491,38 +556,42 @@ type libPathOut struct {
 }
 
 func registerLibraryTools(s *gomcp.Server, deps Deps) {
-	gomcp.AddTool[libListIn, libPapersOut](s, &gomcp.Tool{
+	gomcp.AddTool[libListIn, any](s, &gomcp.Tool{
 		Name:        "lib_list",
-		Description: "列出本地文献库论文（最新在前，精简视图）",
-	}, func(_ context.Context, _ *gomcp.CallToolRequest, in libListIn) (*gomcp.CallToolResult, libPapersOut, error) {
-		out := libPapersOut{}
+		Description: "列出本地文献库论文（默认按年份倒序，精简视图）",
+	}, func(_ context.Context, _ *gomcp.CallToolRequest, in libListIn) (*gomcp.CallToolResult, any, error) {
 		if deps.Store == nil {
-			return nil, out, errNoStore
+			return nil, nil, errNoStore
 		}
-		papers, err := deps.Store.ListPapers(in.Source, in.Limit, 0)
+		sortBy := in.Sort
+		if sortBy == "" {
+			sortBy = "year"
+		}
+		papers, err := deps.Store.ListPapers(in.Source, sortBy, in.Limit, in.Offset)
 		if err != nil {
-			return nil, out, err
+			return nil, nil, err
 		}
-		out.Total = len(papers)
-		out.Papers = model.SummarizePapers(papers)
-		return nil, out, nil
+		if in.Full {
+			return nil, libPapersFullOut{Total: len(papers), Papers: papers}, nil
+		}
+		return nil, libPapersOut{Total: len(papers), Papers: model.SummarizePapers(papers)}, nil
 	})
 
-	gomcp.AddTool[libSearchIn, libPapersOut](s, &gomcp.Tool{
+	gomcp.AddTool[libSearchIn, any](s, &gomcp.Tool{
 		Name:        "lib_search",
 		Description: "本地文献库关键词检索（标题/作者/摘要，FR-LIB-04）",
-	}, func(_ context.Context, _ *gomcp.CallToolRequest, in libSearchIn) (*gomcp.CallToolResult, libPapersOut, error) {
-		out := libPapersOut{}
+	}, func(_ context.Context, _ *gomcp.CallToolRequest, in libSearchIn) (*gomcp.CallToolResult, any, error) {
 		if deps.Store == nil {
-			return nil, out, errNoStore
+			return nil, nil, errNoStore
 		}
-		papers, err := deps.Store.SearchLocal(in.Keyword, in.Limit)
+		papers, err := deps.Store.SearchLocal(in.Keyword, in.Limit, in.Offset)
 		if err != nil {
-			return nil, out, err
+			return nil, nil, err
 		}
-		out.Total = len(papers)
-		out.Papers = model.SummarizePapers(papers)
-		return nil, out, nil
+		if in.Full {
+			return nil, libPapersFullOut{Total: len(papers), Papers: papers}, nil
+		}
+		return nil, libPapersOut{Total: len(papers), Papers: model.SummarizePapers(papers)}, nil
 	})
 
 	gomcp.AddTool[libRmIn, libRmOut](s, &gomcp.Tool{

@@ -151,6 +151,8 @@ func (s *Store) ensureColumns() error {
 		{"city", "ALTER TABLE papers ADD COLUMN city TEXT NOT NULL DEFAULT ''"},
 		{"institution", "ALTER TABLE papers ADD COLUMN institution TEXT NOT NULL DEFAULT ''"},
 		{"access_date", "ALTER TABLE papers ADD COLUMN access_date TEXT NOT NULL DEFAULT ''"},
+		{"pdf_url", "ALTER TABLE papers ADD COLUMN pdf_url TEXT NOT NULL DEFAULT ''"},
+		{"fulltext", "ALTER TABLE papers ADD COLUMN fulltext TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, a := range adds {
 		if !have[a.name] {
@@ -203,11 +205,11 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		}
 		_, err = s.db.Exec(`INSERT INTO papers
 			(dedup_key, cite_key, doi, paper_id, title, authors, abstract, year, venue,
-			 source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at,
+			 source, doc_type, url, pdf_url, pmid, arxiv_id, volume, number, pages, citations, fetched_at,
 			 publisher, city, institution, access_date)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			key, citeKey, p.DOI, p.ID, p.Title, string(authorsJSON), p.Abstract, p.Year,
-			p.Venue, p.Source, p.DocType, p.URL, p.PMID, p.ArXivID, p.Volume, p.Number, p.Pages,
+			p.Venue, p.Source, p.DocType, p.URL, p.PdfURL, p.PMID, p.ArXivID, p.Volume, p.Number, p.Pages,
 			p.Citations, now, p.Publisher, p.City, p.Institution, p.AccessDate)
 		if err != nil {
 			return "", false, fmt.Errorf("storage upsert insert: %w", err)
@@ -223,6 +225,7 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		abstract=COALESCE(NULLIF(?, ''), abstract), year=?,
 		venue=COALESCE(NULLIF(?, ''), venue), source=?,
 		doc_type=COALESCE(NULLIF(?, ''), doc_type), url=COALESCE(NULLIF(?, ''), url),
+		pdf_url=COALESCE(NULLIF(?, ''), pdf_url),
 		pmid=COALESCE(NULLIF(?, ''), pmid), arxiv_id=COALESCE(NULLIF(?, ''), arxiv_id),
 		volume=COALESCE(NULLIF(?, ''), volume),
 		number=COALESCE(NULLIF(?, ''), number),
@@ -235,7 +238,7 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		WHERE id=?`,
 		p.DOI, p.ID, p.Title, string(authorsJSON),
 		p.Abstract, p.Year, p.Venue, p.Source,
-		p.DocType, p.URL, p.PMID, p.ArXivID,
+		p.DocType, p.URL, p.PdfURL, p.PMID, p.ArXivID,
 		p.Volume, p.Number, p.Pages,
 		p.Publisher, p.City, p.Institution, p.AccessDate,
 		p.Citations, now, id)
@@ -262,7 +265,7 @@ func (s *Store) UpsertPapers(papers []model.Paper) (int, error) {
 
 // 查询列集合（Upsert 与查询共用，字段顺序必须与 scanPaper 一致）。
 const paperCols = "cite_key, doi, paper_id, title, authors, abstract, year, venue, " +
-	"source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at, " +
+	"source, doc_type, url, pdf_url, pmid, arxiv_id, volume, number, pages, citations, fetched_at, " +
 	"publisher, city, institution, access_date"
 
 // scanPapers 将结果行扫描为 []model.Paper。
@@ -275,7 +278,7 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 			fetchedAt   string
 		)
 		if err := rows.Scan(&p.CiteKey, &p.DOI, &p.ID, &p.Title, &authorsJSON, &p.Abstract,
-			&p.Year, &p.Venue, &p.Source, &p.DocType, &p.URL, &p.PMID, &p.ArXivID,
+			&p.Year, &p.Venue, &p.Source, &p.DocType, &p.URL, &p.PdfURL, &p.PMID, &p.ArXivID,
 			&p.Volume, &p.Number, &p.Pages, &p.Citations, &fetchedAt,
 			&p.Publisher, &p.City, &p.Institution, &p.AccessDate); err != nil {
 			return nil, err
@@ -322,20 +325,55 @@ func (s *Store) GetByDOI(doi string) (*model.Paper, error) {
 	return &papers[0], nil
 }
 
-// ListPapers 列出库内论文（最新入库在前）。source 非空时按源过滤。
-func (s *Store) ListPapers(source string, limit, offset int) ([]model.Paper, error) {
+// GetFulltext 按 cite_key 取回缓存的全文文本；未缓存返回空串（FR-FETCH-04）。
+func (s *Store) GetFulltext(citeKey string) (string, error) {
+	var text string
+	err := s.db.QueryRow("SELECT fulltext FROM papers WHERE cite_key = ? LIMIT 1", citeKey).Scan(&text)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("storage get fulltext: %w", err)
+	}
+	return text, nil
+}
+
+// SetFulltext 按 cite_key 写入全文缓存（覆盖旧值；论文不存在时静默忽略）。
+func (s *Store) SetFulltext(citeKey, text string) error {
+	if _, err := s.db.Exec("UPDATE papers SET fulltext = ? WHERE cite_key = ?", text, citeKey); err != nil {
+		return fmt.Errorf("storage set fulltext: %w", err)
+	}
+	return nil
+}
+
+// SetPDFURL 按 cite_key 写入可用的 PDF 直链（论文不存在时静默忽略）。
+func (s *Store) SetPDFURL(citeKey, pdfURL string) error {
+	if _, err := s.db.Exec("UPDATE papers SET pdf_url = ? WHERE cite_key = ?", pdfURL, citeKey); err != nil {
+		return fmt.Errorf("storage set pdf url: %w", err)
+	}
+	return nil
+}
+
+// ListPapers 列出库内论文。source 非空时按源过滤；orderBy 支持 "year"（年份倒序，year=0 排末尾）和 "id"（入库倒序，默认）。
+func (s *Store) ListPapers(source, orderBy string, limit, offset int) ([]model.Paper, error) {
 	if limit <= 0 {
 		limit = defaultListLimit
+	}
+	order := "id DESC"
+	switch orderBy {
+	case "year":
+		order = "year DESC, id DESC"
+	case "id", "":
+		// 保持默认
+	default:
+		return nil, fmt.Errorf("storage list: 未知排序 %q（可选 year|id）", orderBy)
 	}
 	var (
 		rows *sql.Rows
 		err  error
 	)
 	if source != "" {
-		rows, err = s.db.Query("SELECT "+paperCols+" FROM papers WHERE source = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+		rows, err = s.db.Query("SELECT "+paperCols+" FROM papers WHERE source = ? ORDER BY "+order+" LIMIT ? OFFSET ?",
 			source, limit, offset)
 	} else {
-		rows, err = s.db.Query("SELECT "+paperCols+" FROM papers ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+		rows, err = s.db.Query("SELECT "+paperCols+" FROM papers ORDER BY "+order+" LIMIT ? OFFSET ?", limit, offset)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("storage list: %w", err)
@@ -345,14 +383,14 @@ func (s *Store) ListPapers(source string, limit, offset int) ([]model.Paper, err
 }
 
 // SearchLocal 本地 keyword 检索（FR-LIB-04）：标题/作者/摘要 LIKE 匹配。
-func (s *Store) SearchLocal(keyword string, limit int) ([]model.Paper, error) {
+func (s *Store) SearchLocal(keyword string, limit, offset int) ([]model.Paper, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	pattern := "%" + keyword + "%"
 	rows, err := s.db.Query(`SELECT `+paperCols+` FROM papers
 		WHERE title LIKE ? OR authors LIKE ? OR abstract LIKE ?
-		ORDER BY id DESC LIMIT ?`, pattern, pattern, pattern, limit)
+		ORDER BY year DESC, id DESC LIMIT ? OFFSET ?`, pattern, pattern, pattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("storage search local: %w", err)
 	}

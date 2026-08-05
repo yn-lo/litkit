@@ -50,7 +50,7 @@ func shortErrors(errs []model.SourceError) []model.SourceError {
 // 退出码：3 表示部分源失败但部分成功（api.md §1.1）。
 func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--full]",
+		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]",
 		Short: "跨源并发检索文献",
 		Long: `跨源并发检索文献，默认输出精简视图（citeKey/title/firstAuthor/year/abstract），
 面向 AI agent 调用（FR-IFACE-04）。结果按 DOI→title→id 三级去重，年份倒序。
@@ -78,6 +78,7 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 			sinceFlag, _ := cmd.Flags().GetInt("since")
 			years, _ := cmd.Flags().GetInt("years")
 			keepNoAbstract, _ := cmd.Flags().GetBool("keep-no-abstract")
+			excludeFlag, _ := cmd.Flags().GetString("exclude")
 			full, _ := cmd.Flags().GetBool("full")
 
 			if err := validateSearchParams(query, maxResults, years, sinceFlag, year, mode); err != nil {
@@ -95,6 +96,14 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 				Since:          computeSince(sinceFlag, years),
 				Mode:           mode,
 				KeepNoAbstract: keepNoAbstract,
+			}
+			if excludeFlag != "" {
+				for _, e := range strings.Split(excludeFlag, ",") {
+					e = strings.TrimSpace(e)
+					if e != "" {
+						opts.Exclude = append(opts.Exclude, e)
+					}
+				}
 			}
 			if sourcesFlag != "" {
 				for _, s := range strings.Split(sourcesFlag, ",") {
@@ -158,6 +167,7 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 	cmd.Flags().Int("since", 0, "显式起始年份（优先于 --years）")
 	cmd.Flags().IntP("year", "y", 0, "精确年份过滤（源支持时）")
 	cmd.Flags().Bool("keep-no-abstract", false, "保留无摘要论文（默认过滤，FR-SEARCH-03）")
+	cmd.Flags().String("exclude", "", "逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库）")
 	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
 	return cmd
 }

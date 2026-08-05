@@ -1,0 +1,59 @@
+paper_type: review
+lang: en
+journal: ""
+sections:
+  - Introduction
+  - Search Strategy
+  - Thematic Analysis
+  - Discussion and Outlook
+  - Conclusion
+word_counts:
+  total:
+    - 5000
+    - 15000
+  abstract:
+    - 200
+    - 500
+  paragraph:
+    - 50
+    - 500
+citation:
+  count:
+    - 50
+    - 120
+  style: apa
+heading:
+  max_level: 4
+  max_length: 15
+boast_words:
+  - revolutionary
+  - groundbreaking
+  - unprecedented
+  - paradigm
+  - synergy
+  - empower
+  - unleash
+  - catalyze
+  - harness
+  - delve
+  - tapestry
+  - landscape
+  - cornerstone
+  - seamlessly
+  - robust
+  - comprehensive
+  - crucial
+  - indispensable
+  - intricate
+  - meticulous
+  - profound
+  - significant
+  - outstanding
+  - extraordinary
+  - unparalleled
+  - noteworthy
+  - it is worth noting
+  - needless to say
+  - in conclusion
+  - ever-evolving
+  - vibrant

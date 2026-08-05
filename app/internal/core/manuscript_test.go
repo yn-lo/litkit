@@ -145,3 +145,40 @@ func TestProcessManuscript_CaseInsensitiveCiteKey(t *testing.T) {
 		t.Errorf("Unresolved = %v，期望空", res.Unresolved)
 	}
 }
+
+func TestProcessManuscript_Preview(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne // 有 DOI
+	store.papers["a2"] = mustPaper("a2", "No DOI Paper", 2019, []model.Author{{Family: "Smith"}}, "")
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。", StylePreview)
+	if err != nil {
+		t.Fatalf("ProcessManuscript err = %v", err)
+	}
+	want := "前文 [@doi:10.1/one — Attention Is All You Need] 与 [@No DOI Paper]。"
+	if res.Text != want {
+		t.Errorf("Text = %q，期望 %q", res.Text, want)
+	}
+	if res.CitationMap["a1"] != "[@doi:10.1/one — Attention Is All You Need]" {
+		t.Errorf("CitationMap[a1] = %q", res.CitationMap["a1"])
+	}
+}
+
+func TestWriteManuscriptOutputs_PreviewSkipsReferences(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1]", StylePreview)
+	if err != nil {
+		t.Fatalf("ProcessManuscript err = %v", err)
+	}
+	files, err := WriteManuscriptOutputs(t.TempDir(), res, StylePreview)
+	if err != nil {
+		t.Fatalf("WriteManuscriptOutputs err = %v", err)
+	}
+	if _, ok := files[ManuscriptReferences]; ok {
+		t.Errorf("预览模式不应生成 %s", ManuscriptReferences)
+	}
+	if _, ok := files[ManuscriptFormatted]; !ok {
+		t.Errorf("预览模式应生成 %s", ManuscriptFormatted)
+	}
+}

@@ -41,6 +41,9 @@ type SearchOptions struct {
 	Mode string `json:"mode,omitempty"`
 	// KeepNoAbstract 保留无摘要论文（默认过滤，FR-SEARCH-03）。
 	KeepNoAbstract bool `json:"keepNoAbstract,omitempty"`
+	// Exclude 排除词列表：标题或摘要命中任一排除词（大小写不敏感）的论文被剔除，
+	// 且在入库之前执行（先排除后入库）。
+	Exclude []string `json:"exclude,omitempty"`
 }
 
 // applyDefaults 填充默认值。
@@ -130,6 +133,8 @@ func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions)
 	if !opts.KeepNoAbstract {
 		merged = filterByAbstract(merged)
 	}
+	// 排除筛查（先排除后入库）
+	merged = filterExcluded(merged, opts.Exclude)
 	// 入库：仅带摘要论文（FR-LIB-01）；失败不阻断检索（透明降级）
 	if s.store != nil {
 		merged = s.persist(merged)
@@ -360,6 +365,37 @@ func filterByAbstract(papers []model.Paper) []model.Paper {
 	out := make([]model.Paper, 0, len(papers))
 	for _, p := range papers {
 		if p.HasAbstract() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// filterExcluded 本地排除筛查：标题或摘要（大小写不敏感）命中任一排除词的论文被剔除。
+//
+// 源原生布尔语法（arXiv NOT / PubMed NOT）各源不一致，故统一采用本地召回后筛查，
+// 匹配标题与摘要两个字段，语义跨源一致。空排除词列表直接原样返回。
+func filterExcluded(papers []model.Paper, exclude []string) []model.Paper {
+	terms := make([]string, 0, len(exclude))
+	for _, e := range exclude {
+		if t := strings.ToLower(strings.TrimSpace(e)); t != "" {
+			terms = append(terms, t)
+		}
+	}
+	if len(terms) == 0 {
+		return papers
+	}
+	out := make([]model.Paper, 0, len(papers))
+	for _, p := range papers {
+		haystack := strings.ToLower(p.Title) + "\n" + strings.ToLower(p.Abstract)
+		excluded := false
+		for _, t := range terms {
+			if strings.Contains(haystack, t) {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
 			out = append(out, p)
 		}
 	}

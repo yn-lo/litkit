@@ -196,6 +196,89 @@ func TestSearch_KeepNoAbstractFlag(t *testing.T) {
 	}
 }
 
+// ---- 排除检索词（本地召回后筛查，先排除后入库）----
+
+func TestSearch_ExcludeFiltersByTitle(t *testing.T) {
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("Graph Neural Networks", "10.1/a", "A survey of graph learning"),
+		paperWithAbstract("Climate Modeling", "10.1/b", "Using transformer for weather"),
+	}}
+	reg := newFakeRegistry(src)
+	s := NewSearcher(reg, nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "graph", SearchOptions{MaxResults: 5, Exclude: []string{"climate"}})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "Graph Neural Networks" {
+		t.Fatalf("排除 climate 后应只剩 Graph 篇，got %+v", res.Papers)
+	}
+}
+
+func TestSearch_ExcludeMatchesAbstract(t *testing.T) {
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("Transformer Survey", "10.1/a", "We review attention mechanism"),
+		paperWithAbstract("Molecule Modeling", "10.1/b", "Using transformer embedding for molecules"),
+	}}
+	reg := newFakeRegistry(src)
+	s := NewSearcher(reg, nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "transformer", SearchOptions{MaxResults: 5, Exclude: []string{"molecule"}})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "Transformer Survey" {
+		t.Fatalf("摘要含 molecule 的应被排除，got %+v", res.Papers)
+	}
+}
+
+func TestSearch_ExcludeCaseInsensitive(t *testing.T) {
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("Neural Networks", "10.1/a", "deep learning models"),
+		paperWithAbstract("Vision", "10.1/b", "CNN based"),
+	}}
+	reg := newFakeRegistry(src)
+	s := NewSearcher(reg, nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "net", SearchOptions{MaxResults: 5, Exclude: []string{"DEEP"}})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "Vision" {
+		t.Fatalf("排除词大小写不敏感，DEEP 应命中 deep，got %+v", res.Papers)
+	}
+}
+
+func TestSearch_ExcludeMultipleTerms(t *testing.T) {
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("A", "10.1/a", "good abstract"),
+		paperWithAbstract("B", "10.1/b", "bad bitcoin text"),
+		paperWithAbstract("C", "10.1/c", "bad crypto text"),
+	}}
+	reg := newFakeRegistry(src)
+	s := NewSearcher(reg, nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "x", SearchOptions{MaxResults: 5, Exclude: []string{"bitcoin", "crypto"}})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "A" {
+		t.Fatalf("多排除词应同时生效，got %+v", res.Papers)
+	}
+}
+
+func TestSearch_ExcludeBeforePersist(t *testing.T) {
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("Keep Me", "10.1/keep", "good abstract"),
+		paperWithAbstract("Drop Me", "10.1/drop", "mentions bitcoin"),
+	}}
+	reg := newFakeRegistry(src)
+	store, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
+	if err != nil {
+		t.Fatalf("Open store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := NewSearcher(reg, store, 0, 0)
+
+	res, _ := s.Search(context.Background(), "me", SearchOptions{MaxResults: 5, Exclude: []string{"bitcoin"}})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "Keep Me" {
+		t.Fatalf("排除后应只剩 Keep Me，got %+v", res.Papers)
+	}
+	// 被排除论文必须先于入库被剔除
+	st, _ := store.Stats()
+	if st.Total != 1 {
+		t.Fatalf("被排除论文不应入库（先排除后入库），got %d", st.Total)
+	}
+}
+
 // ---- 源过滤 ----
 
 func TestSearch_SourcesFilter(t *testing.T) {

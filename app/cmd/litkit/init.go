@@ -29,8 +29,6 @@ const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-C
 	"# 可选：Semantic Scholar API key（配置后提速，避免共享池 429）\n" +
 	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n"
 
-// agentsHead 与 agentsTail 已移至 internal/lint/agents.go（CLI 与 MCP 共用，FR-IFACE-03）。
-
 // 文件权限常量（mnd：避免魔法值）。
 const (
 	initDirPerm  = 0o750
@@ -39,128 +37,174 @@ const (
 
 // newInitCmd 构造 `litkit init` 子命令。
 //
-// 生成 .env + .litkit/（rules/checklist/specs/verifier）+ AGENTS.md（含撰写硬性规定），
-// 并初始化 litkit.db。已存在文件默认不覆盖（--force 覆盖）。
-// --type/--lang/--journal 仅在首次生成 yaml 时生效；--refresh 按现有 yaml 重新渲染 AGENTS.md。
+// 两步式：
+//  1. 项目基础设施：.env + litkit.db + AGENTS.md（根，项目级通用信息）
+//  2. 论文类型目录：.litkit/<type-lang>/ 的 manuscript-spec.yaml + AGENTS.md
+//
+// --type + --lang 必填（终端下可交互输入）。
 func newInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init [--type review|empirical] [--lang zh|en] [--journal NAME] [--refresh]",
-		Short: "初始化工作目录（.env + .litkit/ + AGENTS.md + litkit.db）",
+		Use:   "init --type review|empirical --lang zh|en [--journal NAME]",
+		Short: "初始化项目（.env + litkit.db + 根 AGENTS.md）并注册论文类型",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// 工作目录必须显式设置（FR-LIB-03），前置检查
+			if err := requireWorkDir(cfg); err != nil {
+				return err
+			}
+
 			force, _ := cmd.Flags().GetBool("force")
 			refresh, _ := cmd.Flags().GetBool("refresh")
 			paperType, _ := cmd.Flags().GetString("type")
 			lang, _ := cmd.Flags().GetString("lang")
 			journal, _ := cmd.Flags().GetString("journal")
 
-			// 交互式向导：旗标未显式传值且 stdin 是终端时，进入问答
-			if !cmd.Flags().Changed("type") || !cmd.Flags().Changed("lang") || !cmd.Flags().Changed("journal") {
+			// --type 和 --lang 必须指定（非终端模式下报错，终端下进入交互向导）
+			if !cmd.Flags().Changed("type") || !cmd.Flags().Changed("lang") {
 				if isTerminal() {
 					paperType, lang, journal = runInitWizard(paperType, lang, journal,
 						cmd.Flags().Changed("type"), cmd.Flags().Changed("lang"), cmd.Flags().Changed("journal"))
+				} else {
+					return &paramError{msg: "init: --type 和 --lang 必须指定（非终端模式下不可省略）"}
 				}
 			}
 
-			// 枚举校验：无效值直接拒绝，避免写入 manuscript-spec.yaml
+			// 枚举校验
 			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
 				return &paramError{msg: fmt.Sprintf("init: 无效 --type %q（可选 review|empirical）", paperType)}
 			}
 			if lang != "" && lang != lint.LangZH && lang != lint.LangEN {
 				return &paramError{msg: fmt.Sprintf("init: 无效 --lang %q（可选 zh|en）", lang)}
 			}
-			// 工作目录必须显式设置（FR-LIB-03）：拒绝就地生成污染 CWD
-			if err := requireWorkDir(cfg); err != nil {
-				return err
+
+			if !cmd.Flags().Changed("journal") && isTerminal() {
+				fmt.Print("目标期刊（留空跳过）: ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					journal = strings.TrimSpace(scanner.Text())
+				}
 			}
+
 			return initWorkdir(cfg.WorkDir, force, refresh, paperType, lang, journal)
 		},
 	}
-	cmd.Flags().Bool("force", false, "覆盖已存在的 .env / .litkit / AGENTS.md")
-	cmd.Flags().Bool("refresh", false, "按现有 manuscript-spec.yaml 重新生成 AGENTS.md 撰写段")
+	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
+	cmd.Flags().Bool("refresh", false, "从现有 yaml 重新生成类型 AGENTS.md 自动区")
 	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型：review（综述）| empirical（四段式实证）")
 	cmd.Flags().String("lang", lint.LangZH, "撰写语言：zh | en")
-	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec，影响引用格式默认值与 checklist）")
+	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec，影响引用格式默认值）")
 	return cmd
 }
 
-// initWorkdir 生成 .env / .litkit / AGENTS.md 并初始化 litkit.db。
-//
-// 文件权限 0600：.env 与 verifier_models.json 可能含 API key，须防其他用户读取。
+// initWorkdir 两步式初始化。
 func initWorkdir(dir string, force, refresh bool, paperType, lang, journal string) error {
-	if err := os.MkdirAll(dir, initDirPerm); err != nil {
-		return fmt.Errorf("init: mkdir %s: %w", dir, err)
-	}
-
 	created := []string{}
-	if ok, err := writeIfAbsent(filepath.Join(dir, ".env"), envTemplate, force); err != nil {
+
+	// 第一步：项目基础设施（幂等）
+	infraCreated, err := ensureProjectInfra(dir, force)
+	if err != nil {
 		return err
+	}
+	created = append(created, infraCreated...)
+
+	// 第二步：论文类型注册
+	typeCreated, err := ensurePaperType(dir, force, refresh, paperType, lang, journal)
+	if err != nil {
+		return err
+	}
+	created = append(created, typeCreated...)
+
+	return printJSON(map[string]any{
+		"workDir": dir,
+		"created": created,
+	})
+}
+
+// ensureProjectInfra 确保项目基础设施存在（.env + litkit.db + .litkit/ 共享文件 + 根 AGENTS.md）。
+func ensureProjectInfra(dir string, force bool) ([]string, error) {
+	created := []string{}
+
+	// .env
+	if ok, err := writeIfAbsent(filepath.Join(dir, ".env"), envTemplate, force); err != nil {
+		return nil, err
 	} else if ok {
 		created = append(created, ".env")
 	}
 
-	// 生成 .litkit/（模板，go:embed）
-	harnessCreated, err := lint.InitHarness(dir, force)
+	// .litkit/ 共享文件（verifier_models.json）
+	infraFiles, err := lint.InitProjectInfra(dir, force)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	created = append(created, harnessCreated...)
+	created = append(created, infraFiles...)
 
-	// 解析撰写规范：--type/--lang 仅在 yaml 缺失或本次新建（或 --force）时生效；
-	// 其余情况（yaml 已存在且非本次创建）走现有 yaml，flag 不生效
-	specPath := lint.SpecPath(dir)
-	yamlJustCreated := false
-	specRel := filepath.ToSlash(filepath.Join(lint.LitkitDir, "specs", "manuscript-spec.yaml"))
-	for _, c := range harnessCreated {
-		if filepath.ToSlash(c) == specRel {
-			yamlJustCreated = true
-		}
-	}
-	var spec *lint.ManuscriptSpec
-	switch {
-	case refresh:
-		spec, err = lint.LoadSpec(specPath)
-	case fileExists(specPath) && !force && !yamlJustCreated:
-		spec, err = lint.LoadSpec(specPath)
-	default:
-		spec = lint.SpecForType(paperType, lang)
-		spec.Journal = journal
-		// 仅 flag 非默认时才覆盖模板 yaml（保留带注释的模板；marshal 输出无注释）
-		if spec.PaperType != lint.PaperTypeEmpirical || spec.Lang != lint.LangZH || spec.Journal != "" {
-			if err = lint.WriteSpec(specPath, spec); err != nil {
-				return err
-			}
-		}
-	}
-	if err != nil {
-		return err
-	}
-
-	// 生成 AGENTS.md = 固定头 + 撰写硬性规定（事前指导）+ 固定尾
-	// refresh 模式强制重写（--refresh 的语义就是重新渲染撰写段）
-	agents := lint.RenderAgentsMD(spec)
-	if ok, err := writeIfAbsent(filepath.Join(dir, "AGENTS.md"), agents, force || refresh); err != nil {
-		return err
+	// 根 AGENTS.md（项目级通用信息）
+	rootAgents := lint.RootAgentsMD()
+	if ok, err := writeIfAbsent(filepath.Join(dir, "AGENTS.md"), rootAgents, force); err != nil {
+		return nil, err
 	} else if ok {
 		created = append(created, "AGENTS.md")
 	}
 
-	// 初始化文献库（幂等：已存在则跳过建表）
+	// litkit.db（幂等：已存在则跳过建表）
 	dbPath := filepath.Join(dir, storage.DefaultDBName)
 	dbExisted := fileExists(dbPath)
 	store, err := storage.Open(dbPath)
 	if err != nil {
-		return fmt.Errorf("init: storage open: %w", err)
+		return nil, fmt.Errorf("init: storage open: %w", err)
 	}
 	defer func() { _ = store.Close() }()
 	if !dbExisted {
 		created = append(created, storage.DefaultDBName)
 	}
 
-	return printJSON(map[string]any{
-		"workDir": dir,
-		"created": created,
-	})
+	return created, nil
+}
+
+// ensurePaperType 确保论文类型目录存在（.litkit/<type-lang>/ 的 yaml + AGENTS.md）。
+// refresh 模式从现有 yaml 重新渲染 AGENTS.md 自动区。
+func ensurePaperType(dir string, force, refresh bool, paperType, lang, journal string) ([]string, error) {
+	created := []string{}
+
+	// 复制模板 yaml
+	yamlCreated, err := lint.InitPaperType(dir, paperType, lang, force)
+	if err != nil {
+		return nil, err
+	}
+	created = append(created, yamlCreated...)
+
+	// 加载 spec（优先从 yaml，否则从模板）
+	specPath := lint.SpecPath(dir, paperType, lang)
+	spec, err := lint.LoadSpec(specPath)
+	if err != nil {
+		// yaml 刚被复制，不应失败
+		spec = lint.SpecForType(paperType, lang)
+	}
+
+	// journal 覆盖
+	if journal != "" {
+		spec.Journal = journal
+		// 写回 yaml
+		if err := lint.WriteSpec(specPath, spec); err != nil {
+			return nil, err
+		}
+	}
+
+	// 类型 AGENTS.md（自动区 + 追加区）
+	agentsDir := lint.PapersDirPath(dir, paperType, lang)
+	if err := os.MkdirAll(agentsDir, initDirPerm); err != nil {
+		return nil, err
+	}
+	agentsPath := filepath.Join(agentsDir, "AGENTS.md")
+	agentsContent := lint.TypeAgentsMD(spec)
+	if refresh || !fileExists(agentsPath) || force {
+		if err := os.WriteFile(agentsPath, []byte(agentsContent), initFilePerm); err != nil {
+			return nil, err
+		}
+		created = append(created, filepath.Join(lint.LitkitDir, lint.TypeLangDir(paperType, lang), "AGENTS.md"))
+	}
+
+	return created, nil
 }
 
 // writeIfAbsent 写文件；已存在且未 force 时跳过。返回是否创建。
@@ -189,7 +233,6 @@ func isTerminal() bool {
 }
 
 // runInitWizard 交互式初始化向导，逐项询问未显式指定的参数。
-// changedX 标记用户是否通过旗标显式传值；已传的跳过询问。
 func runInitWizard(typeVal, langVal, journalVal string, changedType, changedLang, changedJournal bool) (string, string, string) {
 	scanner := bufio.NewScanner(os.Stdin)
 

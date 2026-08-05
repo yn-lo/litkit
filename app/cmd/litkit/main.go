@@ -58,6 +58,7 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 		newSearchCmd(d.searcher, d.registry, d.cfg),
 		newSourcesCmd(d.registry),
 		newMetadataCmd(d.fetcher),
+		newFetchCmd(d.store, d.fulltext),
 		newManuscriptCmd(d.store, d.fetcher, d.cfg),
 		newExportCmd(),
 		newLibraryCmd(d.store),

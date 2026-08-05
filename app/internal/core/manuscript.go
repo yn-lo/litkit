@@ -53,9 +53,9 @@ var idTypePrefixes = []string{"doi:", "pmid:", "arxiv:", "title:"}
 // per-token 解析失败只记入 Unresolved 不中断流水线；仅参数级错误（未知 style）返回 error。
 func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, src string, style Style) (*ManuscriptResult, error) {
 	switch style {
-	case StyleGB7714, StyleAPA, StyleIEEE:
+	case StyleGB7714, StyleAPA, StyleIEEE, StylePreview:
 	default:
-		return nil, fmt.Errorf("manuscript: 未知样式 %q（支持 gb7714-2025|apa|ieee）", style)
+		return nil, fmt.Errorf("manuscript: 未知样式 %q（支持 gb7714-2025|apa|ieee|preview）", style)
 	}
 
 	res := &ManuscriptResult{CitationMap: make(map[string]string)}
@@ -127,12 +127,26 @@ func splitPrefixed(token string) (string, string, bool) {
 	return "", "", false
 }
 
-// citationMark 生成正文引用标记：GB7714/IEEE 为 "[n]"，APA 为 "(Author, Year)"。
+// citationMark 生成正文引用标记：GB7714/IEEE 为 "[n]"，APA 为 "(Author, Year)"，preview 为自描述标记。
 func citationMark(p model.Paper, style Style, number int) string {
-	if style == StyleAPA {
+	switch style {
+	case StylePreview:
+		return previewMark(p)
+	case StyleAPA:
 		return apaInline(p)
+	default:
+		return "[" + strconv.Itoa(number) + "]"
 	}
-	return "[" + strconv.Itoa(number) + "]"
+}
+
+// previewMark 预览模式内联标记：有 DOI 用 [@doi:{DOI} — {标题}]，否则 [@标题]。
+// 自描述便于人工核查；preview 模式不生成引用列表（WriteManuscriptOutputs）。
+func previewMark(p model.Paper) string {
+	title := cleanTitle(p.Title)
+	if p.DOI != "" {
+		return "[@doi:" + p.DOI + " — " + title + "]"
+	}
+	return "[@" + title + "]"
 }
 
 // apaInline 生成 APA 正文标记：
@@ -208,12 +222,15 @@ func WriteManuscriptOutputs(outDir string, res *ManuscriptResult, style Style) (
 	if err := write(ManuscriptFormatted, res.Text); err != nil {
 		return nil, err
 	}
-	refs, err := RenderReferenceList(res.Papers, style)
-	if err != nil {
-		return nil, err
-	}
-	if err := write(ManuscriptReferences, refs); err != nil {
-		return nil, err
+	// preview 模式：正文标记已自描述，不生成编号引用列表（FR-REF 预览）。
+	if style != StylePreview {
+		refs, err := RenderReferenceList(res.Papers, style)
+		if err != nil {
+			return nil, err
+		}
+		if err := write(ManuscriptReferences, refs); err != nil {
+			return nil, err
+		}
 	}
 	if err := write(ManuscriptBib, BibTeXFromPapers(res.Papers)); err != nil {
 		return nil, err

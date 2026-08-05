@@ -53,7 +53,6 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 ### 2.3 非目标
 
 - 中文文献数据库检索（知网 / 万方 / 维普无开放 API）
-- **PDF 下载与全文抽取**（以检索摘要替代）
 - 远程全库语义检索（不预计算全库向量；远程检索保持 keyword 原生排序）
 - 文献管理数据库（Zotero/Mendeley 替代品）
 - PDF 阅读器 UI / 论文浏览器 / 引文图谱可视化
@@ -114,7 +113,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SRC-13 | BASE（OAI-PMH） | 需机构 IP，协议老旧 |
 | FR-SRC-14 | SSRN / CiteSeerX | 端点不稳定 |
 | FR-SRC-15 | Google Scholar | 国内不可达，需代理；不作为内置源 |
-| FR-SRC-16 | Sci-Hub | 法律风险；且摘要工作流不依赖下载 |
+| FR-SRC-16 | Sci-Hub | 法律风险；不作检索源。仅作全文下载兜底（FR-FETCH-03），默认开启、失败静默降级 |
 | FR-SRC-17 | dblp | 无摘要，直接不实现 |
 
 | ID | 需求 | 优先级 | 验收标准 |
@@ -140,7 +139,19 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SEARCH-13 | 默认时间范围 | P0 | 默认最近 3 年（`LITKIT_DEFAULT_RECENT_YEARS`）；`--years N` 放宽或 `--since YEAR` 显式起始年；0=不限 |
 | FR-SEARCH-09 | embedding 基础设施（provider 抽象 + 本地向量库） | P1 | 仅服务本地库语义检索（FR-LIB-05）；默认本地模型零 key 零网络；配置 API key 自动切换；向量存 SQLite 同库；本地库规模（万级）检索 < 1s |
 
-### 4.3 FR-REF 引用与手稿处理
+### 4.3 FR-FETCH 全文获取（可选能力，非摘要工作流默认路径）
+
+> 摘要工作流仍为默认（C2）；全文获取为**按需可选能力**，由 `litkit fetch` / `fetch_paper` 显式触发，不改变检索入库行为。
+
+| ID | 需求 | 优先级 | 验收标准 |
+|---|---|---|---|
+| FR-FETCH-01 | 按 cite_key 或 DOI 取回论文全文 | P0 | `litkit fetch <cite_key\|doi>` 下载 PDF → 抽取文本 → 全文缓存入库；返回 { citeKey, pdfPath, fulltext } |
+| FR-FETCH-02 | OA 优先：Unpaywall 按 DOI 解析 OA PDF | P0 | 需 `LITKIT_UNPAYWALL_EMAIL`；解析到最佳 OA PDF URL 并下载；无 email 或无 OA 时跳过并记录 |
+| FR-FETCH-03 | Sci-Hub 兜底（默认开启，失败静默） | P1 | Unpaywall 失败后尝试 Sci-Hub（`LITKIT_SCI_HUB_URL` 可配，默认 sci-hub.se）；不存在/下载失败仅记录，不报错中断；Scan 版 PDF 无文本层，抽取返回空并提示 |
+| FR-FETCH-04 | PDF 落盘 + 全文缓存双层存储 | P0 | PDF 存 `WORK_DIR/downloads/<citeKey>.pdf`；抽取文本存 `papers.fulltext` 列（按 dedup_key 缓存，避免重复抽取）；库中已缓存全文时直接返回不重复下载 |
+| FR-FETCH-05 | PDF 文本抽取（纯 Go） | P0 | 用 pdfcpu 抽取；支持扫描版检测（无文本层返回空）；抽取失败不删除已落盘 PDF |
+
+### 4.4 FR-REF 引用与手稿处理
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
@@ -289,6 +300,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 ```
 litkit search       <query> [-s sources] [-n N] [-y year] [--keep-no-abstract]
 litkit metadata     <id_type> <identifier>          # doi | pmid | arxiv | title
+litkit fetch        <cite_key|doi> [--out downloads]  # 全文获取（Unpaywall OA → Sci-Hub 兜底）
 litkit sources
 litkit manuscript   <draft.md> [--lang zh|en] [-s style] [--docx] [-o output_dir]
 litkit export       <papers.json> [-f bibtex|ris|text] [-s style]
@@ -304,6 +316,7 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 |---|---|---|
 | `search_papers` | query, sources, max_results_per_source, year | total, source_results, errors, papers[] |
 | `get_paper_metadata` | id_type(doi/pmid/arxiv/title), identifier | Paper \| null |
+| `fetch_paper` | cite_key 或 id_type+identifier | { citeKey, pdfPath, fulltext, via } |
 | `process_manuscript` | text, lang, style, generate_docx, output_dir | processed_text, reference_list, citation_map, unresolved, files{} |
 | `export_references` | papers[], format, style | success, content |
 | `lint_init` | project_dir, force, lang, paperType, journal | 初始化状态 + next_steps |
@@ -317,6 +330,8 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 | 变量 | 必需 | 作用 |
 |---|---|---|
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
+| LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（Unpaywall，FR-FETCH-02） |
+| LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
 | LITKIT_IEEE_API_KEY / ACM_API_KEY | 二期激活对应源必需 | 启用源工具 |
 | LITKIT_WORK_DIR | 必填 | 统一工作目录。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
@@ -344,7 +359,7 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 ### 10.1 约束
 
 - **C1 中文优先**：默认写作语言模式 zh；en 为第二模式
-- **C2 摘要工作流**：不下载 PDF、不抽取全文，仅基于检索元数据与摘要；检索结果必须含摘要（无摘要论文默认过滤）
+- **C2 摘要工作流**：检索与入库仅基于元数据与摘要（不依赖 PDF）；检索结果必须含摘要（无摘要论文默认过滤，`--keep-no-abstract` 显式保留）；全文获取（FR-FETCH）为按需可选能力，由 `fetch` 显式触发，不改变检索入库默认行为
 - **C3 引用标准**：中文引用遵循 GB/T 7714—2025（2026-07-01 实施），支持预印本[PP]、数据集[DS]等新文献类型
 - **C4 免费优先**：核心源公开 API；付费源为可选骨架
 - **C5 单向分层**：入口层 → 服务层 → 适配层 → 叶子层，禁止反向依赖

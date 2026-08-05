@@ -21,7 +21,7 @@ owner: litkit-core
 ### 1.2 子命令
 
 ```
-litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--full]
+litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -33,6 +33,7 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 | `--since` | 显式起始年份（含），优先于 `--years` | 无 |
 | `-y, --year` | 精确年份过滤（源支持时） | 无 |
 | `--keep-no-abstract` | 保留无摘要论文（默认过滤，FR-SEARCH-03） | 关 |
+| `--exclude` | 逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库） | 无 |
 | `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-04） | 关 |
 
 > 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `lib search`（二期）。
@@ -72,23 +73,38 @@ litkit metadata <id_type> <identifier>
 输出：`Paper | null`
 
 ```
+litkit fetch <cite_key|doi>
+```
+
+| 参数 | 说明 |
+|---|---|
+| `<cite_key\|doi>` | 3 字母引用标识或 DOI；论文须已入库 |
+
+输出：`{ citeKey, pdfPath?, fulltext, via }`，via = `cache` \| `unpaywall` \| `scihub`。
+流程：Unpaywall 按 DOI 解析 OA PDF（需 `LITKIT_UNPAYWALL_EMAIL`）→ 未命中则 Sci-Hub
+兜底（默认开启，`LITKIT_SCI_HUB_URL` 可配，失败静默）→ PDF 落盘
+`<WORK_DIR>/downloads/<citeKey>.pdf` → 抽取全文缓存入库（`papers.fulltext`）。
+库中已有全文缓存时直接返回（零网络）。扫描版 PDF 无文本层，抽取返回空文本。
+
+```
 litkit sources
 ```
 
 输出：`{ sources: [{ name, searchable, hasAbstract, enabled }] }`
 
 ```
-litkit manuscript <draft.md> [--lang zh|en] [-s style] [--docx] [-o output_dir]
+litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o output_dir]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--lang` | 写作语言模式 | zh |
 | `-s, --style` | zh: gb7714-2025；en: apa / ieee | 按 lang |
+| `--preview` | 预览模式：内联标记自描述（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），不生成引用列表 | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
 | `-o, --output-dir` | 输出目录 | WORK_DIR |
 
-产物：`formatted.md` + `refs.bib` + `refs.ris` + `references.txt` +（可选）`formatted.docx`
+产物：`formatted.md` + `refs.bib` + `refs.ris` + `references.txt`（preview 模式不含 `references.txt`）+（可选）`formatted.docx`
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
@@ -159,7 +175,8 @@ litkit mcp
 |---|---|---|
 | `search_papers` | query: string, sources?: []string, maxResultsPerSource?: int, year?: int, keepNoAbstract?: bool | `SearchResult` |
 | `get_paper_metadata` | idType: doi\|pmid\|arxiv\|title, identifier: string | `Paper \| null` |
-| `process_manuscript` | text: string, lang?: zh\|en, style?: string, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList, citationMap, unresolved, files }` |
+| `fetch_paper` | ref: citeKey\|doi | `{ citeKey, pdfPath?, fulltext, via }` |
+| `process_manuscript` | text: string, lang?: zh\|en, style?: string, preview?: bool, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList, citationMap, unresolved, files }` |
 | `export_references` | papers: []Paper, format: bibtex\|ris\|text, style?: string | `{ success, content }` |
 | `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en, paperType?: review\|empirical, journal?: string | `{ status, files[], nextSteps }` |
 | `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, paperType?: review\|empirical, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |
@@ -179,6 +196,9 @@ litkit mcp
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api |
 | LITKIT_EMBEDDING_API_KEY | api 模式必需 | 阿里百炼 / 硅基流动 embedding key |
+| LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（fetch/fetch_paper，FR-FETCH-02） |
+| LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
+| LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
 

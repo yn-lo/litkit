@@ -29,6 +29,7 @@ type deps struct {
 	store    *storage.Store
 	searcher *core.Searcher
 	fetcher  *core.MetadataFetcher // 标识符反查（metadata/manuscript 用）
+	fulltext *core.FulltextFetcher // 全文获取（fetch 用，FR-FETCH）
 }
 
 // Close 释放依赖持有的资源（文献库连接）。
@@ -68,6 +69,21 @@ func loadDeps() *deps {
 			store = nil
 		}
 	}
+	// 全文获取（FR-FETCH）：PDF 默认落盘 <WorkDir>/downloads，可由 LITKIT_FETCH_DOWNLOAD_DIR 覆盖
+	fulltext := (*core.FulltextFetcher)(nil)
+	if store != nil {
+		downloadDir := cfg.FetchDownloadDir
+		if downloadDir == "" && cfg.WorkDir != "" {
+			downloadDir = filepath.Join(cfg.WorkDir, "downloads")
+		}
+		fulltext = core.NewFulltextFetcher(
+			store,
+			httpclient.New(httpclient.Options{TimeoutMS: cfg.HTTPTimeoutMS, MaxRetries: cfg.HTTPRetries}),
+			cfg.UnpaywallEmail,
+			cfg.SciHubURL,
+			downloadDir,
+		)
+	}
 	return &deps{
 		cfg:      cfg,
 		registry: reg,
@@ -77,6 +93,7 @@ func loadDeps() *deps {
 			TimeoutMS:  cfg.HTTPTimeoutMS,
 			MaxRetries: cfg.HTTPRetries,
 		})),
+		fulltext: fulltext,
 	}
 }
 

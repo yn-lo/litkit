@@ -45,6 +45,9 @@ type Config struct {
 	ACMAPIKey             string
 	EmbeddingProvider     string // 默认 local
 	EmbeddingAPIKey       string
+	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
+	SciHubURL             string // Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03）
+	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads）
 }
 
 // Load 发现并加载 .env，返回填充好的 Config。
@@ -114,6 +117,9 @@ func loadFrom(envFile string) (*Config, error) {
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),
 		EmbeddingProvider:     getenvDefault("LITKIT_EMBEDDING_PROVIDER", DefaultEmbeddingProvider),
 		EmbeddingAPIKey:       os.Getenv("LITKIT_EMBEDDING_API_KEY"),
+		UnpaywallEmail:        os.Getenv("LITKIT_UNPAYWALL_EMAIL"),
+		SciHubURL:             getenvDefault("LITKIT_SCI_HUB_URL", "https://sci-hub.se"),
+		FetchDownloadDir:      os.Getenv("LITKIT_FETCH_DOWNLOAD_DIR"),
 	}
 	// 负数/零值下界钳制：负重试次数会使 httpclient 重试循环不执行而返回 nil 响应；
 	// 非正超时会退化为无超时

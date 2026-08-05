@@ -1,0 +1,40 @@
+# GitHub Actions Release — litkit
+#
+# 打 tag（如 v0.1.0）时触发：用 goreleaser 构建跨平台二进制（含 Windows .exe），
+# 上传到 GitHub Release 页面。按 app/.goreleaser.yml 产出，release 默认 draft。
+#
+# 用法：git tag v0.1.0 && git push origin v0.1.0
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          workdir: app
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

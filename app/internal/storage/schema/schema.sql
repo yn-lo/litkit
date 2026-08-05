@@ -18,11 +18,13 @@ CREATE TABLE IF NOT EXISTS papers (
     source     TEXT NOT NULL DEFAULT '',
     doc_type   TEXT NOT NULL DEFAULT '',
     url        TEXT NOT NULL DEFAULT '',
+    pdf_url    TEXT NOT NULL DEFAULT '',   -- 全文可用的 PDF 直链（FR-FETCH-02）
     pmid       TEXT NOT NULL DEFAULT '',
     arxiv_id   TEXT NOT NULL DEFAULT '',
     volume     TEXT NOT NULL DEFAULT '',
     number     TEXT NOT NULL DEFAULT '',
     pages      TEXT NOT NULL DEFAULT '',
+    fulltext   TEXT NOT NULL DEFAULT '',   -- 抽取的全文缓存（FR-FETCH-04，按 dedup_key 缓存）
     citations  INTEGER NOT NULL DEFAULT 0,
     fetched_at TEXT NOT NULL,
     publisher    TEXT NOT NULL DEFAULT '',  -- 出版社（书籍 [M] 用）

@@ -24,27 +24,18 @@ const (
 )
 
 // 标题默认阈值（mnd：避免魔法值）。
-const (
-	defaultMaxHeadingLevel  = 4  // 最大层级
-	defaultMaxHeadingLength = 15 // 标题最大字数
-)
 
-// ManuscriptSpec 撰写规范配置（.litkit/specs/manuscript-spec.yaml）。
+// ManuscriptSpec 撰写规范配置（.litkit/<type>/manuscript-spec.yaml）。
 // 用户可手动修改；修改后 `litkit init --refresh` 重新生成 AGENTS.md 撰写段。
 type ManuscriptSpec struct {
-	PaperType string        `yaml:"paper_type"` // review | empirical
-	Lang      string        `yaml:"lang"`       // zh | en
-	Journal   string        `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
-	Sections  Sections      `yaml:"sections"`
-	WordCount WordCounts    `yaml:"word_counts"`
-	Citation  CitationSpec  `yaml:"citation"`
-	Heading   HeadingLimits `yaml:"heading"`
-}
-
-// Sections 章节结构（按论文类型）。
-type Sections struct {
-	Review    []string `yaml:"review"`
-	Empirical []string `yaml:"empirical"`
+	PaperType  string        `yaml:"paper_type"` // review | empirical
+	Lang       string        `yaml:"lang"`       // zh | en
+	Journal    string        `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
+	Sections   []string      `yaml:"sections"`   // 当前论文类型的章节清单
+	WordCount  WordCounts    `yaml:"word_counts"`
+	Citation   CitationSpec  `yaml:"citation"`
+	Heading    HeadingLimits `yaml:"heading"`
+	BoastWords []string      `yaml:"boast_words"` // 自我夸大/AI痕迹禁用词表（空=使用默认词表）
 }
 
 // WordCounts 字数阈值 [min, max]。
@@ -66,69 +57,38 @@ type HeadingLimits struct {
 	MaxLength int `yaml:"max_length"`
 }
 
-// DefaultSpec 返回默认撰写规范（empirical/zh，与模板 manuscript-spec.yaml 一致）。
+// DefaultSpec 返回默认撰写规范（empirical/zh，从 embed 模板读取）。
 func DefaultSpec() *ManuscriptSpec {
 	return SpecForType(PaperTypeEmpirical, LangZH)
 }
 
-// SpecForType 按论文类型与语言返回预设撰写规范。
+// SpecForType 按论文类型与语言返回预设撰写规范（从 embed 模板读取）。
+// 模板文件由 //go:embed 编译时嵌入，运行时不会失败。
 func SpecForType(paperType, lang string) *ManuscriptSpec {
-	spec := &ManuscriptSpec{
-		PaperType: paperType,
-		Lang:      lang,
-		Sections: Sections{
-			Review:    []string{"引言", "文献检索方法", "主题分析", "讨论与展望", "结论"},
-			Empirical: []string{"引言", "资料与方法", "结果", "讨论", "结论"},
-		},
-		Heading: HeadingLimits{
-			MaxLevel:  defaultMaxHeadingLevel,
-			MaxLength: defaultMaxHeadingLength,
-		},
-	}
-	switch paperType {
-	case PaperTypeReview:
-		spec.WordCount = WordCounts{
-			Total:     []int{5000, 15000},
-			Abstract:  []int{200, 500},
-			Paragraph: []int{50, 500},
-		}
-		spec.Citation = CitationSpec{
-			Count: []int{50, 120},
-			Style: "gbt7714",
-		}
-	default: // empirical
-		spec.WordCount = WordCounts{
-			Total:     []int{3000, 8000},
-			Abstract:  []int{200, 500},
-			Paragraph: []int{30, 500},
-		}
-		spec.Citation = CitationSpec{
-			Count: []int{30, 45},
-			Style: "gbt7714",
-		}
-	}
-	if lang == LangEN {
-		spec.Citation.Style = "apa"
+	spec, err := LoadDefaultSpec(paperType, lang)
+	if err != nil {
+		panic(fmt.Sprintf("lint: embed 模板缺失（编译时错误）: %v", err))
 	}
 	return spec
 }
 
-// LoadSpec 从 yaml 文件加载撰写规范；文件缺失/非法时回退默认值并返回 error 提示。
+// LoadSpec 从 yaml 文件加载撰写规范；文件不存在时返回默认模板值。
 func LoadSpec(path string) (*ManuscriptSpec, error) {
-	spec := DefaultSpec()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return spec, fmt.Errorf("lint: read spec %s: %w", path, err)
+		if os.IsNotExist(err) {
+			return DefaultSpec(), nil
+		}
+		return DefaultSpec(), fmt.Errorf("lint: read spec %s: %w", path, err)
 	}
-	// 先解到临时对象，缺失字段保留默认值
-	loaded := *spec
-	if err := yaml.Unmarshal(data, &loaded); err != nil {
-		return spec, fmt.Errorf("lint: parse spec %s: %w", path, err)
+	var spec ManuscriptSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		return DefaultSpec(), fmt.Errorf("lint: parse spec %s: %w", path, err)
 	}
-	if err := loaded.Validate(); err != nil {
-		return spec, fmt.Errorf("lint: invalid spec %s: %w", path, err)
+	if err := spec.Validate(); err != nil {
+		return DefaultSpec(), fmt.Errorf("lint: invalid spec %s: %w", path, err)
 	}
-	return &loaded, nil
+	return &spec, nil
 }
 
 // Validate 校验规范字段合法性（信任边界输入校验）。
@@ -176,10 +136,12 @@ func validateRange(name string, r []int) error {
 
 // SectionList 返回当前论文类型的章节清单。
 func (s *ManuscriptSpec) SectionList() []string {
-	if s.PaperType == PaperTypeReview {
-		return s.Sections.Review
-	}
-	return s.Sections.Empirical
+	return s.Sections
+}
+
+// BoastWordList 返回夸大词表；spec 为空时返回 nil（verify 跳过）。
+func (s *ManuscriptSpec) BoastWordList() []string {
+	return s.BoastWords
 }
 
 // StyleLabel 返回引用样式的 AI 可读标签。
@@ -192,4 +154,9 @@ func (s *ManuscriptSpec) StyleLabel() string {
 	default:
 		return "GB/T 7714"
 	}
+}
+
+// TypeLangDir 返回 .litkit 下的论文类型目录名（如 "empirical-zh"）。
+func TypeLangDir(paperType, lang string) string {
+	return paperType + "-" + lang
 }

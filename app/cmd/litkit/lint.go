@@ -1,11 +1,12 @@
 // lint.go 实现 `litkit lint` 子命令（M4 撰写约束基础设施，FR-LINT-01/02）。
 //
-// 与 `litkit init` 区别：lint 仅生成 .litkit/ 四件套与 AGENTS.md 撰写段，
+// 与 `litkit init` 区别：lint 仅生成 .litkit/ 论文类型目录与 AGENTS.md 撰写段，
 // 不生成 .env、不初始化文献库（用于已有工作目录补齐约束设施）。
 package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -27,8 +28,8 @@ func newLintCmd(cfg *config.Config) *cobra.Command {
 // newLintInitCmd 构造 `litkit lint init [project_dir]`。
 func newLintInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init [project_dir]",
-		Short: "初始化撰写约束（.litkit/ 四件套 + AGENTS.md 撰写段）",
+		Use:   "init [project_dir] --type review|empirical --lang zh|en",
+		Short: "初始化论文类型目录（.litkit/<type>/ 的 yaml + AGENTS.md）",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireWorkDir(cfg); err != nil {
@@ -49,22 +50,35 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 				dir = args[0]
 			}
 
-			created, err := lint.InitHarness(dir, force)
+			// 论文类型目录
+			created, err := lint.InitPaperType(dir, paperType, lang, force)
 			if err != nil {
 				return err
 			}
 
-			// AGENTS.md：优先加载现有 yaml（保持用户阈值），否则按 type/lang 生成默认
-			specPath := lint.SpecPath(dir)
+			// 加载 spec
+			specPath := lint.SpecPath(dir, paperType, lang)
 			spec, err := lint.LoadSpec(specPath)
 			if err != nil {
 				spec = lint.SpecForType(paperType, lang)
-				spec.Journal = journal
 			}
-			if ok, err := writeIfAbsent(filepath.Join(dir, "AGENTS.md"), lint.RenderAgentsMD(spec), force); err != nil {
+			if journal != "" {
+				spec.Journal = journal
+				_ = lint.WriteSpec(specPath, spec)
+			}
+
+			// 类型 AGENTS.md
+			agentsDir := lint.PapersDirPath(dir, paperType, lang)
+			if err := os.MkdirAll(agentsDir, initDirPerm); err != nil {
 				return err
-			} else if ok {
-				created = append(created, "AGENTS.md")
+			}
+			agentsPath := filepath.Join(agentsDir, "AGENTS.md")
+			agentsContent := lint.TypeAgentsMD(spec)
+			if !fileExists(agentsPath) || force {
+				if err := os.WriteFile(agentsPath, []byte(agentsContent), initFilePerm); err != nil {
+					return err
+				}
+				created = append(created, filepath.Join(lint.LitkitDir, lint.TypeLangDir(paperType, lang), "AGENTS.md"))
 			}
 
 			return printJSON(struct {
@@ -74,13 +88,13 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 			}{
 				Status:    "ok",
 				Files:     created,
-				NextSteps: []string{"阅读 .litkit/rules.md 与 checklist.md", "成稿后运行 litkit verify 检查"},
+				NextSteps: []string{"阅读 .litkit/<type>/AGENTS.md 获取撰写规定", "成稿后运行 litkit verify 检查"},
 			})
 		},
 	}
-	cmd.Flags().Bool("force", false, "覆盖已存在的 .litkit/ 与 AGENTS.md")
-	cmd.Flags().String("lang", lint.LangZH, "撰写语言 zh|en（仅首次生成 yaml 时生效）")
-	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型 review|empirical（仅首次生成 yaml 时生效）")
+	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
+	cmd.Flags().String("lang", lint.LangZH, "撰写语言 zh|en")
+	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型 review|empirical")
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec）")
 	return cmd
 }

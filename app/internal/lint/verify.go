@@ -118,8 +118,8 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 	report.Passed = report.ExitHint == "pass"
 	// M 类规则（无法自动判定）固定输出人工核对提示。
 	report.ManualChecklist = []string{
-		"R2.4 数据一致性：核对正文数据与表格/图片是否一致",
-		"R4.3 术语缩写：核对缩写首次出现是否给出全称",
+		"数据一致性：核对正文数据与表格/图片是否一致",
+		"术语缩写：核对缩写首次出现是否给出全称",
 	}
 	return report, nil
 }

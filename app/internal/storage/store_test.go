@@ -340,7 +340,7 @@ func TestListPapers_OrderedByNewest(t *testing.T) {
 			t.Fatalf("UpsertPaper: %v", err)
 		}
 	}
-	papers, err := s.ListPapers("", 10, 0)
+	papers, err := s.ListPapers("", "id", 10, 0)
 	if err != nil {
 		t.Fatalf("ListPapers: %v", err)
 	}
@@ -349,6 +349,42 @@ func TestListPapers_OrderedByNewest(t *testing.T) {
 	}
 	if papers[0].Title != "Second" {
 		t.Fatalf("最新入库应在最前，got %q", papers[0].Title)
+	}
+}
+
+func TestListPapers_OrderByYear(t *testing.T) {
+	s := newTestStore(t)
+	old := paper("Old", "10.1/old")
+	old.Year = 2010
+	recent := paper("Recent", "10.1/recent")
+	recent.Year = 2024
+	nodate := paper("NoDate", "10.1/nodate")
+	// 入库顺序：old → recent → nodate
+	for _, p := range []model.Paper{old, recent, nodate} {
+		if _, _, err := s.UpsertPaper(p); err != nil {
+			t.Fatalf("UpsertPaper: %v", err)
+		}
+	}
+	papers, err := s.ListPapers("", "year", 10, 0)
+	if err != nil {
+		t.Fatalf("ListPapers: %v", err)
+	}
+	if len(papers) != 3 {
+		t.Fatalf("应列出 3 篇，got %d", len(papers))
+	}
+	if papers[0].Title != "Recent" {
+		t.Fatalf("年份倒序：最新年份应在最前，got %q (year=%d)", papers[0].Title, papers[0].Year)
+	}
+	if papers[2].Title != "NoDate" {
+		t.Fatalf("年份倒序：year=0 应排末尾，got %q (year=%d)", papers[2].Title, papers[2].Year)
+	}
+}
+
+func TestListPapers_BadSort(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.ListPapers("", "invalid", 10, 0)
+	if err == nil {
+		t.Fatal("无效排序应返回错误")
 	}
 }
 
@@ -364,7 +400,7 @@ func TestListPapers_FilterBySource(t *testing.T) {
 	if _, _, err := s.UpsertPaper(b); err != nil {
 		t.Fatalf("UpsertPaper: %v", err)
 	}
-	papers, err := s.ListPapers("arxiv", 10, 0)
+	papers, err := s.ListPapers("arxiv", "id", 10, 0)
 	if err != nil {
 		t.Fatalf("ListPapers: %v", err)
 	}
@@ -380,14 +416,14 @@ func TestSearchLocal_MatchesTitleAbstract(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertPaper: %v", err)
 	}
-	got, err := s.SearchLocal("neural", 10)
+	got, err := s.SearchLocal("neural", 10, 0)
 	if err != nil {
 		t.Fatalf("SearchLocal: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("关键词应命中 1 篇，got %d", len(got))
 	}
-	miss, err := s.SearchLocal("nonexistent-token", 10)
+	miss, err := s.SearchLocal("nonexistent-token", 10, 0)
 	if err != nil {
 		t.Fatalf("SearchLocal miss: %v", err)
 	}
@@ -424,6 +460,60 @@ func TestForget_Missing(t *testing.T) {
 	}
 	if removed {
 		t.Fatal("不存在的 cite_key 应返回 removed=false")
+	}
+}
+
+// ---- 全文缓存（FR-FETCH-04）----
+
+func TestFulltext_SetGet_ByCiteKey(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("Full", "10.1/fulltext"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	// 未设置时返回空
+	if got, err := s.GetFulltext(k); err != nil || got != "" {
+		t.Fatalf("初始应无全文，got %q err=%v", got, err)
+	}
+	text := "This is the full text of the paper.\nSecond paragraph."
+	if err := s.SetFulltext(k, text); err != nil {
+		t.Fatalf("SetFulltext: %v", err)
+	}
+	got, err := s.GetFulltext(k)
+	if err != nil {
+		t.Fatalf("GetFulltext: %v", err)
+	}
+	if got != text {
+		t.Fatalf("全文 round-trip 应一致，got %q", got)
+	}
+}
+
+func TestFulltext_UpdateOverwrites(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("Full", "10.1/fulltext2"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	if err := s.SetFulltext(k, "v1"); err != nil {
+		t.Fatalf("SetFulltext v1: %v", err)
+	}
+	if err := s.SetFulltext(k, "v2"); err != nil {
+		t.Fatalf("SetFulltext v2: %v", err)
+	}
+	got, _ := s.GetFulltext(k)
+	if got != "v2" {
+		t.Fatalf("全文应被覆盖为 v2，got %q", got)
+	}
+}
+
+func TestFulltext_MissingCiteKey_ReturnsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	got, err := s.GetFulltext("zzz")
+	if err != nil {
+		t.Fatalf("GetFulltext: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("未入库 cite_key 全文应为空，got %q", got)
 	}
 }
 

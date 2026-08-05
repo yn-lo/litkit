@@ -19,7 +19,7 @@ import (
 //   - 1 有 A 类违规（exitHint=fix_and_rerun），AI 应自动修复后重跑
 func newVerifyCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "verify <file.md> [file2.md ...]",
+		Use:   "verify <file.md> [file2.md ...] --type review|empirical --lang zh|en",
 		Short: "验证文稿合规性（A/S 类规则自动检查）",
 		Long: `litkit verify —— 事后合规验证
 
@@ -52,8 +52,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				return &paramError{msg: fmt.Sprintf("verify: 无效 type %q（可选 review|empirical）", paperType)}
 			}
 
-			// 加载阈值配置（.litkit/specs/manuscript-spec.yaml）
-			spec := loadVerifySpec(cfg.WorkDir)
+			// 加载阈值配置
+			spec := loadVerifySpec(cfg.WorkDir, paperType, lang)
 
 			opts := lint.Options{
 				Lang:      lang,
@@ -79,15 +79,30 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	}
 	cmd.Flags().String("lang", "zh", "写作语言 zh|en")
 	cmd.Flags().String("mode", "draft", "验证模式 chapter|draft|final（递增启用规则）")
-	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从 spec 自动取）")
+	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从已有 spec 自动检测）")
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
 	return cmd
 }
 
-// loadVerifySpec 从工作目录加载 manuscript-spec.yaml；不存在时用默认值。
-func loadVerifySpec(workDir string) *lint.ManuscriptSpec {
-	p := lint.SpecPath(workDir)
+// loadVerifySpec 从工作目录加载 manuscript-spec.yaml。
+// paperType/lang 为空时自动检测（仅一个类型时使用）。
+func loadVerifySpec(workDir, paperType, lang string) *lint.ManuscriptSpec {
+	if paperType == "" || lang == "" {
+		types, err := lint.ListPaperTypes(workDir)
+		if err == nil && len(types) == 1 {
+			// 自动检测到唯一类型
+			p := lint.TypeSpecPath(workDir, types[0])
+			spec, err := lint.LoadSpec(p)
+			if err == nil {
+				return spec
+			}
+		}
+		// 无法确定类型，用默认值
+		fmt.Fprintln(os.Stderr, "litkit: 未指定 --type/--lang 且无法自动检测，使用默认阈值")
+		return lint.DefaultSpec()
+	}
+	p := lint.SpecPath(workDir, paperType, lang)
 	spec, err := lint.LoadSpec(p)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "litkit: 未找到 %s，使用默认阈值（可 litkit init 生成）\n", p)

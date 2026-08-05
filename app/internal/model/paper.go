@@ -45,6 +45,7 @@ type Paper struct {
 	PMID        string   `json:"pmid"`
 	ArXivID     string   `json:"arxivId"`
 	URL         string   `json:"url"`
+	PdfURL      string   `json:"pdfUrl,omitempty"`      // 全文可用的 PDF 直链（fetch 时写入，FR-FETCH-02）
 	Source      string   `json:"source"`                // 来源平台标识
 	DocType     string   `json:"docType"`               // 文献类型：article/preprint/dataset/...（GB/T 7714-2025）
 	Volume      string   `json:"volume,omitempty"`      // 卷（GB/T 7714 卷）

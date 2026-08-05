@@ -49,16 +49,17 @@ func newLibraryCmd(st *storage.Store) *cobra.Command {
 func newLibListCmd(st *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "列出库内论文（最新在前，默认精简视图）",
+		Short: "列出库内论文（默认按年份倒序，精简视图）",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if st == nil {
 				return errNoStore
 			}
 			source, _ := cmd.Flags().GetString("source")
+			sortBy, _ := cmd.Flags().GetString("sort")
 			limit, _ := cmd.Flags().GetInt("limit")
 			offset, _ := cmd.Flags().GetInt("offset")
 			full, _ := cmd.Flags().GetBool("full")
-			papers, err := st.ListPapers(source, limit, offset)
+			papers, err := st.ListPapers(source, sortBy, limit, offset)
 			if err != nil {
 				return err
 			}
@@ -69,6 +70,7 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 		},
 	}
 	cmd.Flags().String("source", "", "按来源过滤")
+	cmd.Flags().String("sort", "year", "排序方式：year（年份倒序）| id（入库倒序）")
 	cmd.Flags().Int("limit", 0, "最大条数（默认 100）")
 	cmd.Flags().Int("offset", 0, "偏移量")
 	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
@@ -85,8 +87,9 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 				return errNoStore
 			}
 			limit, _ := cmd.Flags().GetInt("limit")
+			offset, _ := cmd.Flags().GetInt("offset")
 			full, _ := cmd.Flags().GetBool("full")
-			papers, err := st.SearchLocal(args[0], limit)
+			papers, err := st.SearchLocal(args[0], limit, offset)
 			if err != nil {
 				return err
 			}
@@ -97,6 +100,7 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 		},
 	}
 	cmd.Flags().Int("limit", 0, "最大条数（默认 50）")
+	cmd.Flags().Int("offset", 0, "偏移量")
 	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
 	return cmd
 }

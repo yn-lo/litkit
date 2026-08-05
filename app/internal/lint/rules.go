@@ -58,7 +58,7 @@ func modeRank(m Mode) int {
 
 // Violation 单条违规。
 type Violation struct {
-	RuleID     string `json:"ruleId"`
+	RuleID     string `json:"-"` // 内部使用，不输出到 JSON
 	Line       int    `json:"line,omitempty"`
 	Problem    string `json:"problem"`
 	Suggestion string `json:"suggestion"`
@@ -94,12 +94,6 @@ var (
 		regexp.MustCompile(`对.*进行`),
 	}
 )
-
-// boastWords 自我夸大关键词表。
-var boastWords = []string{
-	"首次证实", "颠覆性", "极其创新", "前所未有",
-	"revolutionary", "groundbreaking", "unprecedented",
-}
 
 // countWords 统计字数：中文字符（Han）按 1 字计，英文按空格分词计。
 // 返回 (总字数, 英文词数)；英文词定义为含至少一个 ASCII 字母的 token。
@@ -448,12 +442,13 @@ func checkR71(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR72 自我夸大：关键词表扫描违规。
-func checkR72(src *Source, _ *ManuscriptSpec) []Violation {
+// checkR72 自我夸大：关键词表扫描违规（词表从 spec 读取，可用户自定义）。
+func checkR72(src *Source, spec *ManuscriptSpec) []Violation {
+	words := spec.BoastWordList()
 	var vs []Violation
 	for i, ln := range src.Body {
 		lower := strings.ToLower(ln)
-		for _, w := range boastWords {
+		for _, w := range words {
 			if strings.Contains(lower, strings.ToLower(w)) {
 				vs = append(vs, Violation{
 					RuleID:     "R7.2",
@@ -613,7 +608,13 @@ func checkR83(src *Source, spec *ManuscriptSpec) []Violation {
 		paraWords = 0
 	}
 	for i, ln := range src.Body {
-		if strings.TrimSpace(ln) == "" {
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			flush()
+			continue
+		}
+		// 标题行不计入段落（R8.3 只检内容段落）
+		if isHeading(t) {
 			flush()
 			continue
 		}

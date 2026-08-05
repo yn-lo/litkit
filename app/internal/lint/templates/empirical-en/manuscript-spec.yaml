@@ -1,0 +1,59 @@
+paper_type: empirical
+lang: en
+journal: ""
+sections:
+  - Introduction
+  - Methods
+  - Results
+  - Discussion
+  - Conclusion
+word_counts:
+  total:
+    - 3000
+    - 8000
+  abstract:
+    - 200
+    - 500
+  paragraph:
+    - 30
+    - 500
+citation:
+  count:
+    - 30
+    - 45
+  style: apa
+heading:
+  max_level: 4
+  max_length: 15
+boast_words:
+  - revolutionary
+  - groundbreaking
+  - unprecedented
+  - paradigm
+  - synergy
+  - empower
+  - unleash
+  - catalyze
+  - harness
+  - delve
+  - tapestry
+  - landscape
+  - cornerstone
+  - seamlessly
+  - robust
+  - comprehensive
+  - crucial
+  - indispensable
+  - intricate
+  - meticulous
+  - profound
+  - significant
+  - outstanding
+  - extraordinary
+  - unparalleled
+  - noteworthy
+  - it is worth noting
+  - needless to say
+  - in conclusion
+  - ever-evolving
+  - vibrant

@@ -57,26 +57,34 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("应生成 %s：%v", name, err)
 		}
 	}
-	// .litkit/ 目录四件套
+	// .litkit/ 目录共享文件 + 类型文件
 	for _, rel := range []string{
-		".litkit/rules.md",
-		".litkit/checklist.md",
-		".litkit/specs/manuscript-spec.yaml",
 		".litkit/verifier_models.json",
+		".litkit/empirical-zh/manuscript-spec.yaml",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("应生成 %s：%v", rel, err)
 		}
 	}
-	// AGENTS.md 应含检索命令 + 撰写硬性规定（事前指导）
+	// AGENTS.md 应含检索命令 + 论文类型清单
 	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
 	got := string(data)
-	for _, want := range []string{"litkit search", "--mode", "撰写硬性规定", "[@citeKey]", "litkit verify"} {
+	for _, want := range []string{"litkit search", "--mode", "litkit verify", "ls .litkit/", "不写摘要"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AGENTS.md 应含 %q", want)
+		}
+	}
+	// 类型 AGENTS.md 应含撰写规定
+	typeAgents, err := os.ReadFile(filepath.Join(dir, ".litkit", "empirical-zh", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read .litkit/empirical-zh/AGENTS.md: %v", err)
+	}
+	for _, want := range []string{"撰写硬性规定", "引言 → 资料与方法", "[@citeKey]"} {
+		if !strings.Contains(string(typeAgents), want) {
+			t.Errorf("类型 AGENTS.md 应含 %q", want)
 		}
 	}
 }
@@ -86,16 +94,17 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 	if err := initWorkdir(dir, false, false, lint.PaperTypeReview, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
-	spec, err := lint.LoadSpec(lint.SpecPath(dir))
+	spec, err := lint.LoadSpec(lint.SpecPath(dir, lint.PaperTypeReview, lint.LangZH))
 	if err != nil {
 		t.Fatalf("LoadSpec: %v", err)
 	}
 	if spec.PaperType != lint.PaperTypeReview {
 		t.Errorf("paper_type 应为 review，got %s", spec.PaperType)
 	}
-	agents, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
-	if !strings.Contains(string(agents), "文献检索方法") {
-		t.Errorf("AGENTS.md 应含综述章节（文献检索方法）")
+	// 类型 AGENTS.md 应含综述章节
+	typeAgents, _ := os.ReadFile(filepath.Join(dir, ".litkit", "review-zh", "AGENTS.md"))
+	if !strings.Contains(string(typeAgents), "文献检索方法") {
+		t.Errorf("类型 AGENTS.md 应含综述章节（文献检索方法）")
 	}
 }
 
@@ -105,7 +114,7 @@ func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	// 修改 yaml：引用区间改为 10-20
-	specPath := lint.SpecPath(dir)
+	specPath := lint.SpecPath(dir, lint.PaperTypeEmpirical, lint.LangZH)
 	spec, err := lint.LoadSpec(specPath)
 	if err != nil {
 		t.Fatalf("LoadSpec: %v", err)
@@ -118,7 +127,7 @@ func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
 	if err := initWorkdir(dir, false, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	agents, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	agents, _ := os.ReadFile(filepath.Join(dir, ".litkit", "empirical-zh", "AGENTS.md"))
 	if !strings.Contains(string(agents), "全文 10-20 篇") {
 		t.Errorf("refresh 后 AGENTS.md 应反映新引用区间 10-20")
 	}

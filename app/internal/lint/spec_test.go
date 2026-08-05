@@ -9,10 +9,10 @@ import (
 
 func TestLoadSpec_defaults(t *testing.T) {
 	dir := t.TempDir()
-	// 文件缺失 → 回退默认并报错（调用方可忽略）
+	// 文件缺失 → 返回默认值（无 error，调用方可忽略）
 	spec, err := LoadSpec(filepath.Join(dir, "missing.yaml"))
-	if err == nil {
-		t.Fatal("文件缺失应返回 error")
+	if err != nil {
+		t.Fatalf("文件缺失应返回默认值，got error: %v", err)
 	}
 	if spec.PaperType != PaperTypeEmpirical {
 		t.Errorf("默认 paper_type 应为 empirical，got %s", spec.PaperType)
@@ -24,8 +24,18 @@ func TestLoadSpec_custom(t *testing.T) {
 	path := filepath.Join(dir, "s.yaml")
 	content := `paper_type: review
 lang: en
+sections:
+  - Introduction
+  - Methods
+word_counts:
+  total: [3000, 8000]
+  abstract: [200, 500]
+  paragraph: [30, 500]
 citation:
   count: [50, 100]
+heading:
+  max_level: 4
+  max_length: 15
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
@@ -66,27 +76,47 @@ func TestLoadSpec_invalid(t *testing.T) {
 	}
 }
 
-func TestInitHarness_createsLitkit(t *testing.T) {
+func TestInitProjectInfra_createsSharedFiles(t *testing.T) {
 	dir := t.TempDir()
-	created, err := InitHarness(dir, false)
+	created, err := InitProjectInfra(dir, false)
 	if err != nil {
-		t.Fatalf("InitHarness: %v", err)
+		t.Fatalf("InitProjectInfra: %v", err)
 	}
-	if len(created) != 4 {
-		t.Errorf("应创建 4 个文件，got %d: %v", len(created), created)
+	if len(created) != 1 {
+		t.Errorf("应创建 1 个共享文件，got %d: %v", len(created), created)
 	}
-	for _, rel := range []string{
-		"rules.md", "checklist.md",
-		"specs/manuscript-spec.yaml", "verifier_models.json",
-	} {
+	for _, rel := range []string{"verifier_models.json"} {
 		if _, err := os.Stat(filepath.Join(dir, LitkitDir, rel)); err != nil {
 			t.Errorf("应生成 .litkit/%s：%v", rel, err)
 		}
 	}
 	// 再次调用（无 force）不应覆盖
-	created2, err := InitHarness(dir, false)
+	created2, err := InitProjectInfra(dir, false)
 	if err != nil {
-		t.Fatalf("InitHarness: %v", err)
+		t.Fatalf("InitProjectInfra: %v", err)
+	}
+	if len(created2) != 0 {
+		t.Errorf("无 force 不应重复创建，got %v", created2)
+	}
+}
+
+func TestInitPaperType_createsYaml(t *testing.T) {
+	dir := t.TempDir()
+	created, err := InitPaperType(dir, PaperTypeReview, LangZH, false)
+	if err != nil {
+		t.Fatalf("InitPaperType: %v", err)
+	}
+	if len(created) != 1 {
+		t.Errorf("应创建 1 个文件，got %d: %v", len(created), created)
+	}
+	specPath := SpecPath(dir, PaperTypeReview, LangZH)
+	if _, err := os.Stat(specPath); err != nil {
+		t.Errorf("应生成 .litkit/review-zh/manuscript-spec.yaml：%v", err)
+	}
+	// 再次调用（无 force）不应覆盖
+	created2, err := InitPaperType(dir, PaperTypeReview, LangZH, false)
+	if err != nil {
+		t.Fatalf("InitPaperType: %v", err)
 	}
 	if len(created2) != 0 {
 		t.Errorf("无 force 不应重复创建，got %v", created2)
@@ -121,12 +151,13 @@ func TestRenderWritingRules_en(t *testing.T) {
 	spec := DefaultSpec()
 	spec.Lang = LangEN
 	spec.PaperType = PaperTypeReview
+	spec.Sections = []string{"Introduction", "Search Strategy", "Thematic Analysis", "Discussion and Outlook", "Conclusion"}
 	got := RenderWritingRules(spec)
 	for _, want := range []string{
 		"论文类型：综述（review）",
 		"academic English",
 		"章节结构（review）",
-		"引言 → 文献检索方法",
+		"Introduction → Search Strategy",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("en 渲染应含 %q", want)

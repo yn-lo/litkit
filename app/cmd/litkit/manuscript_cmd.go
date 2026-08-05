@@ -46,12 +46,16 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			}
 			lang, _ := cmd.Flags().GetString("lang")
 			styleFlag, _ := cmd.Flags().GetString("style")
+			preview, _ := cmd.Flags().GetBool("preview")
 			docx, _ := cmd.Flags().GetBool("docx")
 			outDir, _ := cmd.Flags().GetString("output-dir")
 
 			style, err := resolveStyle(lang, styleFlag)
 			if err != nil {
 				return err
+			}
+			if preview {
+				style = core.StylePreview
 			}
 			src, err := os.ReadFile(args[0])
 			if err != nil {
@@ -84,6 +88,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 	}
 	cmd.Flags().String("lang", "zh", "写作语言模式 zh|en")
 	cmd.Flags().StringP("style", "s", "", "引用样式（zh: gb7714-2025；en: apa / ieee）")
+	cmd.Flags().Bool("preview", false, "预览模式：内联标记自描述（[@doi:…—标题] 或 [@标题]），不生成引用列表")
 	cmd.Flags().Bool("docx", false, "生成 Word（需 Pandoc）")
 	cmd.Flags().StringP("output-dir", "o", "", "输出目录（默认 WORK_DIR）")
 	return cmd

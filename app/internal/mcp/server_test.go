@@ -93,6 +93,7 @@ func TestToolsList(t *testing.T) {
 	want := map[string]bool{
 		"search_papers":      true,
 		"get_paper_metadata": true,
+		"fetch_paper":        true,
 		"process_manuscript": true,
 		"export_references":  true,
 		"lint_init":          true,
@@ -226,7 +227,9 @@ func TestCallTool_LintInit(t *testing.T) {
 	if out.Status != "ok" {
 		t.Errorf("Status = %q, want ok", out.Status)
 	}
-	for _, f := range []string{"AGENTS.md", ".litkit/rules.md", ".litkit/checklist.md"} {
+	for _, f := range []string{".litkit/verifier_models.json",
+		".litkit/empirical-zh/manuscript-spec.yaml",
+		".litkit/empirical-zh/AGENTS.md"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("lint_init 未生成 %s: %v", f, err)
 		}
@@ -246,7 +249,7 @@ func TestCallTool_LintInitWithPaperType(t *testing.T) {
 		t.Fatalf("lint_init 不应报错: %v", res.Content)
 	}
 	// 验证生成的 spec 包含 paper_type 和 journal
-	spec, err := lint.LoadSpec(lint.SpecPath(dir))
+	spec, err := lint.LoadSpec(lint.SpecPath(dir, "review", "zh"))
 	if err != nil {
 		t.Fatalf("LoadSpec: %v", err)
 	}
@@ -257,7 +260,7 @@ func TestCallTool_LintInitWithPaperType(t *testing.T) {
 		t.Errorf("spec.Journal = %q, want %q", spec.Journal, "中华医学杂志")
 	}
 	// AGENTS.md 应包含论文类型行
-	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	agents, err := os.ReadFile(filepath.Join(dir, ".litkit", "review-zh", "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("ReadFile AGENTS.md: %v", err)
 	}
@@ -303,9 +306,10 @@ func TestCallTool_VerifyManuscriptWithPaperType(t *testing.T) {
 	}
 	var reviewReport lint.Report
 	structuredAs(t, res, &reviewReport)
+	// ruleR21 带 json:"-"（RuleID 不输出），故按人类可读的 Problem 文本断言。
 	for _, f := range reviewReport.Files {
 		for _, v := range f.Violations {
-			if v.RuleID == "R2.1" {
+			if v.Problem == "P 值应大写" {
 				t.Error("review 类型不应触发 R2.1（P值格式仅实证）")
 			}
 		}
@@ -321,9 +325,11 @@ func TestCallTool_VerifyManuscriptWithPaperType(t *testing.T) {
 	var empReport lint.Report
 	structuredAs(t, res2, &empReport)
 	found := false
+
+	// ruleR21 带 json:"-"（RuleID 不输出），故按人类可读的 Problem 文本断言。
 	for _, f := range empReport.Files {
 		for _, v := range f.Violations {
-			if v.RuleID == "R2.1" {
+			if v.Problem == "P 值应大写" {
 				found = true
 			}
 		}
@@ -439,5 +445,43 @@ func TestCallTool_GetPaperMetadataNull(t *testing.T) {
 	got := textContent(t, res)
 	if got != "null" {
 		t.Errorf("未命中应返回文本 null，got %q", got)
+	}
+}
+
+// TestCallTool_FetchPaperCacheHit 已缓存全文时 fetch_paper 直接返回（via=cache，零网络）。
+func TestCallTool_FetchPaperCacheHit(t *testing.T) {
+	deps, store := newTestDeps(t)
+	deps.Fulltext = core.NewFulltextFetcher(store, httpclient.New(httpclient.Options{}), "", "", t.TempDir())
+	cs := newTestClient(t, deps)
+
+	p := model.Paper{Title: "Cached", DOI: "10.1/cached", Abstract: "abs", Source: "fake"}
+	p.ID = p.ComputeID()
+	citeKey, _, err := store.UpsertPaper(p)
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	if err := store.SetFulltext(citeKey, "cached fulltext body"); err != nil {
+		t.Fatalf("SetFulltext: %v", err)
+	}
+
+	res := callTool(t, cs, "fetch_paper", map[string]any{"ref": citeKey})
+	if res.IsError {
+		t.Fatalf("fetch_paper 不应报错: %v", res.Content)
+	}
+	var out core.FetchResult
+	structuredAs(t, res, &out)
+	if out.Via != "cache" || out.Fulltext != "cached fulltext body" {
+		t.Errorf("应命中缓存，got %+v", out)
+	}
+}
+
+// TestCallTool_FetchPaperNoStore 无文献库时报错（与 CLI 行为一致）。
+func TestCallTool_FetchPaperNoStore(t *testing.T) {
+	deps := Deps{Cfg: &config.Config{}, Searcher: core.NewSearcher(nil, nil, 5, 0)}
+	cs := newTestClient(t, deps)
+
+	res := callTool(t, cs, "fetch_paper", map[string]any{"ref": "10.1/x"})
+	if !res.IsError {
+		t.Fatal("无 store 应返回 IsError")
 	}
 }

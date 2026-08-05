@@ -273,6 +273,22 @@ func TestRule_R7_2(t *testing.T) {
 	}
 }
 
+// TestRule_R7_2_customBoastWords 自定义词表覆盖默认词表。
+func TestRule_R7_2_customBoastWords(t *testing.T) {
+	spec := DefaultSpec()
+	spec.BoastWords = []string{"自定义夸大词"} // 仅含自定义词
+	// 默认词表中的"首次证实"不应再触发
+	fr := runContent(t, "本研究首次证实了该假设。\n", spec, zhDraft())
+	if got := violationsOf(fr, "R7.2"); len(got) != 0 {
+		t.Errorf("自定义词表应覆盖默认，'首次证实'不应违规，got %v", got)
+	}
+	// 自定义词应触发
+	fr = runContent(t, "这是自定义夸大词的表述。\n", spec, zhDraft())
+	if got := violationsOf(fr, "R7.2"); len(got) != 1 {
+		t.Errorf("自定义夸大词应违规，got %v", got)
+	}
+}
+
 func TestRule_R9_1(t *testing.T) {
 	fr := runContent(t, "【注意】此处待修改。\n", DefaultSpec(), zhChapter())
 	got := violationsOf(fr, "R9.1")
@@ -358,6 +374,16 @@ func TestRule_R8_3(t *testing.T) {
 	fr = runContent(t, strings.Repeat("字", 100)+"\n", DefaultSpec(), zhFinal())
 	if got := violationsOf(fr, "R8.3"); len(got) != 0 {
 		t.Errorf("段落字数合规不应违规，got %v", got)
+	}
+	// 标题行不应计为段落（R8.3 只检内容段落）
+	fr = runContent(t, "## 引言\n\n短段落。\n", DefaultSpec(), zhFinal())
+	got = violationsOf(fr, "R8.3")
+	if len(got) != 1 || got[0].Line != 3 {
+		t.Errorf("标题行不应触发 R8.3，仅内容段落短应违规，got %v", got)
+	}
+	fr = runContent(t, "## 引言\n\n# 结论\n", DefaultSpec(), zhFinal())
+	if got := violationsOf(fr, "R8.3"); len(got) != 0 {
+		t.Errorf("纯标题行不应触发 R8.3，got %v", got)
 	}
 }
 
