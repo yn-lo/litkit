@@ -1,5 +1,5 @@
 // Package lint 实现撰写约束（harness）基础设施：.litkit 目录生成、
-// manuscript-spec.yaml 解析、AGENTS.md 撰写硬性规定渲染（事前指导）。
+// manuscript-spec.yaml 解析。
 //
 // 对应 PRD FR-LINT；架构约束：服务层，仅被入口层调用。
 package lint
@@ -26,7 +26,7 @@ const (
 // 标题默认阈值（mnd：避免魔法值）。
 
 // ManuscriptSpec 撰写规范配置（.litkit/<type>/manuscript-spec.yaml）。
-// 用户可手动修改；修改后 `litkit init --refresh` 重新生成 AGENTS.md 撰写段。
+// 用户可手动修改；AI 直接读取此文件，无需额外步骤。
 type ManuscriptSpec struct {
 	PaperType  string        `yaml:"paper_type"` // review | empirical
 	Lang       string        `yaml:"lang"`       // zh | en

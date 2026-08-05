@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -237,18 +238,16 @@ func registerProcessManuscript(s *gomcp.Server, deps Deps) {
 			CitationMap:   res.CitationMap,
 			Unresolved:    res.Unresolved,
 		}
-		// preview 模式：正文标记已自描述，不生成引用列表。
-		if !in.Preview {
-			refList, err := core.RenderReferenceList(res.Papers, style)
-			if err != nil {
-				return nil, out, err
-			}
-			out.ReferenceList = refList
+		// 文末引用列表（含 preview：自描述标记 + 编号列表供人工核对）。
+		refList, err := core.RenderReferenceList(res.Papers, style)
+		if err != nil {
+			return nil, out, err
 		}
+		out.ReferenceList = refList
 
 		outDir := in.OutputDir
 		if outDir == "" && deps.Cfg != nil {
-			outDir = deps.Cfg.WorkDir
+			outDir = filepath.Join(deps.Cfg.WorkDir, "outputs")
 		}
 		if outDir == "" {
 			return nil, out, nil // 无目录：只返回文本（LLM 直接可用）
@@ -256,13 +255,15 @@ func registerProcessManuscript(s *gomcp.Server, deps Deps) {
 		if err := os.MkdirAll(outDir, outputDirPerm); err != nil {
 			return nil, out, fmt.Errorf("mcp: process_manuscript: 创建输出目录失败: %w", err)
 		}
-		files, err := core.WriteManuscriptOutputs(outDir, res, style)
+		base := "manuscript"
+		ts := core.ManuscriptStamp(time.Now())
+		files, err := core.WriteManuscriptOutputs(outDir, base, ts, res, style)
 		if err != nil {
 			return nil, out, err
 		}
 		if in.GenerateDocx {
 			if _, err := exec.LookPath("pandoc"); err == nil {
-				docxPath := filepath.Join(outDir, "formatted.docx")
+				docxPath := filepath.Join(outDir, base+"_"+ts+".docx")
 				if err := core.PandocToDocx(files[core.ManuscriptFormatted], docxPath); err == nil {
 					files["formatted.docx"] = docxPath
 				}
@@ -338,7 +339,7 @@ type lintInitOut struct {
 func registerLintInit(s *gomcp.Server, deps Deps) {
 	gomcp.AddTool[lintInitIn, lintInitOut](s, &gomcp.Tool{
 		Name:        "lint_init",
-		Description: "初始化撰写约束（.litkit/<type>/ + AGENTS.md 撰写段）",
+		Description: "初始化撰写约束（.litkit/<type>/ 的 manuscript-spec.yaml）",
 	}, func(_ context.Context, _ *gomcp.CallToolRequest, in lintInitIn) (*gomcp.CallToolResult, lintInitOut, error) {
 		out := lintInitOut{}
 		dir := in.ProjectDir
@@ -392,23 +393,9 @@ func registerLintInit(s *gomcp.Server, deps Deps) {
 			return nil, out, fmt.Errorf("mcp: lint_init: 写入 spec: %w", err)
 		}
 
-		// 类型 AGENTS.md（自动区 + 追加区）
-		agentsDir := lint.PapersDirPath(dir, paperType, lang)
-		if err := os.MkdirAll(agentsDir, agentsFilePerm); err != nil {
-			return nil, out, err
-		}
-		agentsPath := filepath.Join(agentsDir, "AGENTS.md")
-		agentsContent := lint.TypeAgentsMD(spec)
-		if !fileExists(agentsPath) || in.Force {
-			if err := os.WriteFile(agentsPath, []byte(agentsContent), agentsFilePerm); err != nil {
-				return nil, out, fmt.Errorf("mcp: lint_init: 写入 AGENTS.md: %w", err)
-			}
-			created = append(created, filepath.Join(lint.LitkitDir, lint.TypeLangDir(paperType, lang), "AGENTS.md"))
-		}
-
 		out.Status = "ok"
 		out.Files = created
-		out.NextSteps = []string{"阅读 .litkit/<type>/AGENTS.md 获取撰写规定", "成稿后运行 verify_manuscript 检查"}
+		out.NextSteps = []string{"阅读 .litkit/<type>/manuscript-spec.yaml 获取撰写规定", "成稿后运行 verify_manuscript 检查"}
 		return nil, out, nil
 	})
 }
@@ -469,13 +456,13 @@ func registerVerifyManuscript(s *gomcp.Server, deps Deps) {
 				}
 			}
 		}
-		report, err := lint.RunFiles(in.Files, spec, lint.Options{
+		report, err := lint.RunFilesWithStore(in.Files, spec, lint.Options{
 			Lang:      lang,
 			Mode:      mode,
 			PaperType: paperType,
 			Only:      splitCSV(in.Rule),
 			Skip:      splitCSV(in.Skip),
-		})
+		}, deps.Store)
 		if err != nil {
 			return nil, lint.Report{}, err
 		}

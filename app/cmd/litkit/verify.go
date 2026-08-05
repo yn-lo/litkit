@@ -10,14 +10,15 @@ import (
 
 	"litkit/internal/config"
 	"litkit/internal/lint"
+	"litkit/internal/storage"
 )
 
-// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证）。
+// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证；R5.6 引用防伪查库）。
 //
 // 退出码（verify 专用语义）：
 //   - 0 全部通过（exitHint=pass）或仅 S 类需人工（exitHint=manual_review）
 //   - 1 有 A 类违规（exitHint=fix_and_rerun），AI 应自动修复后重跑
-func newVerifyCmd(cfg *config.Config) *cobra.Command {
+func newVerifyCmd(cfg *config.Config, store *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify <file.md> [file2.md ...] --type review|empirical --lang zh|en",
 		Short: "验证文稿合规性（A/S 类规则自动检查）",
@@ -63,7 +64,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				Skip:      splitCSV(skipFlag),
 			}
 
-			report, err := lint.RunFiles(args, spec, opts)
+			report, err := lint.RunFilesWithStore(args, spec, opts, store)
 			if err != nil {
 				return fmt.Errorf("verify: %w", err)
 			}

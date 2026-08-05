@@ -228,8 +228,7 @@ func TestCallTool_LintInit(t *testing.T) {
 		t.Errorf("Status = %q, want ok", out.Status)
 	}
 	for _, f := range []string{".litkit/verifier_models.json",
-		".litkit/empirical-zh/manuscript-spec.yaml",
-		".litkit/empirical-zh/AGENTS.md"} {
+		".litkit/empirical-zh/manuscript-spec.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("lint_init 未生成 %s: %v", f, err)
 		}
@@ -258,17 +257,6 @@ func TestCallTool_LintInitWithPaperType(t *testing.T) {
 	}
 	if spec.Journal != "中华医学杂志" {
 		t.Errorf("spec.Journal = %q, want %q", spec.Journal, "中华医学杂志")
-	}
-	// AGENTS.md 应包含论文类型行
-	agents, err := os.ReadFile(filepath.Join(dir, ".litkit", "review-zh", "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("ReadFile AGENTS.md: %v", err)
-	}
-	if !strings.Contains(string(agents), "综述（review）") {
-		t.Error("AGENTS.md 应包含论文类型行")
-	}
-	if !strings.Contains(string(agents), "中华医学杂志") {
-		t.Error("AGENTS.md 应包含目标期刊行")
 	}
 }
 

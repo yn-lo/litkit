@@ -100,11 +100,11 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 |---|---|---|
 | `--lang` | 写作语言模式 | zh |
 | `-s, --style` | zh: gb7714-2025；en: apa / ieee | 按 lang |
-| `--preview` | 预览模式：内联标记自描述（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），不生成引用列表 | 关 |
+| `--preview` | 预览模式：内联标记自描述（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末仍追加编号引用列表 | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
-| `-o, --output-dir` | 输出目录 | WORK_DIR |
+| `-o, --output-dir` | 输出目录（默认 WORK_DIR/outputs） | WORK_DIR/outputs |
 
-产物：`formatted.md` + `refs.bib` + `refs.ris` + `references.txt`（preview 模式不含 `references.txt`）+（可选）`formatted.docx`
+产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
@@ -176,7 +176,7 @@ litkit mcp
 | `search_papers` | query: string, sources?: []string, maxResultsPerSource?: int, year?: int, keepNoAbstract?: bool | `SearchResult` |
 | `get_paper_metadata` | idType: doi\|pmid\|arxiv\|title, identifier: string | `Paper \| null` |
 | `fetch_paper` | ref: citeKey\|doi | `{ citeKey, pdfPath?, fulltext, via }` |
-| `process_manuscript` | text: string, lang?: zh\|en, style?: string, preview?: bool, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList, citationMap, unresolved, files }` |
+| `process_manuscript` | text: string, lang?: zh\|en, style?: string, preview?: bool, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList(始终返回), citationMap, unresolved, files }` |
 | `export_references` | papers: []Paper, format: bibtex\|ris\|text, style?: string | `{ success, content }` |
 | `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en, paperType?: review\|empirical, journal?: string | `{ status, files[], nextSteps }` |
 | `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, paperType?: review\|empirical, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |

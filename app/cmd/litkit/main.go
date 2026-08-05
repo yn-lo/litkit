@@ -63,7 +63,7 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 		newExportCmd(),
 		newLibraryCmd(d.store),
 		newLintCmd(d.cfg),
-		newVerifyCmd(d.cfg),
+		newVerifyCmd(d.cfg, d.store),
 		newMcpCmd(d),
 	)
 	return root

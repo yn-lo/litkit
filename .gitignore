@@ -36,6 +36,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# old files
 paper_toolkit_mcp/
-
 app/coverage.out
+
+#MCP
+app/internal/mcp/outputs

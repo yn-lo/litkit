@@ -1,3 +1,11 @@
+# Review manuscript spec — comments are AI-readable; no extra step after editing thresholds.
+# AI must-read: This file is the single source of truth for writing rules.
+#
+# Writing rules (pre-instruction):
+# - Write in academic English; define abbreviations at first use
+# - No lists or bold in body text; no back-references or self-promotion
+# - Report statistics with consistent decimals; percentages rounded to 1 decimal
+
 paper_type: review
 lang: en
 journal: ""
@@ -8,23 +16,15 @@ sections:
   - Discussion and Outlook
   - Conclusion
 word_counts:
-  total:
-    - 5000
-    - 15000
-  abstract:
-    - 200
-    - 500
-  paragraph:
-    - 50
-    - 500
+  total: [3500, 5000]       # Total word count [min, max]
+  abstract: [200, 500]      # Abstract word count [min, max]
+  paragraph: [100, 400]     # Per-paragraph word count [min, max]
 citation:
-  count:
-    - 50
-    - 120
-  style: apa
+  count: [20, 40]           # Total citation count [min, max]
+  style: apa                # Citation style: gbt7714 | apa | ieee
 heading:
-  max_level: 4
-  max_length: 15
+  max_level: 4              # Max heading level
+  max_length: 15            # Max heading length (no trailing punctuation)
 boast_words:
   - revolutionary
   - groundbreaking

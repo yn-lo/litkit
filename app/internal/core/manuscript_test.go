@@ -3,6 +3,9 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"litkit/internal/model"
@@ -164,22 +167,35 @@ func TestProcessManuscript_Preview(t *testing.T) {
 	}
 }
 
-func TestWriteManuscriptOutputs_PreviewSkipsReferences(t *testing.T) {
+func TestWriteManuscriptOutputs_AllStylesGetReferenceList(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1]", StylePreview)
 	if err != nil {
 		t.Fatalf("ProcessManuscript err = %v", err)
 	}
-	files, err := WriteManuscriptOutputs(t.TempDir(), res, StylePreview)
+	ts := "20260805_120000"
+	files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", ts, res, StylePreview)
 	if err != nil {
 		t.Fatalf("WriteManuscriptOutputs err = %v", err)
 	}
-	if _, ok := files[ManuscriptReferences]; ok {
-		t.Errorf("预览模式不应生成 %s", ManuscriptReferences)
+	// 所有样式（含 preview）均应生成 formatted.md 且文末含参考文献列表
+	path, ok := files[ManuscriptFormatted]
+	if !ok {
+		t.Fatalf("应生成 %s", ManuscriptFormatted)
 	}
-	if _, ok := files[ManuscriptFormatted]; !ok {
-		t.Errorf("预览模式应生成 %s", ManuscriptFormatted)
+	b, _ := os.ReadFile(path)
+	content := string(b)
+	if !strings.Contains(content, "参考文献") {
+		t.Errorf("preview 模式 formatted.md 也应含参考文献列表")
+	}
+	if !strings.Contains(content, "[1]") {
+		t.Errorf("preview 模式 formatted.md 应含编号引用")
+	}
+	// references.txt 已删除，不应存在
+	refsFile := filepath.Join(filepath.Dir(path), "manuscript_"+ts+".txt")
+	if _, err := os.Stat(refsFile); err == nil {
+		t.Errorf("references.txt 不应生成")
 	}
 }
 

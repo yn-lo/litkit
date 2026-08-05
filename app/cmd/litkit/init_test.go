@@ -48,7 +48,7 @@ func TestInitCmd_rejectsWithoutWorkDir(t *testing.T) {
 
 func TestInitWorkdir_createsFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	// .env / AGENTS.md / litkit.db
@@ -77,21 +77,11 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}
 	}
-	// 类型 AGENTS.md 应含撰写规定
-	typeAgents, err := os.ReadFile(filepath.Join(dir, ".litkit", "empirical-zh", "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("read .litkit/empirical-zh/AGENTS.md: %v", err)
-	}
-	for _, want := range []string{"撰写硬性规定", "引言 → 资料与方法", "[@citeKey]"} {
-		if !strings.Contains(string(typeAgents), want) {
-			t.Errorf("类型 AGENTS.md 应含 %q", want)
-		}
-	}
 }
 
 func TestInitWorkdir_typeReview(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeReview, lint.LangZH, ""); err != nil {
+	if err := initWorkdir(dir, false, lint.PaperTypeReview, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	spec, err := lint.LoadSpec(lint.SpecPath(dir, lint.PaperTypeReview, lint.LangZH))
@@ -101,53 +91,18 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 	if spec.PaperType != lint.PaperTypeReview {
 		t.Errorf("paper_type 应为 review，got %s", spec.PaperType)
 	}
-	// 类型 AGENTS.md 应含综述章节
-	typeAgents, _ := os.ReadFile(filepath.Join(dir, ".litkit", "review-zh", "AGENTS.md"))
-	if !strings.Contains(string(typeAgents), "文献检索方法") {
-		t.Errorf("类型 AGENTS.md 应含综述章节（文献检索方法）")
-	}
-}
-
-func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
-	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
-		t.Fatalf("initWorkdir: %v", err)
-	}
-	// 修改 yaml：引用区间改为 10-20
-	specPath := lint.SpecPath(dir, lint.PaperTypeEmpirical, lint.LangZH)
-	spec, err := lint.LoadSpec(specPath)
-	if err != nil {
-		t.Fatalf("LoadSpec: %v", err)
-	}
-	spec.Citation.Count = []int{10, 20}
-	if err := lint.WriteSpec(specPath, spec); err != nil {
-		t.Fatalf("WriteSpec: %v", err)
-	}
-	// refresh：重新生成 AGENTS.md
-	if err := initWorkdir(dir, false, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
-		t.Fatalf("refresh: %v", err)
-	}
-	agents, _ := os.ReadFile(filepath.Join(dir, ".litkit", "empirical-zh", "AGENTS.md"))
-	if !strings.Contains(string(agents), "全文 10-20 篇") {
-		t.Errorf("refresh 后 AGENTS.md 应反映新引用区间 10-20")
-	}
-	// refresh 不应覆盖用户改的 yaml（10-20 保持）
-	reloaded, _ := lint.LoadSpec(specPath)
-	if reloaded.Citation.Count[1] != 20 {
-		t.Errorf("refresh 不应改 yaml，got %v", reloaded.Citation.Count)
-	}
 }
 
 func TestInitWorkdir_noOverwriteWithoutForce(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	envPath := filepath.Join(dir, ".env")
 	if err := os.WriteFile(envPath, []byte("# 用户自定义\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("再次 init: %v", err)
 	}
 	after, _ := os.ReadFile(envPath)

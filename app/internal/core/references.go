@@ -70,9 +70,32 @@ func FormatReference(p model.Paper, style Style, number int) (string, error) {
 		return formatAPA(p), nil
 	case StyleIEEE:
 		return formatIEEE(p, number), nil
+	case StylePreview:
+		return formatPreview(p, number), nil
 	default:
-		return "", fmt.Errorf("references: 未知样式 %q（支持 gb7714-2025|apa|ieee）", style)
+		return "", fmt.Errorf("references: 未知样式 %q（支持 gb7714-2025|apa|ieee|preview）", style)
 	}
+}
+
+// formatPreview 渲染预览模式文末列表条目：编号 + 题名 + 作者 + 年份 + DOI。
+// 预览模式正文标记为自描述（无编号），文末列表按首次出现顺序编号供人工核对。
+func formatPreview(p model.Paper, number int) string {
+	var b strings.Builder
+	if number > 0 {
+		b.WriteString("[" + strconv.Itoa(number) + "] ")
+	}
+	b.WriteString(cleanTitle(p.Title))
+	if a := authorsAPA(p.Authors); a != "" {
+		b.WriteString(". " + a)
+	}
+	if p.Year > 0 {
+		b.WriteString(". " + strconv.Itoa(p.Year))
+	}
+	if p.DOI != "" {
+		b.WriteString(". " + p.DOI)
+	}
+	b.WriteString(".")
+	return b.String()
 }
 
 // formatGB7714 渲染 GB/T 7714—2025 条目。

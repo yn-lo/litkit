@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"litkit/internal/model"
+	"litkit/internal/storage"
 )
 
 // runContent 写临时 md 文件并执行验证（ParseSource + Run 集成）。
@@ -502,11 +505,11 @@ func TestRunFiles_autoPaperType(t *testing.T) {
 
 func TestSpecForType_review(t *testing.T) {
 	spec := SpecForType(PaperTypeReview, LangZH)
-	if spec.WordCount.Total[0] != 5000 || spec.WordCount.Total[1] != 15000 {
-		t.Errorf("review 全文应为 5000-15000，got %v", spec.WordCount.Total)
+	if spec.WordCount.Total[0] != 3500 || spec.WordCount.Total[1] != 5000 {
+		t.Errorf("review 全文应为 3500-5000，got %v", spec.WordCount.Total)
 	}
-	if spec.Citation.Count[0] != 50 || spec.Citation.Count[1] != 120 {
-		t.Errorf("review 引用应为 50-120，got %v", spec.Citation.Count)
+	if spec.Citation.Count[0] != 20 || spec.Citation.Count[1] != 40 {
+		t.Errorf("review 引用应为 20-40，got %v", spec.Citation.Count)
 	}
 	if spec.SectionList()[0] != "引言" || spec.SectionList()[1] != "文献检索方法" {
 		t.Errorf("review 章节应含文献检索方法，got %v", spec.SectionList())
@@ -517,5 +520,206 @@ func TestSpecForType_enDefault(t *testing.T) {
 	spec := SpecForType(PaperTypeEmpirical, LangEN)
 	if spec.Citation.Style != "apa" {
 		t.Errorf("en 默认引用样式应为 apa，got %s", spec.Citation.Style)
+	}
+}
+
+// ---- R5.6 引用存在性校验（引用防伪，查库）----
+
+func newTestStore(t *testing.T) *storage.Store {
+	t.Helper()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
+	if err != nil {
+		t.Fatalf("Open store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestCheckCiteKeys_ReportsMissingAndPresent(t *testing.T) {
+	s := newTestStore(t)
+	// 入库一篇，得到真实 citeKey
+	realKey, _, err := s.UpsertPaper(model.Paper{Title: "Real", DOI: "10.1/real"})
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	content := "正文引用真实文献[@aBc]与缺失文献[" + realKey + "]。\n"
+	src := mustParse(t, content)
+	violations := CheckCiteKeys(src, s)
+	// 只报缺失的 [@aBc]，真实 key 不报
+	if len(violations) != 1 {
+		t.Fatalf("应只报 1 条缺失违规，got %d: %+v", len(violations), violations)
+	}
+	if violations[0].RuleID != ruleCiteExists {
+		t.Errorf("RuleID 应为 %s，got %s", ruleCiteExists, violations[0].RuleID)
+	}
+	if !strings.Contains(violations[0].Problem, "aBc") {
+		t.Errorf("Problem 应提及缺失 key aBc，got %q", violations[0].Problem)
+	}
+}
+
+func TestCheckCiteKeys_NilStore_Skips(t *testing.T) {
+	src := mustParse(t, "正文引用[@abc]。\n")
+	if got := CheckCiteKeys(src, nil); len(got) != 0 {
+		t.Errorf("store 为 nil 应跳过，got %v", got)
+	}
+}
+
+func TestCheckCiteKeys_DedupePerKey(t *testing.T) {
+	s := newTestStore(t)
+	content := "第一处[@xyz]，第二处[@xyz]。\n"
+	src := mustParse(t, content)
+	violations := CheckCiteKeys(src, s)
+	if len(violations) != 1 {
+		t.Fatalf("同一缺失 key 应只报一次，got %d: %+v", len(violations), violations)
+	}
+}
+
+func TestRunFilesWithStore_ExitHintPromotesToFix(t *testing.T) {
+	s := newTestStore(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	// 内容本身合规（无 A 违规），但含缺失引用 → 应提升为 fix_and_rerun
+	if err := os.WriteFile(path, []byte("这是正文，引用[@missing]文献。\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, s)
+	if err != nil {
+		t.Fatalf("RunFilesWithStore: %v", err)
+	}
+	if rep.ExitHint != "fix_and_rerun" || rep.Passed {
+		t.Errorf("缺失引用应 fix_and_rerun，got %s passed=%v", rep.ExitHint, rep.Passed)
+	}
+	if got := violationsOf(rep.Files[0], ruleCiteExists); len(got) == 0 {
+		t.Error("报告应含 R5.6 违规")
+	}
+}
+
+func TestRunFilesWithStore_NilStore_NoR56(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(path, []byte("这是正文，引用[@missing]文献。\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, nil)
+	if err != nil {
+		t.Fatalf("RunFilesWithStore: %v", err)
+	}
+	if got := violationsOf(rep.Files[0], ruleCiteExists); len(got) != 0 {
+		t.Errorf("store 为 nil 不应报 R5.6，got %v", got)
+	}
+}
+
+func mustParse(t *testing.T, content string) *Source {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	src, err := ParseSource(path)
+	if err != nil {
+		t.Fatalf("ParseSource: %v", err)
+	}
+	return src
+}
+
+// ---- R1.3 标题编号顺序（review 专属，垂直切片）----
+
+// reviewRun 以综述类型运行验证（R1.3 仅 review 生效）。
+func reviewRun(t *testing.T, content string) FileReport {
+	t.Helper()
+	return runContent(t, content, SpecForType(PaperTypeReview, LangZH),
+		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeReview})
+}
+
+func TestRule_R1_3_SkipTopLevel(t *testing.T) {
+	// 章节跳号：1 → 3（漏 2）
+	fr := reviewRun(t, "## 1 引言\n正文。\n## 3 结论\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("章节跳号（1→3）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_SkipSubLevel(t *testing.T) {
+	// 子级跳号：1.1 → 1.3（漏 1.2）
+	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.3 现状\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("子级跳号（1.1→1.3）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_HierarchyJump(t *testing.T) {
+	// 层级错乱：1 → 1.1.1（跳两级）
+	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.1.1 深层\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("层级跳变（1→1.1.1）应报 R1.3")
+	}
+	// 子级出现在错误父级下：1.1 → 2.1
+	fr = reviewRun(t, "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 2.1 错误子级\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("子级挂错父级（1.1→2.1）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_Descending(t *testing.T) {
+	// 倒序：1.2 → 1.1
+	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.2 背景\n正文。\n## 1.1 倒序\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("编号倒序（1.2→1.1）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_ValidSequence_Passes(t *testing.T) {
+	// 合规序列：1 → 1.1 → 1.2 → 2 → 2.1 → 2.1.1
+	content := "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.2 现状\n正文。\n" +
+		"## 2 方法\n正文。\n## 2.1 设计\n正文。\n### 2.1.1 流程\n正文。\n"
+	if got := violationsOf(reviewRun(t, content), "R1.3"); len(got) != 0 {
+		t.Errorf("合规编号序列不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_FirstHeadingChecks(t *testing.T) {
+	// 首个标题非 1 开头
+	fr := reviewRun(t, "## 5 引言\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("首个顶层编号非 1 应报 R1.3")
+	}
+	// 首个标题为深层，缺少父级
+	fr = reviewRun(t, "## 1.1 背景\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("首个编号为子级应报 R1.3（缺少父级）")
+	}
+}
+
+func TestRule_R1_3_English(t *testing.T) {
+	// 英文综述：编号检查与语言无关，跳号同样拦截
+	content := "## 1 Introduction\nText.\n## 3 Methods\nText.\n"
+	fr := runContent(t, content, SpecForType(PaperTypeReview, LangEN),
+		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview})
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("英文标题跳号（1→3）应报 R1.3")
+	}
+	// 英文合规序列不报
+	ok := "## 1 Introduction\nText.\n## 2 Methods\nText.\n"
+	if got := violationsOf(runContent(t, ok, SpecForType(PaperTypeReview, LangEN),
+		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview}), "R1.3"); len(got) != 0 {
+		t.Errorf("英文合规序列不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_AppliesToAllTypes(t *testing.T) {
+	// 实证（empirical）与综述共用同一套编号顺序检查
+	content := "## 1 引言\n正文。\n## 3 方法\n正文。\n"
+	fr := runContent(t, content, SpecForType(PaperTypeEmpirical, LangZH),
+		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("实证类型也应跑 R1.3（章节跳号 1→3）")
+	}
+	// 实证合规序列不报
+	okContent := "## 1 引言\n正文。\n## 2 方法\n正文。\n"
+	fr = runContent(t, okContent, SpecForType(PaperTypeEmpirical, LangZH),
+		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
+	if got := violationsOf(fr, "R1.3"); len(got) != 0 {
+		t.Errorf("实证合规序列不应报 R1.3，got %+v", got)
 	}
 }

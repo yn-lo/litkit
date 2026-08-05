@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -68,13 +69,14 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			}
 
 			if outDir == "" {
-				outDir = cfg.WorkDir
+				outDir = filepath.Join(cfg.WorkDir, "outputs")
 			}
 			if err := os.MkdirAll(outDir, outDirPerm); err != nil {
 				return fmt.Errorf("manuscript: 创建输出目录失败: %w", err)
 			}
 			base := strings.TrimSuffix(filepath.Base(args[0]), filepath.Ext(args[0]))
-			files, err := writeManuscriptArtifacts(outDir, base, res, style, docx)
+			ts := core.ManuscriptStamp(time.Now())
+			files, err := writeManuscriptArtifacts(outDir, base, ts, res, style, docx)
 			if err != nil {
 				return err
 			}
@@ -104,16 +106,16 @@ func resolveStyle(lang, styleFlag string) (core.Style, error) {
 	return s, nil
 }
 
-// writeManuscriptArtifacts 落盘 formatted.md / references.txt / refs.bib / refs.ris
-// +（可选）formatted.docx（需 Pandoc，缺失优雅降级）。与 MCP 共用 core 产物函数（FR-IFACE-03）。
-func writeManuscriptArtifacts(outDir, base string, res *core.ManuscriptResult, style core.Style, docx bool) (map[string]string, error) {
-	files, err := core.WriteManuscriptOutputs(outDir, res, style)
+// writeManuscriptArtifacts 落盘 {base}_{ts}.md（正文+文末引用列表）/ .bib / .ris
+// +（可选）{base}_{ts}.docx（需 Pandoc，缺失优雅降级）。与 MCP 共用 core 产物函数（FR-IFACE-03）。
+func writeManuscriptArtifacts(outDir, base, ts string, res *core.ManuscriptResult, style core.Style, docx bool) (map[string]string, error) {
+	files, err := core.WriteManuscriptOutputs(outDir, base, ts, res, style)
 	if err != nil {
 		return nil, err
 	}
 
 	if docx {
-		docxPath := filepath.Join(outDir, base+".docx")
+		docxPath := filepath.Join(outDir, base+"_"+ts+".docx")
 		if _, err := exec.LookPath("pandoc"); err != nil {
 			// FR-REF-11：Pandoc 缺失仅 docx 不可用，其余产物正常
 			fmt.Fprintf(os.Stderr, "litkit: 未找到 pandoc，跳过 docx 生成（formatted.md 已就绪）\n")

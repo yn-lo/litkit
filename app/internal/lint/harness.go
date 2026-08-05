@@ -12,6 +12,7 @@ import (
 )
 
 //go:embed templates/verifier_models.json
+//go:embed templates/root-AGENTS.md
 //go:embed templates/empirical-zh/manuscript-spec.yaml
 //go:embed templates/review-zh/manuscript-spec.yaml
 //go:embed templates/empirical-en/manuscript-spec.yaml
@@ -157,4 +158,13 @@ func LoadDefaultSpec(paperType, lang string) (*ManuscriptSpec, error) {
 		return nil, fmt.Errorf("lint: 解析默认模板 %s: %w", tmpl, err)
 	}
 	return &spec, nil
+}
+
+// RootAgentsContent 返回 embed 模板中的根 AGENTS.md 内容。
+func RootAgentsContent() (string, error) {
+	data, err := templatesFS.ReadFile("templates/root-AGENTS.md")
+	if err != nil {
+		return "", fmt.Errorf("lint: embed root-AGENTS.md: %w", err)
+	}
+	return string(data), nil
 }

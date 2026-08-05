@@ -41,7 +41,8 @@ const (
 	percent          = 100.0
 
 	// 高频规则 ID（goconst）
-	ruleR21 = "R2.1"
+	ruleR21        = "R2.1"
+	ruleCiteExists = "R5.6" // 引用存在性校验（[@citeKey] 须在本地库中）
 )
 
 // modeRank 用于比较模式递增。
@@ -266,6 +267,110 @@ func checkR12(src *Source, spec *ManuscriptSpec) []Violation {
 		}
 	}
 	return vs
+}
+
+// checkR13 标题编号顺序：校验编号递增、不跳号、层级挂接合法。
+//
+// 判定模型为编号栈：从一个合法编号可合法进入的下一编号为
+//   - 深入一层：父级编号 + 1（如 1.1 → 1.1.1）
+//   - 同级续号：栈中某祖先层级末位 +1（如 1.1 → 1.2，或 1.1 → 2）
+//
+// 首个编号须为顶层（单级）且从 1 开始。违规情形：跳号、倒序、层级错乱、重复。
+func checkR13(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	prev := []int{}
+	first := true
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		_, num, _ := headingLevel(t)
+		if num == "" {
+			continue
+		}
+		parts := parseHeadingNum(num)
+		line := src.bodyIdx[i]
+		if first {
+			if len(parts) > 1 {
+				vs = append(vs, Violation{
+					RuleID: "R1.3", Line: line,
+					Problem:    fmt.Sprintf("首个编号标题 %s 缺少父级标题", joinHeadingNum(parts)),
+					Suggestion: "顶层章节应从单级编号（如 1）开始",
+				})
+			}
+			if parts[0] != 1 {
+				vs = append(vs, Violation{
+					RuleID: "R1.3", Line: line,
+					Problem:    fmt.Sprintf("顶层章节编号应从 1 开始，got %d", parts[0]),
+					Suggestion: "顶层章节编号从 1 开始递增",
+				})
+			}
+			first = false
+		} else if !validNextHeading(prev, parts) {
+			vs = append(vs, Violation{
+				RuleID: "R1.3", Line: line,
+				Problem:    fmt.Sprintf("标题编号 %s 顺序异常（上一编号 %s）", joinHeadingNum(parts), joinHeadingNum(prev)),
+				Suggestion: "编号须按层级递增排列：同级顺延、子级在父级下从 1 开始",
+			})
+		}
+		prev = parts
+	}
+	return vs
+}
+
+// parseHeadingNum 将编号串 "1.2.3" 拆为 []int{1,2,3}。
+func parseHeadingNum(s string) []int {
+	raw := strings.Split(s, ".")
+	out := make([]int, 0, len(raw))
+	for _, p := range raw {
+		if n, err := strconv.Atoi(p); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// joinHeadingNum 将 []int{1,2} 拼为 "1.2"。
+func joinHeadingNum(parts []int) string {
+	ss := make([]string, len(parts))
+	for i, p := range parts {
+		ss[i] = strconv.Itoa(p)
+	}
+	return strings.Join(ss, ".")
+}
+
+// validNextHeading 判断 parts 是否为 prev 的一个合法后续编号。
+func validNextHeading(prev, parts []int) bool {
+	// 深入一层：parts == prev + [1]
+	if len(parts) == len(prev)+1 && parts[len(prev)] == 1 {
+		ok := true
+		for i := range prev {
+			if parts[i] != prev[i] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	// 同级续 / 回退到某祖先续：parts == prev[:k-1] + (prev[k-1]+1)
+	for k := 1; k <= len(prev); k++ {
+		if len(parts) != k {
+			continue
+		}
+		ok := parts[k-1] == prev[k-1]+1
+		for j := 0; ok && j < k-1; j++ {
+			if parts[j] != prev[j] {
+				ok = false
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 // checkR14 正文禁止加粗：Body 行含 **...** 违规（表格已在解析阶段排除）。
@@ -637,6 +742,7 @@ func AllRules() []Rule {
 		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
 		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
 		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
+		{ID: "R1.3", Name: "标题编号顺序", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
 		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
 		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
 		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},

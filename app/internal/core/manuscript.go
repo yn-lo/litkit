@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"litkit/internal/model"
 )
@@ -267,16 +268,20 @@ func authorLastName(a model.Author) string {
 	return strings.TrimSpace(a.Given)
 }
 
-// 手稿产物文件名（FR-REF-11）。
+// 手稿产物逻辑名（map key，FR-REF-11）。实际落盘文件名为 {base}_{时间戳}.{ext}。
 const (
-	ManuscriptFormatted  = "formatted.md"
-	ManuscriptReferences = "references.txt"
-	ManuscriptBib        = "refs.bib"
-	ManuscriptRIS        = "refs.ris"
-	manuscriptFilePerm   = 0o600
+	ManuscriptFormatted = "formatted.md" // 正文 + 文末参考文献列表
+	ManuscriptBib       = "refs.bib"
+	ManuscriptRIS       = "refs.ris"
+	manuscriptFilePerm  = 0o600
 )
 
-// RenderReferenceList 渲染编号引用列表（references.txt / MCP referenceList 共用）。
+// ManuscriptStamp 生成产物文件名时间戳（精确到秒，所有产物共用同一值）。
+func ManuscriptStamp(t time.Time) string {
+	return t.Format("20060102_150405")
+}
+
+// RenderReferenceList 渲染编号引用列表（formatted.md 文末 / MCP referenceList 共用）。
 func RenderReferenceList(papers []model.Paper, style Style) (string, error) {
 	var b strings.Builder
 	for i, p := range papers {
@@ -292,39 +297,44 @@ func RenderReferenceList(papers []model.Paper, style Style) (string, error) {
 	return b.String(), nil
 }
 
-// WriteManuscriptOutputs 落盘 formatted.md / references.txt / refs.bib / refs.ris。
+// formattedContent 构建最终文稿：正文 + 文末参考文献列表（FR-REF-09/11）。
+// 无论何种样式（含 preview）均追加列表；无引用论文时仅返回正文。
+func formattedContent(res *ManuscriptResult, style Style) (string, error) {
+	if len(res.Papers) == 0 {
+		return res.Text, nil
+	}
+	refs, err := RenderReferenceList(res.Papers, style)
+	if err != nil {
+		return "", err
+	}
+	return res.Text + "\n\n# 参考文献\n\n" + refs, nil
+}
+
+// WriteManuscriptOutputs 落盘 {base}_{ts}.md（正文+文末引用列表）/ {base}_{ts}.bib / {base}_{ts}.ris。
 //
-// 返回 产物名 → 绝对路径 映射；不含 docx（由调用方按需经 PandocToDocx 转换）。
-// CLI 与 MCP 共用，保证同输入同输出（FR-IFACE-03）。
-func WriteManuscriptOutputs(outDir string, res *ManuscriptResult, style Style) (map[string]string, error) {
+// 返回 逻辑名 → 绝对路径 映射（ManuscriptFormatted/ManuscriptBib/ManuscriptRIS）；
+// 不含 docx（由调用方按需经 PandocToDocx 转换）。CLI 与 MCP 共用（FR-IFACE-03）。
+func WriteManuscriptOutputs(outDir, base, ts string, res *ManuscriptResult, style Style) (map[string]string, error) {
 	files := make(map[string]string)
-	write := func(name, content string) error {
-		path := filepath.Join(outDir, name)
-		if err := os.WriteFile(path, []byte(content), manuscriptFilePerm); err != nil {
-			return fmt.Errorf("manuscript: 写入 %s 失败: %w", name, err)
-		}
-		files[name] = path
-		return nil
-	}
-	if err := write(ManuscriptFormatted, res.Text); err != nil {
+	text, err := formattedContent(res, style)
+	if err != nil {
 		return nil, err
 	}
-	// preview 模式：正文标记已自描述，不生成编号引用列表（FR-REF 预览）。
-	if style != StylePreview {
-		refs, err := RenderReferenceList(res.Papers, style)
-		if err != nil {
-			return nil, err
-		}
-		if err := write(ManuscriptReferences, refs); err != nil {
-			return nil, err
-		}
+	name := base + "_" + ts + ".md"
+	if err := os.WriteFile(filepath.Join(outDir, name), []byte(text), manuscriptFilePerm); err != nil {
+		return nil, fmt.Errorf("manuscript: 写入 %s 失败: %w", name, err)
 	}
-	if err := write(ManuscriptBib, BibTeXFromPapers(res.Papers)); err != nil {
-		return nil, err
+	files[ManuscriptFormatted] = filepath.Join(outDir, name)
+
+	if err := os.WriteFile(filepath.Join(outDir, base+"_"+ts+".bib"), []byte(BibTeXFromPapers(res.Papers)), manuscriptFilePerm); err != nil {
+		return nil, fmt.Errorf("manuscript: 写入 bib 失败: %w", err)
 	}
-	if err := write(ManuscriptRIS, RISFromPapers(res.Papers)); err != nil {
-		return nil, err
+	files[ManuscriptBib] = filepath.Join(outDir, base+"_"+ts+".bib")
+
+	if err := os.WriteFile(filepath.Join(outDir, base+"_"+ts+".ris"), []byte(RISFromPapers(res.Papers)), manuscriptFilePerm); err != nil {
+		return nil, fmt.Errorf("manuscript: 写入 ris 失败: %w", err)
 	}
+	files[ManuscriptRIS] = filepath.Join(outDir, base+"_"+ts+".ris")
 	return files, nil
 }
 
