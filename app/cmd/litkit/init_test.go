@@ -48,7 +48,7 @@ func TestInitCmd_rejectsWithoutWorkDir(t *testing.T) {
 
 func TestInitWorkdir_createsFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	// .env / AGENTS.md / litkit.db
@@ -83,7 +83,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 
 func TestInitWorkdir_typeReview(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeReview, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, false, lint.PaperTypeReview, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	spec, err := lint.LoadSpec(lint.SpecPath(dir))
@@ -101,7 +101,7 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 
 func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	// 修改 yaml：引用区间改为 10-20
@@ -115,7 +115,7 @@ func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
 		t.Fatalf("WriteSpec: %v", err)
 	}
 	// refresh：重新生成 AGENTS.md
-	if err := initWorkdir(dir, false, true, lint.PaperTypeEmpirical, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 	agents, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
@@ -131,14 +131,14 @@ func TestInitWorkdir_refreshRegeneratesAgents(t *testing.T) {
 
 func TestInitWorkdir_noOverwriteWithoutForce(t *testing.T) {
 	dir := t.TempDir()
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
 	envPath := filepath.Join(dir, ".env")
 	if err := os.WriteFile(envPath, []byte("# 用户自定义\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH); err != nil {
+	if err := initWorkdir(dir, false, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("再次 init: %v", err)
 	}
 	after, _ := os.ReadFile(envPath)

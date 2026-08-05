@@ -1,4 +1,4 @@
-// Package storage 基于 SQLite 的文献库 + 引用标记持久化（叶子层）。
+// Package storage 基于 SQLite 的文献库持久化（叶子层）。
 //
 // 库文件跟随工作目录（FR-LIB-03：WORK_DIR/litkit.db），生命周期由工作目录
 // 决定：删除工作目录即删除库，因此不引入 TTL/缓存清理（FR-CACHE 并入 FR-LIB）。
@@ -36,15 +36,6 @@ const (
 	dbDirPerm          = 0o750
 	busyTimeoutMS      = 5000 // 多进程 CLI 并发写时等待锁的上限
 )
-
-// Ref 引用标记：某手稿某句话引用了某篇文献（FR-LIB-07）。
-type Ref struct {
-	CiteKey      string `json:"citeKey"`
-	SentenceHash string `json:"sentenceHash"`
-	SentenceText string `json:"sentenceText"`
-	Manuscript   string `json:"manuscript,omitempty"`
-	CreatedAt    string `json:"createdAt"`
-}
 
 // Stats 文献库统计（lib stats）。
 type Stats struct {
@@ -84,7 +75,7 @@ func Open(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("storage open ping: %w", err)
 	}
-	// WAL：读写并发；busy_timeout：缓解多进程 CLI 争锁；foreign_keys：paper_refs 外键约束
+	// WAL：读写并发；busy_timeout：缓解多进程 CLI 争锁
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("storage pragma wal: %w", err)
@@ -92,10 +83,6 @@ func Open(dbPath string) (*Store, error) {
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", busyTimeoutMS)); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("storage pragma busy_timeout: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("storage pragma foreign_keys: %w", err)
 	}
 
 	s := &Store{db: db, path: dbPath}
@@ -113,7 +100,6 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) Path() string { return s.path }
 
 // migrate 执行 schema/schema.sql（单文件管理全部 DDL）。
-// 文件内 papers 先于 paper_refs 建表，保证外键目标表先存在；
 // CREATE TABLE IF NOT EXISTS，幂等。
 func (s *Store) migrate() error {
 	entries, err := schemaFS.ReadDir("schema")
@@ -161,6 +147,10 @@ func (s *Store) ensureColumns() error {
 		{"volume", "ALTER TABLE papers ADD COLUMN volume TEXT NOT NULL DEFAULT ''"},
 		{"number", "ALTER TABLE papers ADD COLUMN number TEXT NOT NULL DEFAULT ''"},
 		{"pages", "ALTER TABLE papers ADD COLUMN pages TEXT NOT NULL DEFAULT ''"},
+		{"publisher", "ALTER TABLE papers ADD COLUMN publisher TEXT NOT NULL DEFAULT ''"},
+		{"city", "ALTER TABLE papers ADD COLUMN city TEXT NOT NULL DEFAULT ''"},
+		{"institution", "ALTER TABLE papers ADD COLUMN institution TEXT NOT NULL DEFAULT ''"},
+		{"access_date", "ALTER TABLE papers ADD COLUMN access_date TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, a := range adds {
 		if !have[a.name] {
@@ -172,25 +162,16 @@ func (s *Store) ensureColumns() error {
 	return nil
 }
 
-// dedupKey 生成入库去重键（对齐 paper_toolkit_mcp 语义）：
-// DOI > title+authors > paper_id 三级，命中同一键视为同一篇论文。
+// dedupKey 生成入库去重键：DOI > 归一化标题 > paper_id 三级，命中同一键视为同一篇论文。
+// 与检索层 dedupPapers 保持一致（DOI > title > ID），避免两层去重行为分叉。
 func dedupKey(p model.Paper) string {
 	if doi := strings.ToLower(strings.TrimSpace(p.DOI)); doi != "" {
 		return "doi:" + doi
 	}
 	if title := textutil.NormalizeTitle(p.Title); title != "" {
-		return "title:" + title + "|authors:" + authorsText(p.Authors)
+		return "title:" + title
 	}
 	return "id:" + strings.ToLower(strings.TrimSpace(p.ID))
-}
-
-// authorsText 作者归一化文本（family+given 小写，分号连接）。
-func authorsText(authors []model.Author) string {
-	parts := make([]string, 0, len(authors))
-	for _, a := range authors {
-		parts = append(parts, strings.ToLower(strings.TrimSpace(a.Family+" "+a.Given)))
-	}
-	return strings.Join(parts, ";")
 }
 
 // UpsertPaper 插入或更新一篇论文（FR-LIB-01/02/06）。
@@ -222,11 +203,12 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		}
 		_, err = s.db.Exec(`INSERT INTO papers
 			(dedup_key, cite_key, doi, paper_id, title, authors, abstract, year, venue,
-			 source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at,
+			 publisher, city, institution, access_date)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			key, citeKey, p.DOI, p.ID, p.Title, string(authorsJSON), p.Abstract, p.Year,
 			p.Venue, p.Source, p.DocType, p.URL, p.PMID, p.ArXivID, p.Volume, p.Number, p.Pages,
-			p.Citations, now)
+			p.Citations, now, p.Publisher, p.City, p.Institution, p.AccessDate)
 		if err != nil {
 			return "", false, fmt.Errorf("storage upsert insert: %w", err)
 		}
@@ -245,12 +227,17 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		volume=COALESCE(NULLIF(?, ''), volume),
 		number=COALESCE(NULLIF(?, ''), number),
 		pages=COALESCE(NULLIF(?, ''), pages),
+		publisher=COALESCE(NULLIF(?, ''), publisher),
+		city=COALESCE(NULLIF(?, ''), city),
+		institution=COALESCE(NULLIF(?, ''), institution),
+		access_date=COALESCE(NULLIF(?, ''), access_date),
 		citations=?, fetched_at=?
 		WHERE id=?`,
 		p.DOI, p.ID, p.Title, string(authorsJSON),
 		p.Abstract, p.Year, p.Venue, p.Source,
 		p.DocType, p.URL, p.PMID, p.ArXivID,
 		p.Volume, p.Number, p.Pages,
+		p.Publisher, p.City, p.Institution, p.AccessDate,
 		p.Citations, now, id)
 	if err != nil {
 		return "", false, fmt.Errorf("storage upsert update: %w", err)
@@ -275,7 +262,8 @@ func (s *Store) UpsertPapers(papers []model.Paper) (int, error) {
 
 // 查询列集合（Upsert 与查询共用，字段顺序必须与 scanPaper 一致）。
 const paperCols = "cite_key, doi, paper_id, title, authors, abstract, year, venue, " +
-	"source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at"
+	"source, doc_type, url, pmid, arxiv_id, volume, number, pages, citations, fetched_at, " +
+	"publisher, city, institution, access_date"
 
 // scanPapers 将结果行扫描为 []model.Paper。
 func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
@@ -288,7 +276,8 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 		)
 		if err := rows.Scan(&p.CiteKey, &p.DOI, &p.ID, &p.Title, &authorsJSON, &p.Abstract,
 			&p.Year, &p.Venue, &p.Source, &p.DocType, &p.URL, &p.PMID, &p.ArXivID,
-			&p.Volume, &p.Number, &p.Pages, &p.Citations, &fetchedAt); err != nil {
+			&p.Volume, &p.Number, &p.Pages, &p.Citations, &fetchedAt,
+			&p.Publisher, &p.City, &p.Institution, &p.AccessDate); err != nil {
 			return nil, err
 		}
 		if len(authorsJSON) > 0 {
@@ -371,12 +360,8 @@ func (s *Store) SearchLocal(keyword string, limit int) ([]model.Paper, error) {
 	return scanPapers(rows)
 }
 
-// Forget 删除一篇论文及其全部引用标记；返回是否实际删除（FR-LIB-02 删）。
+// Forget 删除一篇论文；返回是否实际删除（FR-LIB-02 删）。
 func (s *Store) Forget(citeKey string) (bool, error) {
-	// 外键 ON DELETE 未级联，先清引用避免残留
-	if _, err := s.db.Exec("DELETE FROM paper_refs WHERE cite_key = ?", citeKey); err != nil {
-		return false, fmt.Errorf("storage forget refs: %w", err)
-	}
 	res, err := s.db.Exec("DELETE FROM papers WHERE cite_key = ?", citeKey)
 	if err != nil {
 		return false, fmt.Errorf("storage forget paper: %w", err)
@@ -386,45 +371,6 @@ func (s *Store) Forget(citeKey string) (bool, error) {
 		return false, fmt.Errorf("storage forget rows: %w", err)
 	}
 	return n > 0, nil
-}
-
-// AddRef 记录一条引用标记（FR-LIB-07）。同 (cite_key, sentence_hash, manuscript)
-// 重复添加幂等忽略。sentence_hash 为空时按 sentence_text 自动生成。
-func (s *Store) AddRef(r Ref) error {
-	if r.SentenceHash == "" {
-		r.SentenceHash = hashSentence(r.SentenceText)
-	}
-	if r.CreatedAt == "" {
-		r.CreatedAt = time.Now().Format(time.RFC3339)
-	}
-	_, err := s.db.Exec(`INSERT INTO paper_refs
-		(cite_key, sentence_hash, sentence_text, manuscript, created_at)
-		VALUES (?,?,?,?,?)
-		ON CONFLICT(cite_key, sentence_hash, manuscript) DO NOTHING`,
-		r.CiteKey, r.SentenceHash, r.SentenceText, r.Manuscript, r.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("storage add ref: %w", err)
-	}
-	return nil
-}
-
-// ListRefs 列出某篇文献的全部引用标记。
-func (s *Store) ListRefs(citeKey string) ([]Ref, error) {
-	rows, err := s.db.Query(`SELECT cite_key, sentence_hash, sentence_text, manuscript, created_at
-		FROM paper_refs WHERE cite_key = ? ORDER BY id`, citeKey)
-	if err != nil {
-		return nil, fmt.Errorf("storage list refs: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Ref
-	for rows.Next() {
-		var r Ref
-		if err := rows.Scan(&r.CiteKey, &r.SentenceHash, &r.SentenceText, &r.Manuscript, &r.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // Stats 返回文献库统计（lib stats）。

@@ -39,7 +39,8 @@ golangci-lint       (静态分析)
 go vet              (编译器级检查)
 go test ./...       (单元测试，离线)
 go test -cover      (覆盖率 ≥ 60%)
-arch-check          (分层依赖 + 注册同步)
+arch-check          (分层依赖)
+sync-check          (CLI/MCP/api.md 一致性 + 文档断链)
 govulncheck         (依赖漏洞扫描)
 ```
 

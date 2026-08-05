@@ -69,20 +69,20 @@ owner: litkit-core
 |---|---|
 | internal/lint：ManuscriptSpec 解析/校验、.litkit 生成、RenderWritingRules（事前指导） | FR-LINT-01/07/10 |
 | templates/：rules.md（R0-R9，langs 标注）、checklist.md、manuscript-spec.yaml、verifier_models.json | FR-LINT-01/06 |
-| `litkit init`：--type review/empirical（preset 阈值）、--lang zh/en、--refresh、--force | FR-LINT-01/09 |
+| `litkit init`：--type review/empirical（preset 阈值）、--lang zh/en、--journal NAME（目标期刊）、--refresh、--force | FR-LINT-01/09 |
 | zh 规则集实现（全半角/引号/句式冗余/的地得/AI 痕迹） | FR-LINT-02/04 |
 | en 规则集实现（语法/时态/冠词/措辞/AI 痕迹） | FR-LINT-03/04 |
-| `litkit verify`：--lang/--mode/--rule/--skip，19 条规则（16A+3S），三值 exitHint | FR-LINT-05 |
+| `litkit verify`：--lang/--type/--mode/--rule/--skip，19 条规则（16A+3S），三维过滤（lang x type x mode），三值 exitHint | FR-LINT-05 |
 
 > 已落地（M4 一期前段）：internal/lint 服务层 + 四件套模板 + init 全参数（含 AGENTS.md 撰写硬性规定）。
-> 已落地（M4 一期后段）：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs 过滤）；
+> 已落地（M4 一期后段）：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs x types 过滤）；
 > 纯函数 lint.Run() 无 IO，CLI 薄壳；模式递增 chapter→draft→final；Markdown 分段排除代码块/参考文献/表格。
 
 **产出**：`litkit init` 在宿主项目生成 `.litkit/` + AGENTS.md 撰写硬性规定（事前指导）；`litkit verify` 输出三要素 issues（事后兜底）。
 
 **验收**：zh/en 模式各自违规样例全部被检出；违规项含 rule_id/problem/suggestion；改 yaml 后 `init --refresh` 同步 AGENTS.md。
 
-## M5 MCP 接口
+## M5 MCP 接口（已完成）
 
 **范围**：MCP Server、工具注册、与 CLI 共享核心。
 
@@ -90,14 +90,18 @@ owner: litkit-core
 |---|---|
 | internal/mcp/：mcp-go SDK stdio Server | FR-IFACE-02 |
 | 工具绑定：search_papers / get_paper_metadata / process_manuscript / export_references | FR-IFACE-02 |
-| 工具绑定：lint_init / verify_manuscript / search_<source> / cache_list / cache_clear | FR-IFACE-02 |
+| 工具绑定：lint_init / verify_manuscript / search_<source> / lib_list / lib_search / lib_rm / lib_stats / lib_path | FR-IFACE-02 |
 | 一致性测试：CLI 与 MCP 同输入同输出 | FR-IFACE-03 |
+
+> 已落地：internal/mcp 包注册全部 11 个静态工具 + 按注册表动态生成 search_<source>；
+> `litkit mcp` 子命令接线（stdio）；MCP 工具直接调用 core/lint/storage 共享核心；
+> 一致性测试经内存传输验证工具清单与离线工具输出（export_references / verify_manuscript / lint_init / process_manuscript 等）。
 
 **产出**：MCP Server 可被 Claude Desktop / Trae 发现并调用全部工具。
 
 **验收**：客户端调用 search_papers 与 CLI search 输出一致。
 
-## M6 发布
+## M6 发布（已完成）
 
 **范围**：打包、CI 门禁完善、文档与示例。
 
@@ -109,7 +113,15 @@ owner: litkit-core
 | 示例与快速开始完善 | — |
 | 开源发布（Apache-2.0、README/CONTRIBUTING） | C12 |
 
+> 已落地：app/.goreleaser.yml（linux/darwin/windows × amd64/arm64，版本经 ldflags 注入
+> internal/buildinfo，snapshot 构建验证通过）；CI 部署 .github/workflows/ci.yml（替换
+> registration/link 两个占位为 .harness/constraints/sync 检查器，docs job 补 setup-go）；
+> sync 检查器（CLI/api.md §1、MCP/api.md §2 三处清单一致 + CLAUDE.md/.harness 断链检查，
+> 已并入本地 gate 第 8 项）；README / LICENSE（Apache-2.0）/ CONTRIBUTING；api.md 补 `litkit mcp` 条目。
+
 **产出**：可安装、CI 全绿、文档一致。
+
+**验收**：`goreleaser build --snapshot` 产出 6 平台二进制且版本注入正确；sync 检查器全绿。
 
 ## M7 语义检索与二期源（二期）
 

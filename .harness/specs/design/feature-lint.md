@@ -80,4 +80,4 @@ manuscript-spec.yaml、verifier_models.json。
 - [x] zh/en 各自违规样例全部被检出（FR-LINT-02/03 验收）
 - [x] 三要素完整性测试：rule_id / problem / suggestion 全有
 - [x] mode 递增范围测试：chapter/draft/final 启用规则递增
-- [ ] CLI 与 MCP 一致性测试（FR-IFACE-03，M5）
+- [x] CLI 与 MCP 一致性测试（FR-IFACE-03，M5 落地：verify_manuscript / lint_init 走内存传输验证）

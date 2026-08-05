@@ -43,16 +43,22 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 输出：`{ total, sourceResults, errors, papers[] }`
 
 ```
-litkit init [--force]
+litkit init [--force] [--type review|empirical] [--lang zh|en] [--journal NAME] [--refresh]
 ```
 
-| 参数 | 说明 |
-|---|---|
-| `--force` | 覆盖已存在的 `.env` / `AGENTS.md` |
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `--force` | 覆盖已存在的 `.env` / `AGENTS.md` | 关 |
+| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证） | empirical |
+| `--lang` | 撰写语言 | zh |
+| `--journal` | 目标期刊名称（写入 spec，影响引用格式默认值与 checklist） | 空 |
+| `--refresh` | 按现有 manuscript-spec.yaml 重新生成 AGENTS.md 撰写段 | 关 |
 
 > 初始化当前工作目录：生成 `.env`（默认配置）与 `AGENTS.md`（AI agent 使用说明，
 > 含检索策略：英文词 / `--mode full` / 时间范围放宽），并初始化 `litkit.db`。
 > 已存在文件默认不覆盖。换新工作目录 → `litkit init`。
+> `--type`/`--lang`/`--journal` 仅在首次生成 yaml 时生效；`--refresh` 按现有 yaml 重新渲染 AGENTS.md。
+> 交互式向导：旗标未显式传值且 stdin 是终端时，进入问答。
 
 ```
 litkit metadata <id_type> <identifier>
@@ -90,11 +96,11 @@ litkit lib list [--source S] [--limit N] [--offset N]
 litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
-litkit lint init [project_dir] [--force] [--lang zh|en]
+litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical] [--journal NAME]
 ```
 
 ```
-litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--rule R2.1,R7.1] [--skip R4.2]
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical] [--rule R2.1,R7.1] [--skip R4.2]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -102,6 +108,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
 | `--lang` | 写作语言模式 | zh |
 | `--mode` | 验证深度：`chapter`（结构）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
+| `--type` | 论文类型：`review` \| `empirical`（空=从 spec 自动取） | 空 |
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
@@ -136,6 +143,14 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 
 退出码：`0` = 通过或仅需人工复核；`1` = 有 A 类违规需修复。
 
+```
+litkit mcp
+```
+
+> 启动 MCP Server（stdio 传输，供 Claude Desktop / Trae 等客户端发现调用）。
+> 工具与 CLI 命令一一对应，共享同一核心实现，保证同输入同输出（FR-IFACE-03）。
+> 工具清单见 §2；按 Ctrl-C 退出。
+
 ## 2. MCP 工具
 
 传输：stdio。所有工具共享核心实现，行为与 CLI 等价。
@@ -146,8 +161,8 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `get_paper_metadata` | idType: doi\|pmid\|arxiv\|title, identifier: string | `Paper \| null` |
 | `process_manuscript` | text: string, lang?: zh\|en, style?: string, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList, citationMap, unresolved, files }` |
 | `export_references` | papers: []Paper, format: bibtex\|ris\|text, style?: string | `{ success, content }` |
-| `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en | `{ status, files[], nextSteps }` |
-| `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |
+| `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en, paperType?: review\|empirical, journal?: string | `{ status, files[], nextSteps }` |
+| `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, paperType?: review\|empirical, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |
 | `search_<source>` | query: string, maxResults?: int | 单源 `SearchResult` |
 | `lib_list` / `lib_search` / `lib_rm` | source?/keyword?/limit? / citeKey | 库内论文 / 命中 / 删除结果 |
 | `lib_stats` / `lib_path` | — | 统计 / 库路径 |

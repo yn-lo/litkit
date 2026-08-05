@@ -40,13 +40,14 @@ type atomFeed struct {
 }
 
 type atomEntry struct {
-	ID        string       `xml:"id"`
-	Title     string       `xml:"title"`
-	Summary   string       `xml:"summary"`
-	Authors   []atomAuthor `xml:"author"`
-	Published string       `xml:"published"`
-	Links     []atomLink   `xml:"link"`
-	DOI       string       `xml:"http://arxiv.org/schemas/atom doi"`
+	ID         string       `xml:"id"`
+	Title      string       `xml:"title"`
+	Summary    string       `xml:"summary"`
+	Authors    []atomAuthor `xml:"author"`
+	Published  string       `xml:"published"`
+	Links      []atomLink   `xml:"link"`
+	DOI        string       `xml:"http://arxiv.org/schemas/atom doi"`
+	JournalRef string       `xml:"http://arxiv.org/schemas/atom journal_ref"`
 }
 
 type atomAuthor struct {
@@ -83,7 +84,7 @@ func (a *ArxivSource) Search(ctx context.Context, query string, opts SearchOptio
 	if err != nil {
 		return nil, fmt.Errorf("arxiv search: read body: %w", err)
 	}
-	papers, err := parseArxivAtom(data)
+	papers, err := ParseArxivAtom(data)
 	if err != nil {
 		return nil, fmt.Errorf("arxiv search: %w", err)
 	}
@@ -118,10 +119,10 @@ func arxivSearchQuery(query, mode string) string {
 	return `ti:"` + query + `" OR abs:"` + query + `"`
 }
 
-// parseArxivAtom 解析 arXiv Atom Feed 字节为 []Paper。
+// ParseArxivAtom 解析 arXiv Atom Feed 字节为 []Paper。
 //
-// 纯函数，便于单元测试。
-func parseArxivAtom(data []byte) ([]model.Paper, error) {
+// 纯函数，便于单元测试；同时供 core/metadata 反查复用。
+func ParseArxivAtom(data []byte) ([]model.Paper, error) {
 	var feed atomFeed
 	if err := xml.Unmarshal(data, &feed); err != nil {
 		return nil, fmt.Errorf("parse atom: %w", err)
@@ -132,12 +133,13 @@ func parseArxivAtom(data []byte) ([]model.Paper, error) {
 			Title:    strings.TrimSpace(e.Title),
 			Abstract: strings.TrimSpace(e.Summary),
 			DOI:      strings.TrimSpace(e.DOI),
+			Venue:    strings.TrimSpace(e.JournalRef),
 			Year:     parseYearFromISO(e.Published),
 			Authors:  atomAuthorsToModel(e.Authors),
 			Source:   "arxiv",
 			DocType:  DocTypePreprint,
 		}
-		p.ArXivID = extractArxivID(e.ID)
+		p.ArXivID = ExtractArxivID(e.ID)
 		p.URL = pickArxivURL(e)
 		p.ID = p.ComputeID()
 		papers = append(papers, p)
@@ -145,8 +147,8 @@ func parseArxivAtom(data []byte) ([]model.Paper, error) {
 	return papers, nil
 }
 
-// extractArxivID 从 http://arxiv.org/abs/2301.00001v1 提取 2301.00001（去版本号）。
-func extractArxivID(idURL string) string {
+// ExtractArxivID 从 http://arxiv.org/abs/2301.00001v1 提取 2301.00001（去版本号）。
+func ExtractArxivID(idURL string) string {
 	// 兼容 http(s) 与 abs/pdf 两种路径
 	idx := strings.Index(idURL, "/abs/")
 	if idx < 0 {

@@ -35,6 +35,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			}
 			lang, _ := cmd.Flags().GetString("lang")
 			modeStr, _ := cmd.Flags().GetString("mode")
+			paperType, _ := cmd.Flags().GetString("type")
 			ruleFlag, _ := cmd.Flags().GetString("rule")
 			skipFlag, _ := cmd.Flags().GetString("skip")
 
@@ -47,15 +48,19 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			if lang != "zh" && lang != "en" {
 				return &paramError{msg: fmt.Sprintf("verify: 无效 lang %q（可选 zh|en）", lang)}
 			}
+			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
+				return &paramError{msg: fmt.Sprintf("verify: 无效 type %q（可选 review|empirical）", paperType)}
+			}
 
 			// 加载阈值配置（.litkit/specs/manuscript-spec.yaml）
 			spec := loadVerifySpec(cfg.WorkDir)
 
 			opts := lint.Options{
-				Lang: lang,
-				Mode: mode,
-				Only: splitCSV(ruleFlag),
-				Skip: splitCSV(skipFlag),
+				Lang:      lang,
+				Mode:      mode,
+				PaperType: paperType,
+				Only:      splitCSV(ruleFlag),
+				Skip:      splitCSV(skipFlag),
 			}
 
 			report, err := lint.RunFiles(args, spec, opts)
@@ -74,6 +79,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	}
 	cmd.Flags().String("lang", "zh", "写作语言 zh|en")
 	cmd.Flags().String("mode", "draft", "验证模式 chapter|draft|final（递增启用规则）")
+	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从 spec 自动取）")
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
 	return cmd

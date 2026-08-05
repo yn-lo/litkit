@@ -32,7 +32,7 @@ func paper(title, doi string, authors ...string) model.Paper {
 
 func TestOpen_CreatesTables(t *testing.T) {
 	s := newTestStore(t)
-	for _, tbl := range []string{"papers", "paper_refs"} {
+	for _, tbl := range []string{"papers"} {
 		var n int
 		err := s.db.QueryRow(
 			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tbl,
@@ -193,7 +193,7 @@ func TestUpsertPaper_SameTitleNoDOI_Dedup(t *testing.T) {
 	}
 }
 
-func TestUpsertPaper_SameTitleDifferentAuthors_NotDedup(t *testing.T) {
+func TestUpsertPaper_SameTitleDifferentAuthors_Dedup(t *testing.T) {
 	s := newTestStore(t)
 	_, inserted1, err := s.UpsertPaper(paper("T", "", "Alice"))
 	if err != nil {
@@ -202,13 +202,13 @@ func TestUpsertPaper_SameTitleDifferentAuthors_NotDedup(t *testing.T) {
 	if !inserted1 {
 		t.Fatal("首次应 inserted=true")
 	}
-	// 同标题但不同作者：不同论文，不应去重
+	// 同标题不同作者（无 DOI）：按归一化标题去重（与检索层 dedupPapers 一致）
 	_, inserted2, err := s.UpsertPaper(paper("T", "", "Bob"))
 	if err != nil {
 		t.Fatalf("二次: %v", err)
 	}
-	if !inserted2 {
-		t.Fatal("同标题不同作者（无 DOI）应视为不同论文")
+	if inserted2 {
+		t.Fatal("同标题不同作者（无 DOI）应按标题去重，不应重复插入")
 	}
 }
 
@@ -398,14 +398,11 @@ func TestSearchLocal_MatchesTitleAbstract(t *testing.T) {
 
 // ---- 删除 ----
 
-func TestForget_RemovesPaperAndRefs(t *testing.T) {
+func TestForget_RemovesPaper(t *testing.T) {
 	s := newTestStore(t)
 	citeKey, _, err := s.UpsertPaper(paper("Doomed", "10.1/d"))
 	if err != nil {
 		t.Fatalf("UpsertPaper: %v", err)
-	}
-	if err := s.AddRef(Ref{CiteKey: citeKey, SentenceHash: "h1", SentenceText: "s"}); err != nil {
-		t.Fatalf("AddRef: %v", err)
 	}
 	removed, err := s.Forget(citeKey)
 	if err != nil {
@@ -417,13 +414,6 @@ func TestForget_RemovesPaperAndRefs(t *testing.T) {
 	if got, _ := s.GetByCiteKey(citeKey); got != nil {
 		t.Fatal("删除后论文不应再查到")
 	}
-	refs, err := s.ListRefs(citeKey)
-	if err != nil {
-		t.Fatalf("ListRefs: %v", err)
-	}
-	if len(refs) != 0 {
-		t.Fatalf("删除后引用应级联清理，got %d", len(refs))
-	}
 }
 
 func TestForget_Missing(t *testing.T) {
@@ -434,40 +424,6 @@ func TestForget_Missing(t *testing.T) {
 	}
 	if removed {
 		t.Fatal("不存在的 cite_key 应返回 removed=false")
-	}
-}
-
-// ---- 引用标记 ----
-
-func TestAddRef_DuplicateIgnored(t *testing.T) {
-	s := newTestStore(t)
-	citeKey, _, err := s.UpsertPaper(paper("Cited", "10.1/c"))
-	if err != nil {
-		t.Fatalf("UpsertPaper: %v", err)
-	}
-	ref := Ref{CiteKey: citeKey, SentenceHash: "h1", SentenceText: "句1", Manuscript: "draft.md"}
-	if err := s.AddRef(ref); err != nil {
-		t.Fatalf("AddRef 首次: %v", err)
-	}
-	if err := s.AddRef(ref); err != nil {
-		t.Fatalf("AddRef 重复应不报错: %v", err)
-	}
-	refs, err := s.ListRefs(citeKey)
-	if err != nil {
-		t.Fatalf("ListRefs: %v", err)
-	}
-	if len(refs) != 1 {
-		t.Fatalf("重复引用应仅 1 条，got %d", len(refs))
-	}
-	if refs[0].SentenceText != "句1" || refs[0].Manuscript != "draft.md" {
-		t.Fatalf("引用字段不符：%+v", refs[0])
-	}
-}
-
-func TestAddRef_UnknownCiteKey_Rejected(t *testing.T) {
-	s := newTestStore(t)
-	if err := s.AddRef(Ref{CiteKey: "nope", SentenceHash: "h", SentenceText: "s"}); err == nil {
-		t.Fatal("引用不存在的 cite_key 应报错（外键约束）")
 	}
 }
 

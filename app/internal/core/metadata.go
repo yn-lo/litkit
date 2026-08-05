@@ -13,7 +13,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -22,6 +21,7 @@ import (
 	"strings"
 
 	"litkit/internal/model"
+	"litkit/internal/sources"
 	"litkit/internal/util/httpclient"
 )
 
@@ -157,14 +157,15 @@ func (f *MetadataFetcher) fetchArxiv(ctx context.Context, id string) (*model.Pap
 	if err != nil || data == nil {
 		return nil, err
 	}
-	var feed arxivFeed
-	if err := xml.Unmarshal(data, &feed); err != nil {
-		return nil, fmt.Errorf("metadata arxiv: 解析 Atom 响应: %w", err)
+	papers, err := sources.ParseArxivAtom(data)
+	if err != nil {
+		return nil, fmt.Errorf("metadata arxiv: %w", err)
 	}
-	if len(feed.Entries) == 0 {
+	if len(papers) == 0 {
 		return nil, nil
 	}
-	return arxivEntryToPaper(feed.Entries[0]), nil
+	p := papers[0]
+	return &p, nil
 }
 
 // ---- CrossRef ----
@@ -312,94 +313,6 @@ func splitFamilyGiven(name string) model.Author {
 		}
 	}
 	return model.Author{Family: name}
-}
-
-// ---- arXiv Atom ----
-
-type arxivFeed struct {
-	XMLName xml.Name     `xml:"feed"`
-	Entries []arxivEntry `xml:"entry"`
-}
-
-type arxivEntry struct {
-	ID         string        `xml:"id"`
-	Title      string        `xml:"title"`
-	Summary    string        `xml:"summary"`
-	Published  string        `xml:"published"`
-	Authors    []arxivAuthor `xml:"author"`
-	JournalRef arxivText     `xml:"http://arxiv.org/schemas/atom journal_ref"`
-	DOI        arxivText     `xml:"http://arxiv.org/schemas/atom doi"`
-}
-
-type arxivAuthor struct {
-	Name string `xml:"name"`
-}
-
-// arxivText 带命名空间元素（arxiv:journal_ref / arxiv:doi）的文本内容。
-type arxivText struct {
-	XMLName xml.Name
-	Text    string `xml:",chardata"`
-}
-
-func arxivEntryToPaper(e arxivEntry) *model.Paper {
-	p := &model.Paper{
-		Title:    strings.TrimSpace(e.Title),
-		Abstract: strings.TrimSpace(e.Summary),
-		Venue:    strings.TrimSpace(e.JournalRef.Text),
-		DOI:      strings.TrimSpace(e.DOI.Text),
-		ArXivID:  extractArxivID(e.ID),
-		Year:     yearFromISOPrefix(e.Published),
-		DocType:  model.DocTypePreprint,
-		Source:   "arxiv",
-	}
-	for _, a := range e.Authors {
-		name := strings.TrimSpace(a.Name)
-		if name == "" {
-			continue
-		}
-		// arXiv 姓名为 "Given Family"：首空格前为 Given，后为 Family
-		if i := strings.IndexAny(name, " \t"); i > 0 {
-			p.Authors = append(p.Authors, model.Author{
-				Given:  strings.TrimSpace(name[:i]),
-				Family: strings.TrimSpace(name[i+1:]),
-			})
-		} else {
-			p.Authors = append(p.Authors, model.Author{Family: name})
-		}
-	}
-	p.ID = p.ComputeID()
-	return p
-}
-
-// extractArxivID 从 entry id（http://arxiv.org/abs/2001.00001v2）提取裸 ID，去版本号。
-func extractArxivID(idURL string) string {
-	idx := strings.Index(idURL, "/abs/")
-	if idx < 0 {
-		return strings.TrimSpace(idURL)
-	}
-	s := idURL[idx+5:] // 跳过 "/abs/"
-	// 去除版本号 vN：仅当 v 后全为数字时才剥离
-	if i := strings.LastIndex(s, "v"); i > 0 {
-		if _, err := strconv.Atoi(s[i+1:]); err == nil {
-			s = s[:i]
-		}
-	}
-	return s
-}
-
-// yearPrefixLen ISO 日期前 4 字符为年份。
-const yearPrefixLen = 4
-
-// yearFromISOPrefix 从 ISO8601 日期串提取年份。
-func yearFromISOPrefix(s string) int {
-	if len(s) < yearPrefixLen {
-		return 0
-	}
-	y, err := strconv.Atoi(s[:yearPrefixLen])
-	if err != nil {
-		return 0
-	}
-	return y
 }
 
 const metadataUserAgent = "litkit/0.1 (https://github.com/litkit/litkit)"

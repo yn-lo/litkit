@@ -160,11 +160,11 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（rules.md / checklist.md / specs/manuscript-spec.yaml / verifier_models.json，go:embed 编译进二进制）并渲染 AGENTS.md「撰写硬性规定」段；支持 `--type review\|empirical`（preset 阈值切换）、`--lang zh\|en`、`--refresh`（按现有 yaml 重渲染）、`--force` |
+| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（rules.md / checklist.md / specs/manuscript-spec.yaml / verifier_models.json，go:embed 编译进二进制）并渲染 AGENTS.md「撰写硬性规定」段；支持 `--type review\|empirical`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--refresh`（按现有 yaml 重渲染）、`--force`；交互式向导（stdin 是终端时） |
 | FR-LINT-02 | zh 专属规则 | P0 | 覆盖：全半角标点、中文引号、句式冗余（"进行""通过…使"）、"的/地/得"、"了/着/过"、AI 痕迹；规则标注 langs: zh |
 | FR-LINT-03 | en 专属规则 | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、AI 痕迹；规则标注 langs: en |
-| FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注；**规则代码单套按 langs 过滤，不设两套系统** |
-| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--verbose`、`--rule`、`--mode`（chapter/draft/final）；报错含三要素 |
+| FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注、types 标注（空=全部类型；如 empirical 仅实证论文触发）；**规则代码单套按 langs x types 过滤，不设多套系统** |
+| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单 checklist.md | P1 | 覆盖 M 类规则 |
 | FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；改后 `litkit init --refresh` 同步 AGENTS.md |
 | FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。本期仅做接口预留与配置占位，不实现 |
@@ -294,8 +294,8 @@ litkit manuscript   <draft.md> [--lang zh|en] [-s style] [--docx] [-o output_dir
 litkit export       <papers.json> [-f bibtex|ris|text] [-s style]
 litkit cache        list | clear
 litkit library      <subcommand>
-litkit lint init    [project_dir] [--force] [--lang zh|en]
-litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final]
+litkit lint init    [project_dir] [--force] [--type review|empirical] [--lang zh|en] [--journal NAME]
+litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical]
 ```
 
 ### 7.2 MCP 工具（关键）
@@ -306,11 +306,11 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final]
 | `get_paper_metadata` | id_type(doi/pmid/arxiv/title), identifier | Paper \| null |
 | `process_manuscript` | text, lang, style, generate_docx, output_dir | processed_text, reference_list, citation_map, unresolved, files{} |
 | `export_references` | papers[], format, style | success, content |
-| `lint_init` | project_dir, force, lang | 初始化状态 + next_steps |
-| `verify_manuscript` | manuscript_path, lang, mode | issues[]（问题/修复/规则编号） |
+| `lint_init` | project_dir, force, lang, paperType, journal | 初始化状态 + next_steps |
+| `verify_manuscript` | files[], lang, mode, paperType, rule, skip | issues[]（问题/修复/规则编号） |
 | `search_<source>` | 各源特定 | 同 search_papers 结构 |
 | `lib_list` / `lib_search` / `lib_rm` | source/keyword/limit / cite_key | 库内论文 / 命中 / 删除结果 |
-| `lib_stats` | — | 文献库统计 |
+| `lib_stats` / `lib_path` | — | 文献库统计 / 库路径 |
 
 ### 7.3 环境变量
 

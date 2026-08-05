@@ -1,7 +1,6 @@
 // library.go 实现 `litkit lib` 本地文献库命令（FR-LIB-02/04/06）。
 //
-// 检索结果自动入库（FR-LIB-01）；cite_key 为 3 字母引用标识，
-// 是 AI 引用与引用标记（paper_refs，FR-LIB-07）的唯一入口。
+// 检索结果自动入库（FR-LIB-01）；cite_key 为 3 字母引用标识，是 AI 引用的唯一入口。
 package main
 
 import (

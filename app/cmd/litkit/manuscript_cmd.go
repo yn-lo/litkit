@@ -28,11 +28,8 @@ type manuscriptOutput struct {
 	Files       map[string]string    `json:"files"`
 }
 
-// 产物落盘权限（对齐仓库惯例：目录 0750 / 文件 0600，gosec G301/G306）。
-const (
-	outDirPerm  = 0o750
-	outFilePerm = 0o600
-)
+// 产物目录权限（对齐仓库惯例 0750，gosec G301）。
+const outDirPerm = 0o750
 
 // newManuscriptCmd 构造 `litkit manuscript <draft.md>`。
 func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Config) *cobra.Command {
@@ -93,86 +90,33 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 }
 
 // resolveStyle 由 --style / --lang 解析引用样式；无效值返回参数错误（退出码 2）。
+// 解析逻辑在 core.ResolveStyle（CLI/MCP 共用，FR-IFACE-03），此处仅转参数错误。
 func resolveStyle(lang, styleFlag string) (core.Style, error) {
-	if styleFlag != "" {
-		s := core.Style(styleFlag)
-		switch s {
-		case core.StyleGB7714, core.StyleAPA, core.StyleIEEE:
-			return s, nil
-		}
-		return "", &paramError{msg: fmt.Sprintf("未知引用样式 %q（支持 gb7714-2025|apa|ieee）", styleFlag)}
+	s, err := core.ResolveStyle(lang, styleFlag)
+	if err != nil {
+		return "", &paramError{msg: err.Error()}
 	}
-	switch lang {
-	case "zh":
-		return core.StyleGB7714, nil
-	case "en":
-		return core.StyleAPA, nil
-	default:
-		return "", &paramError{msg: fmt.Sprintf("未知语言模式 %q（支持 zh|en）", lang)}
-	}
+	return s, nil
 }
 
 // writeManuscriptArtifacts 落盘 formatted.md / references.txt / refs.bib / refs.ris
-// +（可选）formatted.docx。返回 产物名 → 绝对路径 映射。
+// +（可选）formatted.docx（需 Pandoc，缺失优雅降级）。与 MCP 共用 core 产物函数（FR-IFACE-03）。
 func writeManuscriptArtifacts(outDir, base string, res *core.ManuscriptResult, style core.Style, docx bool) (map[string]string, error) {
-	files := make(map[string]string)
-	write := func(name, content string) error {
-		path := filepath.Join(outDir, name)
-		if err := os.WriteFile(path, []byte(content), outFilePerm); err != nil {
-			return fmt.Errorf("manuscript: 写入 %s 失败: %w", name, err)
-		}
-		files[name] = path
-		return nil
-	}
-
-	if err := write("formatted.md", res.Text); err != nil {
-		return nil, err
-	}
-	var refs strings.Builder
-	for i, p := range res.Papers {
-		if i > 0 {
-			refs.WriteString("\n\n")
-		}
-		line, err := core.FormatReference(p, style, i+1)
-		if err != nil {
-			return nil, err
-		}
-		refs.WriteString(line)
-	}
-	if err := write("references.txt", refs.String()); err != nil {
-		return nil, err
-	}
-	if err := write("refs.bib", core.BibTeXFromPapers(res.Papers)); err != nil {
-		return nil, err
-	}
-	if err := write("refs.ris", core.RISFromPapers(res.Papers)); err != nil {
+	files, err := core.WriteManuscriptOutputs(outDir, res, style)
+	if err != nil {
 		return nil, err
 	}
 
 	if docx {
-		formattedPath := files["formatted.md"]
 		docxPath := filepath.Join(outDir, base+".docx")
 		if _, err := exec.LookPath("pandoc"); err != nil {
 			// FR-REF-11：Pandoc 缺失仅 docx 不可用，其余产物正常
 			fmt.Fprintf(os.Stderr, "litkit: 未找到 pandoc，跳过 docx 生成（formatted.md 已就绪）\n")
-		} else if err := runPandoc(formattedPath, docxPath); err != nil {
+		} else if err := core.PandocToDocx(files[core.ManuscriptFormatted], docxPath); err != nil {
 			fmt.Fprintf(os.Stderr, "litkit: pandoc 转换失败，跳过 docx: %v\n", err)
 		} else {
 			files["formatted.docx"] = docxPath
 		}
 	}
 	return files, nil
-}
-
-// runPandoc 调用 pandoc 将 markdown 转为 docx。
-func runPandoc(src, dst string) error {
-	// #nosec G204 -- 可执行文件固定为 pandoc（LookPath 校验存在），参数为本地文件路径，无 shell 注入面。
-	out, err := exec.Command("pandoc", src, "-o", dst).CombinedOutput()
-	if err != nil {
-		if len(out) > 0 {
-			return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-		}
-		return err
-	}
-	return nil
 }

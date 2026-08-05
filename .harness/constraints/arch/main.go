@@ -9,9 +9,9 @@
 // 分层规则（对应 .harness/specs/architecture/boundaries.md）：
 //
 //	入口层 internal/mcp                      允许依赖 服务层/适配层/叶子层
-//	服务层 internal/core                      允许依赖 适配层/叶子层
+//	服务层 internal/core·lint                允许依赖 适配层/叶子层
 //	适配层 internal/sources                   允许依赖 叶子层
-//	叶子层 internal/model·config·storage·util·embedding 只允许依赖其他叶子层
+//	叶子层 internal/model·config·storage·util·embedding·buildinfo 只允许依赖其他叶子层
 //
 // 额外规则：
 //   - internal/model 不 import 任何非叶子层（数据模型纯净，C5/C6）
@@ -45,9 +45,9 @@ const (
 // 目录前缀 → 层映射。新增目录时在此登记，并同步更新 boundaries.md。
 var (
 	entryPrefixes   = []string{"internal/mcp"}
-	servicePrefixes = []string{"internal/core"}
+	servicePrefixes = []string{"internal/core", "internal/lint"}
 	adapterPrefixes = []string{"internal/sources"}
-	leafPrefixes    = []string{"internal/model", "internal/config", "internal/storage", "internal/util", "internal/embedding"}
+	leafPrefixes    = []string{"internal/model", "internal/config", "internal/storage", "internal/util", "internal/embedding", "internal/buildinfo"}
 )
 
 func dirLayer(importPath string) layer {

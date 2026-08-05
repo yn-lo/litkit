@@ -22,10 +22,10 @@
 
 ## 构建与验证
 
-Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁（7 项）：
+Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁（8 项）：
 
 ```bash
-# 构建全量门禁（一步跑完 7 项：gofmt → build → lint → vet → test → vulncheck → arch-check）
+# 构建全量门禁（一步跑完 8 项：gofmt → build → lint → vet → test → vulncheck → arch-check → sync）
 .harness/constraints/gate.ps1        # Windows PowerShell
 bash .harness/constraints/gate.sh     # Linux/macOS
 
@@ -44,7 +44,7 @@ cd app && goreleaser build --snapshot
 - **密钥**：禁止硬编码 API key，一律经 `internal/config` 读取，配置走 `.env`（gitignored）
 - **分层**：入口层 → 服务层 → 适配层 → 叶子层，单向，架构检查强制；`internal/model` 不 import 上层包
 - **源抽象**：所有学术源必须实现 `PaperSource` 接口并注册，禁止绕过注册表
-- **接口同步**：CLI 与 MCP 共享核心，新增功能两处注册
+- **接口同步**：CLI 与 MCP 共享核心，新增功能两处注册，且同步 api.md（三处清单由 `constraints/sync` 检查器强制，FR-IFACE-03）
 - **摘要工作流**：不下载 PDF、不抽取全文；检索源必须提供摘要（无摘要源不纳入，FR-SRC-19），检索结果无摘要论文默认过滤（FR-SEARCH-03）；入库元数据必须含摘要
 - **不可逆操作**：禁止 force push 主分支
 - **输出**：代码中严禁使用 emoji 提示

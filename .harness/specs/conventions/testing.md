@@ -11,14 +11,14 @@ owner: litkit-core
 | 类别 | 位置 | 要求 |
 |---|---|---|
 | 单元测试 | 各包 `*_test.go` | 离线 hermetic；mock 所有网络 IO（httptest）；CI 只跑此层 |
-| 触网测试 | `tests/integration/`（build tag `integration`） | 真实 API；`go test -tags integration`；不进 CI 默认流程 |
+| 触网测试 | `app/tests/integration/`（build tag `integration`，待二期补充） | 真实 API；`go test -tags integration ./tests/integration/`；不进 CI 默认流程 |
 | 一致性测试 | 双接口 | CLI 与 MCP 同输入同输出断言（FR-IFACE-03） |
 
 ## 规则
 
 - **表驱动测试（table-driven）为默认风格**
 - 覆盖率仅计 unit 测试，门禁 ≥ 60%（NFR-MAINT-03）
-- 新增源必须附触网测试（探测可达性 + 解析正确性），放 integration
+- 新增源应附触网测试（探测可达性 + 解析正确性），放 `app/tests/integration/`（当前待二期补充）
 - 任何在 `init`/`TestMain` 阶段触网的测试不得放入 unit
 - 覆盖率门禁用 floor 而非 ceiling，随测试基建成熟度单调上调
 

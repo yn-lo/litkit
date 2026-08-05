@@ -98,6 +98,7 @@ func TestRenderWritingRules_zh(t *testing.T) {
 	got := RenderWritingRules(spec)
 	for _, want := range []string{
 		"## 撰写硬性规定",
+		"论文类型：四段式实证（empirical）",
 		"P 值：≥0.01 保留 2 位",
 		"章节结构（empirical）",
 		"引言 → 资料与方法",
@@ -110,6 +111,10 @@ func TestRenderWritingRules_zh(t *testing.T) {
 			t.Errorf("zh 渲染应含 %q\n%s", want, got)
 		}
 	}
+	// journal 为空时不应出现"目标期刊"
+	if strings.Contains(got, "目标期刊") {
+		t.Error("journal 为空不应渲染目标期刊行")
+	}
 }
 
 func TestRenderWritingRules_en(t *testing.T) {
@@ -118,6 +123,7 @@ func TestRenderWritingRules_en(t *testing.T) {
 	spec.PaperType = PaperTypeReview
 	got := RenderWritingRules(spec)
 	for _, want := range []string{
+		"论文类型：综述（review）",
 		"academic English",
 		"章节结构（review）",
 		"引言 → 文献检索方法",
@@ -128,5 +134,14 @@ func TestRenderWritingRules_en(t *testing.T) {
 	}
 	if strings.Contains(got, "P 值") {
 		t.Error("en 渲染不应含 zh 专属 P 值规则")
+	}
+}
+
+func TestRenderWritingRules_journal(t *testing.T) {
+	spec := DefaultSpec()
+	spec.Journal = "中华医学杂志"
+	got := RenderWritingRules(spec)
+	if !strings.Contains(got, "目标期刊：中华医学杂志") {
+		t.Errorf("journal 非空应渲染目标期刊行\n%s", got)
 	}
 }

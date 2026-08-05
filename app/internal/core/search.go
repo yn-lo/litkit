@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"litkit/internal/model"
 	"litkit/internal/sources"
@@ -56,29 +57,41 @@ type Searcher struct {
 	registry          *sources.Registry
 	store             *storage.Store
 	defaultMaxResults int
+	searchTimeoutMS   int // 整体检索超时；0 表示不限（沿用调用方 ctx）
 }
 
 // NewSearcher 创建检索器。
 //   - registry：源注册表（必填，nil 时 Search 直接返回空结果）
 //   - store：可选本地文献库；nil 表示检索结果不入库
 //   - defaultMaxResults：每源默认检索条数（≤0 时用 5 兜底）
-func NewSearcher(registry *sources.Registry, store *storage.Store, defaultMaxResults int) *Searcher {
+//   - searchTimeoutMS：整体检索超时（ms）；≤0 表示不限
+func NewSearcher(registry *sources.Registry, store *storage.Store, defaultMaxResults, searchTimeoutMS int) *Searcher {
 	if defaultMaxResults <= 0 {
 		defaultMaxResults = 5
 	}
-	return &Searcher{registry: registry, store: store, defaultMaxResults: defaultMaxResults}
+	return &Searcher{registry: registry, store: store, defaultMaxResults: defaultMaxResults, searchTimeoutMS: searchTimeoutMS}
 }
 
 // Search 执行跨源并发检索。
 //
 // 返回 (*SearchResult, error)：error 仅在 registry 不可用时非 nil；
 // 单源失败归入 result.Errors（FR-SEARCH-01）。
+// ctx 施加整体超时：超时后未完成的源归入 errors，已完成的结果正常返回。
 func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions) (*model.SearchResult, error) {
 	opts.applyDefaults(s.defaultMaxResults)
 	result := model.NewSearchResult()
 
 	if s.registry == nil {
 		return result, nil
+	}
+
+	// 整体检索超时：调用方 ctx 无 deadline 且配置了超时时，派生子 context
+	if s.searchTimeoutMS > 0 {
+		if _, ok := ctx.Deadline(); !ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, time.Duration(s.searchTimeoutMS)*time.Millisecond)
+			defer cancel()
+		}
 	}
 
 	srcs := s.selectSources(opts.Sources)
@@ -183,17 +196,24 @@ func (s *Searcher) persist(papers []model.Paper) []model.Paper {
 
 // selectSources 按 names 过滤；names 为空时返回全部。
 // 未知名静默忽略（不视为错误）。
+// 排除 HasAbstract()=false 的源（FR-SRC-19 源级强制）。
 func (s *Searcher) selectSources(names []string) []sources.PaperSource {
 	all := s.registry.List()
-	if len(names) == 0 {
-		return all
-	}
-	want := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		want[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
+	want := map[string]struct{}{}
+	if len(names) > 0 {
+		for _, n := range names {
+			want[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
+		}
 	}
 	out := make([]sources.PaperSource, 0, len(all))
 	for _, src := range all {
+		if !src.HasAbstract() {
+			continue // FR-SRC-19：无摘要源不纳入检索
+		}
+		if len(names) == 0 {
+			out = append(out, src)
+			continue
+		}
 		if _, ok := want[src.Name()]; ok {
 			out = append(out, src)
 		}
@@ -319,6 +339,18 @@ func mergePapers(existing, incoming model.Paper) model.Paper {
 	}
 	if existing.Citations == 0 && incoming.Citations != 0 {
 		existing.Citations = incoming.Citations
+	}
+	if existing.Publisher == "" && incoming.Publisher != "" {
+		existing.Publisher = incoming.Publisher
+	}
+	if existing.City == "" && incoming.City != "" {
+		existing.City = incoming.City
+	}
+	if existing.Institution == "" && incoming.Institution != "" {
+		existing.Institution = incoming.Institution
+	}
+	if existing.AccessDate == "" && incoming.AccessDate != "" {
+		existing.AccessDate = incoming.AccessDate
 	}
 	return existing
 }

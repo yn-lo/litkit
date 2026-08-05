@@ -12,6 +12,9 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,6 +26,11 @@ import (
 type PaperStore interface {
 	GetByCiteKey(citeKey string) (*model.Paper, error)
 	UpsertPaper(p model.Paper) (string, bool, error)
+}
+
+// Fetcher 手稿流水线所需的反查接口（*MetadataFetcher 实现之，便于测试注入 fake）。
+type Fetcher interface {
+	Fetch(ctx context.Context, idType, identifier string) (*model.Paper, error)
 }
 
 // ManuscriptResult 手稿处理产物。
@@ -43,7 +51,7 @@ var idTypePrefixes = []string{"doi:", "pmid:", "arxiv:", "title:"}
 //
 // style 决定正文引用标记：GB7714/IEEE 用 "[n]"；APA 用 "(Author, Year)"。
 // per-token 解析失败只记入 Unresolved 不中断流水线；仅参数级错误（未知 style）返回 error。
-func ProcessManuscript(ctx context.Context, store PaperStore, fetcher *MetadataFetcher, src string, style Style) (*ManuscriptResult, error) {
+func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, src string, style Style) (*ManuscriptResult, error) {
 	switch style {
 	case StyleGB7714, StyleAPA, StyleIEEE:
 	default:
@@ -84,7 +92,7 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher *MetadataF
 //
 // 裸 token → 视为 citeKey 查库（先精确，未命中再 strings.ToUpper 一次）；
 // 带前缀 → MetadataFetcher.Fetch 现场反查，成功后 UpsertPaper 入库并以返回的 citeKey 补回。
-func resolvePaper(ctx context.Context, store PaperStore, fetcher *MetadataFetcher, token string) (*model.Paper, error) {
+func resolvePaper(ctx context.Context, store PaperStore, fetcher Fetcher, token string) (*model.Paper, error) {
 	if idType, ident, ok := splitPrefixed(token); ok {
 		if ident == "" || fetcher == nil {
 			return nil, nil
@@ -156,4 +164,76 @@ func authorLastName(a model.Author) string {
 		return f
 	}
 	return strings.TrimSpace(a.Given)
+}
+
+// 手稿产物文件名（FR-REF-11）。
+const (
+	ManuscriptFormatted  = "formatted.md"
+	ManuscriptReferences = "references.txt"
+	ManuscriptBib        = "refs.bib"
+	ManuscriptRIS        = "refs.ris"
+	manuscriptFilePerm   = 0o600
+)
+
+// RenderReferenceList 渲染编号引用列表（references.txt / MCP referenceList 共用）。
+func RenderReferenceList(papers []model.Paper, style Style) (string, error) {
+	var b strings.Builder
+	for i, p := range papers {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		line, err := FormatReference(p, style, i+1)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(line)
+	}
+	return b.String(), nil
+}
+
+// WriteManuscriptOutputs 落盘 formatted.md / references.txt / refs.bib / refs.ris。
+//
+// 返回 产物名 → 绝对路径 映射；不含 docx（由调用方按需经 PandocToDocx 转换）。
+// CLI 与 MCP 共用，保证同输入同输出（FR-IFACE-03）。
+func WriteManuscriptOutputs(outDir string, res *ManuscriptResult, style Style) (map[string]string, error) {
+	files := make(map[string]string)
+	write := func(name, content string) error {
+		path := filepath.Join(outDir, name)
+		if err := os.WriteFile(path, []byte(content), manuscriptFilePerm); err != nil {
+			return fmt.Errorf("manuscript: 写入 %s 失败: %w", name, err)
+		}
+		files[name] = path
+		return nil
+	}
+	if err := write(ManuscriptFormatted, res.Text); err != nil {
+		return nil, err
+	}
+	refs, err := RenderReferenceList(res.Papers, style)
+	if err != nil {
+		return nil, err
+	}
+	if err := write(ManuscriptReferences, refs); err != nil {
+		return nil, err
+	}
+	if err := write(ManuscriptBib, BibTeXFromPapers(res.Papers)); err != nil {
+		return nil, err
+	}
+	if err := write(ManuscriptRIS, RISFromPapers(res.Papers)); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// PandocToDocx 调用 pandoc 将 markdown 转为 docx（FR-REF-11）。
+// 可执行文件固定为 pandoc，参数为本地文件路径；调用方负责 LookPath 预检与降级提示。
+func PandocToDocx(src, dst string) error {
+	// #nosec G204 -- 可执行文件固定为 pandoc，参数为本地文件路径，无 shell 注入面。
+	out, err := exec.Command("pandoc", src, "-o", dst).CombinedOutput()
+	if err != nil {
+		if len(out) > 0 {
+			return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+		}
+		return err
+	}
+	return nil
 }

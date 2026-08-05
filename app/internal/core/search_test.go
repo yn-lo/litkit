@@ -17,15 +17,16 @@ import (
 
 // fakeSource 计数 + 可注入返回值/错误的 PaperSource 实现。
 type fakeSource struct {
-	name   string
-	papers []model.Paper
-	err    error
-	calls  int32 // Search 调用次数
-	delay  time.Duration
+	name        string
+	papers      []model.Paper
+	err         error
+	calls       int32
+	delay       time.Duration
+	hasAbstract bool
 }
 
 func (f *fakeSource) Name() string      { return f.name }
-func (f *fakeSource) HasAbstract() bool { return true }
+func (f *fakeSource) HasAbstract() bool { return f.hasAbstract }
 func (f *fakeSource) Search(ctx context.Context, query string, opts sources.SearchOptions) ([]model.Paper, error) {
 	atomic.AddInt32(&f.calls, 1)
 	if f.delay > 0 {
@@ -79,10 +80,10 @@ func TestSearchOptions_Defaults(t *testing.T) {
 // ---- 并发多源 ----
 
 func TestSearch_ConcurrentMultiSource(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs-a1")}}
-	srcB := &fakeSource{name: "beta", papers: []model.Paper{paperWithAbstract("B1", "10.1/b1", "abs-b1")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs-a1")}}
+	srcB := &fakeSource{name: "beta", hasAbstract: true, papers: []model.Paper{paperWithAbstract("B1", "10.1/b1", "abs-b1")}}
 	reg := newFakeRegistry(srcA, srcB)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, err := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5})
 	if err != nil {
@@ -105,10 +106,10 @@ func TestSearch_ConcurrentMultiSource(t *testing.T) {
 // ---- 单源失败隔离 ----
 
 func TestSearch_SingleSourceFailureIsolation(t *testing.T) {
-	srcOK := &fakeSource{name: "ok", papers: []model.Paper{paperWithAbstract("OK", "10.1/ok", "abs")}}
-	srcBad := &fakeSource{name: "bad", err: errors.New("upstream 503")}
+	srcOK := &fakeSource{name: "ok", hasAbstract: true, papers: []model.Paper{paperWithAbstract("OK", "10.1/ok", "abs")}}
+	srcBad := &fakeSource{name: "bad", hasAbstract: true, err: errors.New("upstream 503")}
 	reg := newFakeRegistry(srcOK, srcBad)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if err != nil {
@@ -126,14 +127,14 @@ func TestSearch_SingleSourceFailureIsolation(t *testing.T) {
 
 func TestSearch_DedupByDOI(t *testing.T) {
 	// 两个源返回同 DOI（标题可不同），应合并为一条
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
 		paperWithAbstract("Graph Networks A", "10.1/x", "abs-from-alpha"),
 	}}
-	srcB := &fakeSource{name: "beta", papers: []model.Paper{
+	srcB := &fakeSource{name: "beta", hasAbstract: true, papers: []model.Paper{
 		paperWithAbstract("Graph Networks B", "10.1/x", "abs-from-beta"),
 	}}
 	reg := newFakeRegistry(srcA, srcB)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if len(res.Papers) != 1 {
@@ -147,14 +148,14 @@ func TestSearch_DedupByDOI(t *testing.T) {
 
 func TestSearch_DedupByTitleWhenNoDOI(t *testing.T) {
 	// 两个源返回同标题（无 DOI），应合并为一条
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
 		{Title: "Same Title", Abstract: "abs-a", Source: "alpha"},
 	}}
-	srcB := &fakeSource{name: "beta", papers: []model.Paper{
+	srcB := &fakeSource{name: "beta", hasAbstract: true, papers: []model.Paper{
 		{Title: "  Same  Title  ", Abstract: "abs-b", Source: "beta"}, // 归一化后应相同
 	}}
 	reg := newFakeRegistry(srcA, srcB)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if len(res.Papers) != 1 {
@@ -165,12 +166,12 @@ func TestSearch_DedupByTitleWhenNoDOI(t *testing.T) {
 // ---- 无摘要过滤 ----
 
 func TestSearch_NoAbstractFilteredByDefault(t *testing.T) {
-	src := &fakeSource{name: "alpha", papers: []model.Paper{
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
 		paperWithAbstract("Has", "10.1/has", "abs"),
 		paperNoAbstract("NoAbs", "10.1/noabs"),
 	}}
 	reg := newFakeRegistry(src)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if len(res.Papers) != 1 {
@@ -182,12 +183,12 @@ func TestSearch_NoAbstractFilteredByDefault(t *testing.T) {
 }
 
 func TestSearch_KeepNoAbstractFlag(t *testing.T) {
-	src := &fakeSource{name: "alpha", papers: []model.Paper{
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
 		paperWithAbstract("Has", "10.1/has", "abs"),
 		paperNoAbstract("NoAbs", "10.1/noabs"),
 	}}
 	reg := newFakeRegistry(src)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5, KeepNoAbstract: true})
 	if len(res.Papers) != 2 {
@@ -198,10 +199,10 @@ func TestSearch_KeepNoAbstractFlag(t *testing.T) {
 // ---- 源过滤 ----
 
 func TestSearch_SourcesFilter(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperWithAbstract("A", "10.1/a", "abs")}}
-	srcB := &fakeSource{name: "beta", papers: []model.Paper{paperWithAbstract("B", "10.1/b", "abs")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A", "10.1/a", "abs")}}
+	srcB := &fakeSource{name: "beta", hasAbstract: true, papers: []model.Paper{paperWithAbstract("B", "10.1/b", "abs")}}
 	reg := newFakeRegistry(srcA, srcB)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{Sources: []string{"alpha"}, MaxResults: 5})
 	if len(res.Papers) != 1 || res.Papers[0].Title != "A" {
@@ -213,9 +214,9 @@ func TestSearch_SourcesFilter(t *testing.T) {
 }
 
 func TestSearch_SourcesFilter_UnknownIgnored(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperWithAbstract("A", "10.1/a", "abs")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A", "10.1/a", "abs")}}
 	reg := newFakeRegistry(srcA)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, err := s.Search(context.Background(), "q", SearchOptions{Sources: []string{"alpha", "unknown"}, MaxResults: 5})
 	if err != nil {
@@ -229,14 +230,14 @@ func TestSearch_SourcesFilter_UnknownIgnored(t *testing.T) {
 // ---- 检索结果入库 ----
 
 func TestSearch_UpsertsPapersIntoStore(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
 	reg := newFakeRegistry(srcA)
 	store, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
 	if err != nil {
 		t.Fatalf("Open store: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := NewSearcher(reg, store, 0)
+	s := NewSearcher(reg, store, 0, 0)
 
 	res1, _ := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5})
 	if len(res1.Papers) != 1 {
@@ -261,9 +262,9 @@ func TestSearch_UpsertsPapersIntoStore(t *testing.T) {
 }
 
 func TestSearch_StoreNil_NoUpsert(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
 	reg := newFakeRegistry(srcA)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 	res, _ := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5})
 	if len(res.Papers) != 1 {
 		t.Fatalf("store=nil 时应正常返回 1 篇，got %d", len(res.Papers))
@@ -274,14 +275,14 @@ func TestSearch_StoreNil_NoUpsert(t *testing.T) {
 }
 
 func TestSearch_KeepNoAbstract_NoUpsert(t *testing.T) {
-	srcA := &fakeSource{name: "alpha", papers: []model.Paper{paperNoAbstract("NoAbs", "10.1/noabs")}}
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperNoAbstract("NoAbs", "10.1/noabs")}}
 	reg := newFakeRegistry(srcA)
 	store, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
 	if err != nil {
 		t.Fatalf("Open store: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := NewSearcher(reg, store, 0)
+	s := NewSearcher(reg, store, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5, KeepNoAbstract: true})
 	if len(res.Papers) != 1 {
@@ -298,12 +299,13 @@ func TestSearch_KeepNoAbstract_NoUpsert(t *testing.T) {
 func TestSearch_ContextCancelIsolatesErrors(t *testing.T) {
 	// 慢源 + 取消 ctx：错误归入 Errors，不 panic
 	srcSlow := &fakeSource{
-		name:   "slow",
-		delay:  200 * time.Millisecond,
-		papers: []model.Paper{paperWithAbstract("S", "10.1/s", "abs")},
+		name:        "slow",
+		hasAbstract: true,
+		delay:       200 * time.Millisecond,
+		papers:      []model.Paper{paperWithAbstract("S", "10.1/s", "abs")},
 	}
 	reg := newFakeRegistry(srcSlow)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -320,7 +322,7 @@ func TestSearch_ContextCancelIsolatesErrors(t *testing.T) {
 
 func TestSearch_EmptyRegistry(t *testing.T) {
 	reg := sources.NewRegistry()
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 	res, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if err != nil {
 		t.Fatalf("空 registry 不应 error： %v", err)
@@ -336,14 +338,14 @@ func TestSearch_EmptyRegistry(t *testing.T) {
 // ---- 默认年份倒序排序（FR-SEARCH-10）----
 
 func TestSearch_SortedByYearDesc(t *testing.T) {
-	src := &fakeSource{name: "alpha", papers: []model.Paper{
+	src := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{
 		{Title: "Old", Abstract: "a", Source: "alpha", Year: 2018},
 		{Title: "Newest", Abstract: "a", Source: "alpha", Year: 2024},
 		{Title: "Mid", Abstract: "a", Source: "alpha", Year: 2021},
 		{Title: "Unknown", Abstract: "a", Source: "alpha", Year: 0},
 	}}
 	reg := newFakeRegistry(src)
-	s := NewSearcher(reg, nil, 0)
+	s := NewSearcher(reg, nil, 0, 0)
 
 	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
 	if len(res.Papers) != 4 {
@@ -356,6 +358,23 @@ func TestSearch_SortedByYearDesc(t *testing.T) {
 		if years[i] != want[i] {
 			t.Fatalf("排序不符，got %v want %v", years, want)
 		}
+	}
+}
+
+// ---- 无摘要源排除（FR-SRC-19）----
+
+func TestSearch_NoAbstractSourceExcluded(t *testing.T) {
+	srcOK := &fakeSource{name: "good", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A", "10.1/a", "abs")}}
+	srcNoAbs := &fakeSource{name: "noabs", hasAbstract: false, papers: []model.Paper{paperWithAbstract("B", "10.1/b", "abs")}}
+	reg := newFakeRegistry(srcOK, srcNoAbs)
+	s := NewSearcher(reg, nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "q", SearchOptions{})
+	if len(res.Papers) != 1 || res.Papers[0].Title != "A" {
+		t.Fatalf("HasAbstract=false 的源应被排除，got %d papers", len(res.Papers))
+	}
+	if _, ok := res.SourceResults["noabs"]; ok {
+		t.Fatal("noabs 源不应出现在 SourceResults 中")
 	}
 }
 

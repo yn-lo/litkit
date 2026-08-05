@@ -58,6 +58,9 @@ func TestFormatReference_GB7714_CJK(t *testing.T) {
 			t.Errorf("GB7714 中文条目缺少 %q：\n%s", want, got)
 		}
 	}
+	if !strings.Contains(got, "．") {
+		t.Errorf("GB7714 中文条目应使用全角句点 ．：\n%s", got)
+	}
 }
 
 func TestFormatReference_GB7714_NewDocTypes(t *testing.T) {
@@ -68,6 +71,7 @@ func TestFormatReference_GB7714_NewDocTypes(t *testing.T) {
 		{"preprint", "[PP]"},
 		{"dataset", "[DS]"},
 		{"software", "[CP]"},
+		{"webpage", "[EB/OL]"},
 		{"", "[Z]"},
 	}
 	for _, c := range cases {
@@ -83,12 +87,71 @@ func TestFormatReference_GB7714_NewDocTypes(t *testing.T) {
 	}
 }
 
+func TestFormatReference_GB7714_Book(t *testing.T) {
+	p := model.Paper{
+		Title:     "Deep Learning",
+		Authors:   []model.Author{{Given: "Ian", Family: "Goodfellow"}, {Given: "Yoshua", Family: "Bengio"}, {Given: "Aaron", Family: "Courville"}, {Given: "Extra", Family: "Author"}},
+		Year:      2016,
+		DocType:   "book",
+		Publisher: "MIT Press",
+		City:      "Cambridge",
+		DOI:       "10.1234/deeplearning",
+	}
+	got, err := FormatReference(p, StyleGB7714, 5)
+	if err != nil {
+		t.Fatalf("FormatReference err = %v", err)
+	}
+	for _, want := range []string{"[5] ", "GOODFELLOW I", "Deep Learning[M]", "Cambridge: MIT Press", "2016", "DOI:10.1234/deeplearning"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("GB7714 书籍条目缺少 %q：\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatReference_GB7714_Thesis(t *testing.T) {
+	p := model.Paper{
+		Title:       "Neural Machine Translation",
+		Authors:     []model.Author{{Given: "Yonghui", Family: "Wu"}},
+		Year:        2016,
+		DocType:     "thesis",
+		Institution: "MIT",
+	}
+	got, err := FormatReference(p, StyleGB7714, 0)
+	if err != nil {
+		t.Fatalf("FormatReference err = %v", err)
+	}
+	for _, want := range []string{"Neural Machine Translation[D]", "MIT", "2016"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("GB7714 学位论文条目缺少 %q：\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatReference_GB7714_Webpage(t *testing.T) {
+	p := model.Paper{
+		Title:      "Go Documentation",
+		Year:       2024,
+		DocType:    "webpage",
+		URL:        "https://go.dev/doc",
+		AccessDate: "2024-06-01",
+	}
+	got, err := FormatReference(p, StyleGB7714, 0)
+	if err != nil {
+		t.Fatalf("FormatReference err = %v", err)
+	}
+	for _, want := range []string{"Go Documentation[EB/OL]", "2024", "(2024-06-01)", "[https://go.dev/doc]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("GB7714 网页条目缺少 %q：\n%s", want, got)
+		}
+	}
+}
+
 func TestFormatReference_APA(t *testing.T) {
 	got, err := FormatReference(sampleJournal(), StyleAPA, 0)
 	if err != nil {
 		t.Fatalf("FormatReference err = %v", err)
 	}
-	for _, want := range []string{"Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., & Jones, L.", "(2017)", "Attention Is All You Need.", "Advances in Neural Information Processing Systems, 30, 5998-6008.", "https://doi.org/10.5555/3295222.3295349"} {
+	for _, want := range []string{"Vaswani, A., Shazeer, N., Parmar, N., et al.", "(2017)", "Attention Is All You Need.", "*Advances in Neural Information Processing Systems*", "*30*, 5998-6008.", "https://doi.org/10.5555/3295222.3295349"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("APA 条目缺少 %q：\n%s", want, got)
 		}
@@ -100,7 +163,7 @@ func TestFormatReference_IEEE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormatReference err = %v", err)
 	}
-	for _, want := range []string{"[3] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, and L. Jones,", "\"Attention Is All You Need,\"", "Advances in Neural Information Processing Systems", "vol. 30", "pp. 5998-6008", "2017"} {
+	for _, want := range []string{"[3] A. Vaswani, N. Shazeer, N. Parmar, et al.,", "\"Attention Is All You Need,\"", "*Advances in Neural Information Processing Systems*", "vol. 30", "pp. 5998-6008", "2017"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("IEEE 条目缺少 %q：\n%s", want, got)
 		}
@@ -110,6 +173,28 @@ func TestFormatReference_IEEE(t *testing.T) {
 func TestFormatReference_UnknownStyle(t *testing.T) {
 	if _, err := FormatReference(sampleJournal(), Style("chicago"), 0); err == nil {
 		t.Fatal("未知样式应返回错误")
+	}
+}
+
+func TestAuthors_MaxThree(t *testing.T) {
+	authors := func(n int) []model.Author {
+		out := make([]model.Author, 0, n)
+		for i := 0; i < n; i++ {
+			out = append(out, model.Author{Given: "G", Family: "F"})
+		}
+		return out
+	}
+	for _, style := range []Style{StyleGB7714, StyleAPA, StyleIEEE} {
+		if got, err := FormatReference(model.Paper{Authors: authors(3), Title: "T", Year: 2020}, style, 0); err != nil {
+			t.Fatalf("%s err = %v", style, err)
+		} else if strings.Contains(got, "et al") || strings.Contains(got, "等") {
+			t.Errorf("%s 恰好 3 位作者不应省略：%q", style, got)
+		}
+		if got, err := FormatReference(model.Paper{Authors: authors(4), Title: "T", Year: 2020}, style, 0); err != nil {
+			t.Fatalf("%s err = %v", style, err)
+		} else if !strings.Contains(got, "et al") && !strings.Contains(got, "等") {
+			t.Errorf("%s 4 位作者应省略为前 3 位：%q", style, got)
+		}
 	}
 }
 

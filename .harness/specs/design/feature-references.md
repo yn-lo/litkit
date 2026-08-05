@@ -56,4 +56,4 @@ owner: litkit-core
 - [x] BibTeX/RIS 生成测试：字段完整性（author/title/year/journal/volume/number/pages/doi/url）
 - [x] unresolved 测试：未解析占位符出现在列表
 - [ ] Pandoc 缺失降级测试：跳过 docx，其余产物正常
-- [ ] CLI 与 MCP 一致性测试（FR-IFACE-03）
+- [x] CLI 与 MCP 一致性测试（FR-IFACE-03，M5 落地：export_references 输出与 core 一致断言）

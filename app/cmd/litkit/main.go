@@ -6,10 +6,11 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"litkit/internal/buildinfo"
 )
 
 // paramError 表示参数校验错误（退出码 2）。
@@ -50,6 +51,7 @@ func newRootCmd(d *deps) *cobra.Command {
 CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 输出默认 JSON，可被 AI shell 调用。`,
 		SilenceUsage: true,
+		Version:      buildinfo.Version, // 启用 --version / version 子命令（goreleaser ldflags 注入）
 	}
 	root.AddCommand(
 		newInitCmd(d.cfg),
@@ -59,14 +61,9 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 		newManuscriptCmd(d.store, d.fetcher, d.cfg),
 		newExportCmd(),
 		newLibraryCmd(d.store),
-		newLintCmd(),
+		newLintCmd(d.cfg),
 		newVerifyCmd(d.cfg),
+		newMcpCmd(d),
 	)
 	return root
-}
-
-// notImplemented 返回一个统一形态的"未实现"错误。
-// 用于后续里程碑（M3/M4）的占位子命令。
-func notImplemented(name string) error {
-	return fmt.Errorf("litkit %s: 暂未实现（参见 .harness/specs/plans/roadmap.md）", name)
 }

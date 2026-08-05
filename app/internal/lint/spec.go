@@ -34,6 +34,7 @@ const (
 type ManuscriptSpec struct {
 	PaperType string        `yaml:"paper_type"` // review | empirical
 	Lang      string        `yaml:"lang"`       // zh | en
+	Journal   string        `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
 	Sections  Sections      `yaml:"sections"`
 	WordCount WordCounts    `yaml:"word_counts"`
 	Citation  CitationSpec  `yaml:"citation"`
@@ -65,29 +66,51 @@ type HeadingLimits struct {
 	MaxLength int `yaml:"max_length"`
 }
 
-// DefaultSpec 返回默认撰写规范（与 templates 中 manuscript-spec.yaml 一致）。
+// DefaultSpec 返回默认撰写规范（empirical/zh，与模板 manuscript-spec.yaml 一致）。
 func DefaultSpec() *ManuscriptSpec {
-	return &ManuscriptSpec{
-		PaperType: PaperTypeEmpirical,
-		Lang:      LangZH,
+	return SpecForType(PaperTypeEmpirical, LangZH)
+}
+
+// SpecForType 按论文类型与语言返回预设撰写规范。
+func SpecForType(paperType, lang string) *ManuscriptSpec {
+	spec := &ManuscriptSpec{
+		PaperType: paperType,
+		Lang:      lang,
 		Sections: Sections{
 			Review:    []string{"引言", "文献检索方法", "主题分析", "讨论与展望", "结论"},
 			Empirical: []string{"引言", "资料与方法", "结果", "讨论", "结论"},
-		},
-		WordCount: WordCounts{
-			Total:     []int{3000, 8000},
-			Abstract:  []int{200, 500},
-			Paragraph: []int{30, 500},
-		},
-		Citation: CitationSpec{
-			Count: []int{30, 45},
-			Style: "gbt7714",
 		},
 		Heading: HeadingLimits{
 			MaxLevel:  defaultMaxHeadingLevel,
 			MaxLength: defaultMaxHeadingLength,
 		},
 	}
+	switch paperType {
+	case PaperTypeReview:
+		spec.WordCount = WordCounts{
+			Total:     []int{5000, 15000},
+			Abstract:  []int{200, 500},
+			Paragraph: []int{50, 500},
+		}
+		spec.Citation = CitationSpec{
+			Count: []int{50, 120},
+			Style: "gbt7714",
+		}
+	default: // empirical
+		spec.WordCount = WordCounts{
+			Total:     []int{3000, 8000},
+			Abstract:  []int{200, 500},
+			Paragraph: []int{30, 500},
+		}
+		spec.Citation = CitationSpec{
+			Count: []int{30, 45},
+			Style: "gbt7714",
+		}
+	}
+	if lang == LangEN {
+		spec.Citation.Style = "apa"
+	}
+	return spec
 }
 
 // LoadSpec 从 yaml 文件加载撰写规范；文件缺失/非法时回退默认值并返回 error 提示。

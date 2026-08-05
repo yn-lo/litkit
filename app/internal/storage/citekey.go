@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -43,10 +41,4 @@ func randomKey(n int) string {
 		b[i] = citeKeyAlphabet[rand.IntN(len(citeKeyAlphabet))]
 	}
 	return string(b)
-}
-
-// hashSentence 生成引用句的稳定指纹（sha256 前缀），用于 paper_refs 同句去重。
-func hashSentence(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:8])
 }

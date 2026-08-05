@@ -28,10 +28,10 @@ const (
 // docTypeMark 文献类型标志（GB/T 7714—2025 新文献类型，C3）。
 // 未知类型回落通用 [Z]（其他）。键为 model.Paper.DocType 的值。
 var docTypeMark = map[string]string{
-	model.DocTypeArticle:        "[J]", // 期刊文章
+	model.DocTypeArticle:        "[J]",
 	model.DocTypeJournalArticle: "[J]",
-	model.DocTypePreprint:       "[PP]", // 预印本
-	model.DocTypeDataset:        "[DS]", // 数据集
+	model.DocTypePreprint:       "[PP]",
+	model.DocTypeDataset:        "[DS]",
 	model.DocTypeBook:           "[M]",
 	model.DocTypeMonograph:      "[M]",
 	model.DocTypeConference:     "[C]",
@@ -39,7 +39,8 @@ var docTypeMark = map[string]string{
 	model.DocTypeReport:         "[R]",
 	model.DocTypeThesis:         "[D]",
 	model.DocTypePatent:         "[P]",
-	model.DocTypeSoftware:       "[CP]", // 计算机程序
+	model.DocTypeSoftware:       "[CP]",
+	model.DocTypeWebpage:        "[EB/OL]",
 }
 
 // docTypeMarkGB 返回文献类型标志；空/未知回落 [Z]（其他）。
@@ -75,41 +76,125 @@ func FormatReference(p model.Paper, style Style, number int) (string, error) {
 //
 // 中文文献作者用顿号分隔 + "等"；英文文献作者姓全大写在前、名缩写，
 // 3 名以上省略为 "et al."（GB/T 7714 混排约定）。无作者时以题名起始。
+// 按文献类型差异化格式：期刊[J]用刊名/卷期/页码；书籍[M]用出版地:出版社；
+// 学位论文[D]用学校；网页[EB/OL]用URL+访问日期。
 func formatGB7714(p model.Paper, number int) string {
+	cjk := isPaperCJK(p)
+	sep := gbSep(cjk)
 	var b strings.Builder
 	if number > 0 {
 		b.WriteString("[" + strconv.Itoa(number) + "] ")
 	}
 	if a := authorsGB(p.Authors); a != "" {
 		b.WriteString(a)
-		b.WriteString(". ")
+		b.WriteString(sep)
 	}
 	b.WriteString(cleanTitle(p.Title))
 	b.WriteString(docTypeMarkGB(p))
+	dt := strings.ToLower(strings.TrimSpace(p.DocType))
+	switch dt {
+	case model.DocTypeBook, model.DocTypeMonograph:
+		fmtGBBook(&b, p, cjk, sep)
+	case model.DocTypeThesis:
+		fmtGBThesis(&b, p, cjk, sep)
+	case model.DocTypeWebpage:
+		fmtGBWebpage(&b, p, cjk, sep)
+	default:
+		fmtGBJournal(&b, p, cjk, sep)
+	}
+	return b.String()
+}
+
+func fmtGBJournal(b *strings.Builder, p model.Paper, cjk bool, sep string) {
 	if p.Venue != "" {
-		b.WriteString(". ")
+		b.WriteString(sep)
 		b.WriteString(p.Venue)
 	}
 	if p.Year > 0 {
 		b.WriteString(", ")
 		b.WriteString(strconv.Itoa(p.Year))
 	}
-	volIssue := volIssue(p)
-	if volIssue != "" {
+	if vi := volIssue(p); vi != "" {
 		b.WriteString(", ")
-		b.WriteString(volIssue)
+		b.WriteString(vi)
 	}
 	if p.Pages != "" {
 		b.WriteString(": ")
-		b.WriteString(p.Pages)
+		b.WriteString(normalizePages(p.Pages))
 	}
-	b.WriteString(".")
+	b.WriteString(gbEnd(cjk))
 	if p.DOI != "" {
 		b.WriteString(" DOI:")
 		b.WriteString(p.DOI)
-		b.WriteString(".")
+		b.WriteString(gbEnd(cjk))
 	}
-	return b.String()
+}
+
+func fmtGBBook(b *strings.Builder, p model.Paper, cjk bool, sep string) {
+	b.WriteString(sep)
+	switch {
+	case p.City != "" && p.Publisher != "":
+		b.WriteString(p.City)
+		b.WriteString(": ")
+		b.WriteString(p.Publisher)
+	case p.Publisher != "":
+		b.WriteString(p.Publisher)
+	case p.Venue != "":
+		b.WriteString(p.Venue)
+	}
+	if p.Year > 0 {
+		b.WriteString(", ")
+		b.WriteString(strconv.Itoa(p.Year))
+	}
+	b.WriteString(gbEnd(cjk))
+	if p.DOI != "" {
+		b.WriteString(" DOI:")
+		b.WriteString(p.DOI)
+		b.WriteString(gbEnd(cjk))
+	}
+}
+
+func fmtGBThesis(b *strings.Builder, p model.Paper, cjk bool, sep string) {
+	b.WriteString(sep)
+	if p.Institution != "" {
+		b.WriteString(p.Institution)
+	} else if p.Venue != "" {
+		b.WriteString(p.Venue)
+	}
+	if p.Year > 0 {
+		b.WriteString(", ")
+		b.WriteString(strconv.Itoa(p.Year))
+	}
+	b.WriteString(gbEnd(cjk))
+	if p.DOI != "" {
+		b.WriteString(" DOI:")
+		b.WriteString(p.DOI)
+		b.WriteString(gbEnd(cjk))
+	}
+}
+
+func fmtGBWebpage(b *strings.Builder, p model.Paper, cjk bool, sep string) {
+	b.WriteString(sep)
+	if p.Year > 0 {
+		b.WriteString(strconv.Itoa(p.Year))
+		b.WriteString(gbEnd(cjk))
+	}
+	if p.AccessDate != "" {
+		b.WriteString("(")
+		b.WriteString(p.AccessDate)
+		b.WriteString(")")
+	}
+	if p.URL != "" {
+		b.WriteString("[")
+		b.WriteString(p.URL)
+		b.WriteString("]")
+	}
+	b.WriteString(gbEnd(cjk))
+	if p.DOI != "" {
+		b.WriteString(" DOI:")
+		b.WriteString(p.DOI)
+		b.WriteString(gbEnd(cjk))
+	}
 }
 
 // authorsGB 渲染作者（GB/T 7714 混排）：中文名原样顿号连接，
@@ -146,7 +231,7 @@ func authorsGB(as []model.Author) string {
 	return strings.Join(parts, ", ")
 }
 
-// formatAPA 渲染 APA 7th 条目：Author, A. B., & Author, C. (Year). Title. Journal, vol(issue), pages. https://doi.org/xxx
+// formatAPA 渲染 APA 7th 条目：Author, A. B., & Author, C. (Year). Title. *Journal*, *vol*(issue), pages. https://doi.org/xxx
 func formatAPA(p model.Paper) string {
 	var b strings.Builder
 	if a := authorsAPA(p.Authors); a != "" {
@@ -162,15 +247,15 @@ func formatAPA(p model.Paper) string {
 	b.WriteString(".")
 	if p.Venue != "" {
 		b.WriteString(" ")
-		b.WriteString(p.Venue)
+		b.WriteString(italic(p.Venue))
 	}
-	if volIssue := volIssue(p); volIssue != "" {
+	if volIssue := volIssueAPA(p); volIssue != "" {
 		b.WriteString(", ")
 		b.WriteString(volIssue)
 	}
 	if p.Pages != "" {
 		b.WriteString(", ")
-		b.WriteString(p.Pages)
+		b.WriteString(normalizePages(p.Pages))
 	}
 	b.WriteString(".")
 	if p.DOI != "" {
@@ -180,27 +265,18 @@ func formatAPA(p model.Paper) string {
 	return b.String()
 }
 
-// authorsAPA 渲染作者（APA：Family, G.；& 连接最后一位；>20 省略规则简化，>7 用 ... 第7位 ... 最后一位）。
+// authorsAPA 渲染作者（APA：Family, G.；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
 func authorsAPA(as []model.Author) string {
 	if len(as) == 0 {
 		return ""
 	}
-	const (
-		maxShow = 7
-		limit   = 20
-	)
-	if len(as) > limit {
-		// 简化：前 7 位 + "..." + 最后一位
-		parts := make([]string, 0, maxShow+2)
-		for i := 0; i < maxShow; i++ {
-			parts = append(parts, authorAPA(as[i]))
-		}
-		parts = append(parts, "...", authorAPA(as[len(as)-1]))
-		return strings.Join(parts, ", ")
-	}
+	const maxShow = 3
 	parts := make([]string, 0, len(as))
 	for _, a := range as {
 		parts = append(parts, authorAPA(a))
+	}
+	if len(parts) > maxShow {
+		return strings.Join(parts[:maxShow], ", ") + ", et al."
 	}
 	if len(parts) == 1 {
 		return parts[0]
@@ -223,7 +299,7 @@ func authorAPA(a model.Author) string {
 	return ""
 }
 
-// formatIEEE 渲染 IEEE 条目：[1] A. Author, "Title," Journal, vol. 5, no. 2, pp. 12-34, 2020.
+// formatIEEE 渲染 IEEE 条目：[1] A. Author, "Title," *Journal*, vol. 5, no. 2, pp. 12-34, 2020.
 func formatIEEE(p model.Paper, number int) string {
 	var b strings.Builder
 	if number > 0 {
@@ -235,8 +311,8 @@ func formatIEEE(p model.Paper, number int) string {
 	}
 	b.WriteString("\"" + cleanTitle(p.Title) + ",\"")
 	if p.Venue != "" {
-		b.WriteString(", ")
-		b.WriteString(p.Venue)
+		b.WriteString(" ")
+		b.WriteString(italic(p.Venue))
 	}
 	if p.Volume != "" {
 		b.WriteString(", vol. ")
@@ -248,7 +324,7 @@ func formatIEEE(p model.Paper, number int) string {
 	}
 	if p.Pages != "" {
 		b.WriteString(", pp. ")
-		b.WriteString(p.Pages)
+		b.WriteString(normalizePages(p.Pages))
 	}
 	if p.Year > 0 {
 		b.WriteString(", ")
@@ -263,12 +339,12 @@ func formatIEEE(p model.Paper, number int) string {
 	return b.String()
 }
 
-// authorsIEEE 渲染作者（IEEE：G. Family，and 连接最后一位；>6 用 et al.）。
+// authorsIEEE 渲染作者（IEEE：G. Family；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
 func authorsIEEE(as []model.Author) string {
 	if len(as) == 0 {
 		return ""
 	}
-	const maxShow = 6
+	const maxShow = 3
 	parts := make([]string, 0, len(as))
 	for _, a := range as {
 		parts = append(parts, authorIEEE(a))
@@ -328,6 +404,23 @@ func volIssue(p model.Paper) string {
 	return b.String()
 }
 
+// volIssueAPA 渲染 APA 卷(期)片段：卷号斜体，期号不斜体。
+func volIssueAPA(p model.Paper) string {
+	if p.Volume == "" && p.Number == "" {
+		return ""
+	}
+	var b strings.Builder
+	if p.Volume != "" {
+		b.WriteString(italic(p.Volume))
+	}
+	if p.Number != "" {
+		b.WriteString("(")
+		b.WriteString(p.Number)
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
 // cleanTitle 清理题名：折叠空白、去首尾空格。
 func cleanTitle(t string) string {
 	return strings.Join(strings.Fields(t), " ")
@@ -341,6 +434,48 @@ func containsCJK(s string) bool {
 		}
 	}
 	return false
+}
+
+// isPaperCJK 判断论文是否为中文文献（首位作者含 CJK 或标题含 CJK）。
+func isPaperCJK(p model.Paper) bool {
+	if len(p.Authors) > 0 {
+		a := p.Authors[0]
+		if containsCJK(a.Family + a.Given) {
+			return true
+		}
+	}
+	return containsCJK(p.Title)
+}
+
+// gbSep 返回 GB/T 7714 分隔符：中文用 ．（全角句点），英文用 .（半角句点）。
+func gbSep(cjk bool) string {
+	if cjk {
+		return "．"
+	}
+	return ". "
+}
+
+// gbEnd 返回 GB/T 7714 句末标点：中文用 ．，英文用 .。
+func gbEnd(cjk bool) string {
+	if cjk {
+		return "．"
+	}
+	return "."
+}
+
+// normalizePages 归一化页码：将 -- 统一为 -，去除首尾空白。
+func normalizePages(pages string) string {
+	p := strings.TrimSpace(pages)
+	p = strings.ReplaceAll(p, "--", "-")
+	return p
+}
+
+// italic 包裹斜体标记（markdown *语法*，纯文本场景无影响）。
+func italic(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "*" + s + "*"
 }
 
 // bibEntryType 文档类型 → BibTeX 条目类型。
@@ -427,6 +562,9 @@ func FormatBibTeX(p model.Paper) string {
 	writeBibField(&b, "pages", escapeBibText(p.Pages))
 	writeBibField(&b, "doi", escapeBibText(p.DOI))
 	writeBibField(&b, "url", escapeBibText(p.URL))
+	writeBibField(&b, "publisher", escapeBibText(p.Publisher))
+	writeBibField(&b, "address", escapeBibText(p.City))
+	writeBibField(&b, "school", escapeBibText(p.Institution))
 	if ab := strings.TrimSpace(p.Abstract); ab != "" {
 		writeBibField(&b, "abstract", escapeBibText(ab))
 	}
@@ -566,6 +704,15 @@ func FormatRIS(p model.Paper) string {
 	if u := strings.TrimSpace(p.URL); u != "" {
 		b.WriteString("UR  - " + u + "\n")
 	}
+	if v := strings.TrimSpace(p.Publisher); v != "" {
+		b.WriteString("PB  - " + v + "\n")
+	}
+	if v := strings.TrimSpace(p.City); v != "" {
+		b.WriteString("CY  - " + v + "\n")
+	}
+	if v := strings.TrimSpace(p.Institution); v != "" {
+		b.WriteString("AD  - " + v + "\n")
+	}
 	b.WriteString("ER  - \n")
 	return b.String()
 }
@@ -580,4 +727,25 @@ func RISFromPapers(ps []model.Paper) string {
 		b.WriteString(FormatRIS(p))
 	}
 	return b.String()
+}
+
+// ResolveStyle 由 lang/style 解析引用样式（CLI/MCP 共用，FR-IFACE-03）。
+// 显式 style 优先（gb7714-2025|apa|ieee）；否则按 lang：zh→gb7714-2025、en→apa；无效返回错误。
+func ResolveStyle(lang, style string) (Style, error) {
+	if style != "" {
+		s := Style(style)
+		switch s {
+		case StyleGB7714, StyleAPA, StyleIEEE:
+			return s, nil
+		}
+		return "", fmt.Errorf("references: 未知引用样式 %q（支持 gb7714-2025|apa|ieee）", style)
+	}
+	switch lang {
+	case "zh":
+		return StyleGB7714, nil
+	case "en":
+		return StyleAPA, nil
+	default:
+		return "", fmt.Errorf("references: 未知语言模式 %q（支持 zh|en）", lang)
+	}
 }

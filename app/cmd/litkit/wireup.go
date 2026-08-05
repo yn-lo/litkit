@@ -72,7 +72,7 @@ func loadDeps() *deps {
 		cfg:      cfg,
 		registry: reg,
 		store:    store,
-		searcher: core.NewSearcher(reg, store, cfg.DefaultMaxResults),
+		searcher: core.NewSearcher(reg, store, cfg.DefaultMaxResults, cfg.SearchTimeoutMS),
 		fetcher: core.NewMetadataFetcher(httpclient.New(httpclient.Options{
 			TimeoutMS:  cfg.HTTPTimeoutMS,
 			MaxRetries: cfg.HTTPRetries,

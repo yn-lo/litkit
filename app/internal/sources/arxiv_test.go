@@ -38,9 +38,9 @@ const arxivAtomSample = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`
 
 func TestParseArxivAtom(t *testing.T) {
-	papers, err := parseArxivAtom([]byte(arxivAtomSample))
+	papers, err := ParseArxivAtom([]byte(arxivAtomSample))
 	if err != nil {
-		t.Fatalf("parseArxivAtom: %v", err)
+		t.Fatalf("ParseArxivAtom: %v", err)
 	}
 	if len(papers) != 2 {
 		t.Fatalf("应有 2 篇，got %d", len(papers))
@@ -88,14 +88,14 @@ func TestExtractArxivID(t *testing.T) {
 		"http://arxiv.org/abs/solv-int/9612001":   "solv-int/9612001", // 无版本号时归档名保持完整
 	}
 	for in, want := range cases {
-		if got := extractArxivID(in); got != want {
-			t.Errorf("extractArxivID(%q) = %q, want %q", in, got, want)
+		if got := ExtractArxivID(in); got != want {
+			t.Errorf("ExtractArxivID(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
 func TestParseArxivAtom_emptyFeed(t *testing.T) {
-	papers, err := parseArxivAtom([]byte(`<?xml version="1.0"?>
+	papers, err := ParseArxivAtom([]byte(`<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom"></feed>`))
 	if err != nil {
 		t.Fatalf("空 feed 不应报错： %v", err)
@@ -106,7 +106,7 @@ func TestParseArxivAtom_emptyFeed(t *testing.T) {
 }
 
 func TestParseArxivAtom_malformedXML(t *testing.T) {
-	_, err := parseArxivAtom([]byte("not xml <"))
+	_, err := ParseArxivAtom([]byte("not xml <"))
 	if err == nil {
 		t.Fatal("格式错误的 XML 应报错")
 	}

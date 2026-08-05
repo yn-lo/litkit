@@ -42,9 +42,11 @@ func bodyHas(src *Source, want string) bool {
 	return false
 }
 
-func zhChapter() Options { return Options{Lang: "zh", Mode: ModeChapter} }
-func zhDraft() Options   { return Options{Lang: "zh", Mode: ModeDraft} }
-func zhFinal() Options   { return Options{Lang: "zh", Mode: ModeFinal} }
+func zhChapter() Options {
+	return Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical}
+}
+func zhDraft() Options { return Options{Lang: "zh", Mode: ModeDraft, PaperType: PaperTypeEmpirical} }
+func zhFinal() Options { return Options{Lang: "zh", Mode: ModeFinal, PaperType: PaperTypeEmpirical} }
 
 func TestParseSource(t *testing.T) {
 	dir := t.TempDir()
@@ -382,7 +384,7 @@ func TestRun_modeFilter(t *testing.T) {
 func TestRun_langFilter(t *testing.T) {
 	content := "This is English text with many words to trigger the ratio check here.\n"
 	// en 模式不跑 zh 专属规则 R0.1
-	fr := runContent(t, content, DefaultSpec(), Options{Lang: "en", Mode: ModeChapter})
+	fr := runContent(t, content, DefaultSpec(), Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
 	if got := violationsOf(fr, "R0.1"); len(got) != 0 {
 		t.Errorf("en 不应跑 R0.1，got %v", got)
 	}
@@ -433,5 +435,61 @@ func TestRunFiles_exitHint(t *testing.T) {
 	}
 	if len(rep.ManualChecklist) == 0 {
 		t.Error("应固定输出人工核对清单")
+	}
+}
+
+func TestRun_typeFilter(t *testing.T) {
+	// R2.1 P值格式仅 empirical；review 不应跑
+	content := "结果显示 p=0.03 显著。\n" // 小写 p → R2.1 违规
+	fr := runContent(t, content, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft, PaperType: PaperTypeReview})
+	if got := violationsOf(fr, "R2.1"); len(got) != 0 {
+		t.Errorf("review 不应跑 R2.1（P值格式），got %v", got)
+	}
+	// empirical 应跑
+	fr = runContent(t, content, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft, PaperType: PaperTypeEmpirical})
+	if got := violationsOf(fr, "R2.1"); len(got) == 0 {
+		t.Error("empirical 应跑 R2.1")
+	}
+	// PaperType 空=不过滤（兼容旧调用）
+	fr = runContent(t, content, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft})
+	if got := violationsOf(fr, "R2.1"); len(got) == 0 {
+		t.Error("PaperType 空=不过滤，应跑 R2.1")
+	}
+}
+
+func TestRunFiles_autoPaperType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(path, []byte("结果显示 P=0.03 显著。\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// review spec + 空 PaperType → 自动从 spec 取 review → R2.1 不跑
+	reviewSpec := SpecForType(PaperTypeReview, LangZH)
+	rep, err := RunFiles([]string{path}, reviewSpec, Options{Lang: "zh", Mode: ModeDraft})
+	if err != nil {
+		t.Fatalf("RunFiles: %v", err)
+	}
+	if got := violationsOf(rep.Files[0], "R2.1"); len(got) != 0 {
+		t.Errorf("review spec 自动过滤 R2.1，got %v", got)
+	}
+}
+
+func TestSpecForType_review(t *testing.T) {
+	spec := SpecForType(PaperTypeReview, LangZH)
+	if spec.WordCount.Total[0] != 5000 || spec.WordCount.Total[1] != 15000 {
+		t.Errorf("review 全文应为 5000-15000，got %v", spec.WordCount.Total)
+	}
+	if spec.Citation.Count[0] != 50 || spec.Citation.Count[1] != 120 {
+		t.Errorf("review 引用应为 50-120，got %v", spec.Citation.Count)
+	}
+	if spec.SectionList()[0] != "引言" || spec.SectionList()[1] != "文献检索方法" {
+		t.Errorf("review 章节应含文献检索方法，got %v", spec.SectionList())
+	}
+}
+
+func TestSpecForType_enDefault(t *testing.T) {
+	spec := SpecForType(PaperTypeEmpirical, LangEN)
+	if spec.Citation.Style != "apa" {
+		t.Errorf("en 默认引用样式应为 apa，got %s", spec.Citation.Style)
 	}
 }

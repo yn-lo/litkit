@@ -69,6 +69,7 @@ type Rule struct {
 	ID     string
 	Name   string
 	Langs  []string // ["zh"] / ["en"] / ["zh","en"]
+	Types  []string // 适用论文类型，空=全部（如 ["empirical"] 仅实证）
 	Method Method
 	From   Mode // 从该模式起启用
 	Check  func(src *Source, spec *ManuscriptSpec) []Violation
@@ -627,27 +628,29 @@ func checkR83(src *Source, spec *ManuscriptSpec) []Violation {
 }
 
 // AllRules 返回全部已注册规则（按 ID 排序）。
+//
+// Types 维度：空=全部类型适用；仅特定类型时标注（如 R2.1 P值仅 empirical）。
 func AllRules() []Rule {
 	rules := []Rule{
-		{ID: "R0.1", Name: "全文中文", Langs: []string{"zh"}, Method: MethodA, From: ModeChapter, Check: checkR01},
-		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Method: MethodA, From: ModeChapter, Check: checkR02},
-		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeChapter, Check: checkR11},
-		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeChapter, Check: checkR12},
-		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Method: MethodA, From: ModeDraft, Check: checkR14},
-		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft, Check: checkR21},
-		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Method: MethodA, From: ModeDraft, Check: checkR31},
-		{ID: "R3.2", Name: "中文引号", Langs: []string{"zh"}, Method: MethodA, From: ModeDraft, Check: checkR32},
-		{ID: "R4.2", Name: "句式冗余", Langs: []string{"zh"}, Method: MethodS, From: ModeFinal, Check: checkR42},
-		{ID: "R5.1", Name: "引用占位符", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft, Check: checkR51},
-		{ID: "R5.2", Name: "待引证标记", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft, Check: checkR52},
-		{ID: "R5.3", Name: "引用密度", Langs: []string{"zh", "en"}, Method: MethodS, From: ModeFinal, Check: checkR53},
-		{ID: "R6.1", Name: "引用位置", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft, Check: checkR61},
-		{ID: "R7.1", Name: "标题冒号", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeChapter, Check: checkR71},
-		{ID: "R7.2", Name: "自我夸大", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft, Check: checkR72},
-		{ID: "R8.1", Name: "全文字数", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeFinal, Check: checkR81},
-		{ID: "R8.2", Name: "摘要字数", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeFinal, Check: checkR82},
-		{ID: "R8.3", Name: "段长", Langs: []string{"zh", "en"}, Method: MethodS, From: ModeFinal, Check: checkR83},
-		{ID: "R9.1", Name: "用户标记", Langs: []string{"zh", "en"}, Method: MethodA, From: ModeChapter, Check: checkR91},
+		{ID: "R0.1", Name: "全文中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR01},
+		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
+		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
+		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
+		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
+		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
+		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
+		{ID: "R3.2", Name: "中文引号", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},
+		{ID: "R4.2", Name: "句式冗余", Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
+		{ID: "R5.1", Name: "引用占位符", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
+		{ID: "R5.2", Name: "待引证标记", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
+		{ID: "R5.3", Name: "引用密度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
+		{ID: "R6.1", Name: "引用位置", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61},
+		{ID: "R7.1", Name: "标题冒号", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71},
+		{ID: "R7.2", Name: "自我夸大", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
+		{ID: "R8.1", Name: "全文字数", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR81},
+		{ID: "R8.2", Name: "摘要字数", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},
+		{ID: "R8.3", Name: "段长", Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR83},
+		{ID: "R9.1", Name: "用户标记", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR91},
 	}
 	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
 	return rules

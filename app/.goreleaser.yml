@@ -1,0 +1,36 @@
+# goreleaser 发布配置（在 app/ 执行：goreleaser build --snapshot / goreleaser release）。
+# 输出单一静态二进制，跨平台（linux/darwin/windows × amd64/arm64）；
+# 版本经 ldflags 注入 internal/buildinfo.Version（CLI --version / MCP serverInfo 共用）。
+
+project_name: litkit
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/litkit
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X litkit/internal/buildinfo.Version={{.Version}}
+    binary: litkit
+
+archives:
+  - id: binary
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  draft: true
