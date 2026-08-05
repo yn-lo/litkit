@@ -6,6 +6,10 @@ import (
 	"litkit/internal/storage"
 )
 
+// exitPass 全部通过时的退出提示字面量。
+const exitPass = "pass"
+
+// Options 一次多文件验证的聚合配置。
 type Options struct {
 	Lang      string   // "zh" / "en"
 	Mode      Mode     // chapter / draft / final
@@ -118,9 +122,9 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 	case hasS:
 		report.ExitHint = "manual_review"
 	default:
-		report.ExitHint = "pass"
+		report.ExitHint = exitPass
 	}
-	report.Passed = report.ExitHint == "pass"
+	report.Passed = report.ExitHint == exitPass
 	// M 类规则（无法自动判定）固定输出人工核对提示。
 	report.ManualChecklist = []string{
 		"数据一致性：核对正文数据与表格/图片是否一致",
@@ -216,8 +220,8 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	case hasS:
 		report.ExitHint = "manual_review"
 	default:
-		report.ExitHint = "pass"
+		report.ExitHint = exitPass
 	}
-	report.Passed = report.ExitHint == "pass"
+	report.Passed = report.ExitHint == exitPass
 	return report, nil
 }

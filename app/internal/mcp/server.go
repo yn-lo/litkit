@@ -646,9 +646,3 @@ func shortErrors(errs []model.SourceError) []model.SourceError {
 	}
 	return out
 }
-
-// fileExists 判断路径是否为存在的文件。
-func fileExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
-}

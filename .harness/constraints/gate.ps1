@@ -22,7 +22,7 @@ go build -o litkit.exe ./cmd/litkit
 if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: go build" -ForegroundColor Red; Pop-Location; exit 1 }
 
 Write-Host "[3/8] golangci-lint" -ForegroundColor Cyan
-golangci-lint run --config (Join-Path $root ".harness/constraints/style/.golangci.yml")
+golangci-lint run ./... --config (Join-Path $root ".harness/constraints/style/.golangci.yml")
 if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: golangci-lint" -ForegroundColor Red; Pop-Location; exit 1 }
 
 Write-Host "[4/8] go vet" -ForegroundColor Cyan

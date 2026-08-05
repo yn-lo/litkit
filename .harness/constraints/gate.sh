@@ -22,7 +22,7 @@ echo "[2/8] go build"
 go build -o litkit ./cmd/litkit
 
 echo "[3/8] golangci-lint"
-golangci-lint run --config "$root/.harness/constraints/style/.golangci.yml"
+golangci-lint run ./... --config "$root/.harness/constraints/style/.golangci.yml"
 
 echo "[4/8] go vet"
 go vet ./...

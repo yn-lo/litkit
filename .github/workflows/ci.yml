@@ -26,7 +26,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-          working-directory: app
+          cache-dependency-path: app/go.sum
 
       - name: Format check (gofmt)
         working-directory: app
@@ -58,7 +58,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-          working-directory: app
+          cache-dependency-path: app/go.sum
 
       - name: Unit tests (offline hermetic)
         working-directory: app
@@ -90,7 +90,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-          working-directory: app
+          cache-dependency-path: app/go.sum
 
       - name: Dependency vulnerability scan
         working-directory: app
@@ -134,7 +134,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-          working-directory: app
+          cache-dependency-path: app/go.sum
 
       - name: Build
         working-directory: app

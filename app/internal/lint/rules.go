@@ -28,6 +28,9 @@ const (
 	ModeFinal   Mode = "final"
 )
 
+// ruleIDHeadingOrder R1.3 标题编号顺序规则的 ID。
+const ruleIDHeadingOrder = "R1.3"
+
 // P 值格式阈值（R2.1）与引用密度阈值（R5.3）。
 const (
 	pThreshold001  = 0.001 // P<0.001 不给出具体数值
@@ -294,7 +297,7 @@ func checkR13(src *Source, _ *ManuscriptSpec) []Violation {
 		if first {
 			if len(parts) > 1 {
 				vs = append(vs, Violation{
-					RuleID: "R1.3", Line: line,
+					RuleID: ruleIDHeadingOrder, Line: line,
 					Problem:    fmt.Sprintf("首个编号标题 %s 缺少父级标题", joinHeadingNum(parts)),
 					Suggestion: "顶层章节应从单级编号（如 1）开始",
 				})
@@ -742,7 +745,7 @@ func AllRules() []Rule {
 		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
 		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
 		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
-		{ID: "R1.3", Name: "标题编号顺序", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
+		{ID: ruleIDHeadingOrder, Name: "标题编号顺序", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
 		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
 		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
 		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
