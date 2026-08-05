@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -62,15 +63,26 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 	seen := make(map[string]int)    // paper.ID → Papers 下标
 	unseen := make(map[string]bool) // 已记入 Unresolved 的 token（去重）
 
-	res.Text = placeholderRe.ReplaceAllStringFunc(src, func(m string) string {
-		token := m[2 : len(m)-1] // 去掉 "[@" 与 "]"
+	matches := placeholderRe.FindAllStringSubmatchIndex(src, -1)
+
+	// item 记录一个占位符匹配及其解析结果。
+	type item struct {
+		start, end int // 匹配在 src 中的位置
+		number     int // 1-based 引用编号；0 表示未解析
+		token      string
+		raw        string // 原始 [@token] 文本
+	}
+	items := make([]item, len(matches))
+	for i, m := range matches {
+		token := src[m[2]:m[3]]
 		p, err := resolvePaper(ctx, store, fetcher, token)
 		if err != nil || p == nil {
 			if !unseen[token] {
 				unseen[token] = true
 				res.Unresolved = append(res.Unresolved, token)
 			}
-			return m // 保留原占位符不动
+			items[i] = item{start: m[0], end: m[1], number: 0, token: token, raw: src[m[0]:m[1]]}
+			continue
 		}
 		if p.ID == "" {
 			p.ID = p.ComputeID()
@@ -81,11 +93,86 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 			seen[p.ID] = idx
 			res.Papers = append(res.Papers, *p)
 		}
-		mark := citationMark(res.Papers[idx], style, idx+1)
-		res.CitationMap[token] = mark
-		return mark
-	})
+		items[i] = item{start: m[0], end: m[1], number: idx + 1, token: token, raw: src[m[0]:m[1]]}
+	}
+
+	// 构建输出正文：编号样式折叠相邻引用，其他样式逐个替换。
+	collapsible := style == StyleGB7714 || style == StyleIEEE
+	var b strings.Builder
+	pos := 0
+	for i := 0; i < len(items); {
+		// 不可折叠或未解析：逐个替换
+		if !collapsible || items[i].number == 0 {
+			b.WriteString(src[pos:items[i].start])
+			mark := items[i].raw
+			if items[i].number > 0 {
+				mark = citationMark(res.Papers[items[i].number-1], style, items[i].number)
+				res.CitationMap[items[i].token] = mark
+			}
+			b.WriteString(mark)
+			pos = items[i].end
+			i++
+			continue
+		}
+		// 收集相邻已解析占位符（间隙仅空白）
+		group := []item{items[i]}
+		j := i + 1
+		for j < len(items) && strings.TrimSpace(src[items[j-1].end:items[j].start]) == "" && items[j].number > 0 {
+			group = append(group, items[j])
+			j++
+		}
+		b.WriteString(src[pos:group[0].start])
+		// 编号去重 + 升序
+		numSet := make(map[int]bool, len(group))
+		nums := make([]int, 0, len(group))
+		for _, g := range group {
+			if !numSet[g.number] {
+				numSet[g.number] = true
+				nums = append(nums, g.number)
+			}
+		}
+		sort.Ints(nums)
+		mark := "[" + collapseNumbers(nums) + "]"
+		b.WriteString(mark)
+		for _, g := range group {
+			res.CitationMap[g.token] = mark
+		}
+		pos = group[len(group)-1].end
+		i = j
+	}
+	b.WriteString(src[pos:])
+	res.Text = b.String()
 	return res, nil
+}
+
+// collapseNumbers 将升序去重编号列表折叠为范围字符串。
+// [1,2,3] → "1-3", [1,3,4,5] → "1,3-5", [1,3] → "1,3", [1] → "1"。
+func collapseNumbers(nums []int) string {
+	if len(nums) == 0 {
+		return ""
+	}
+	if len(nums) == 1 {
+		return strconv.Itoa(nums[0])
+	}
+	var parts []string
+	start, end := nums[0], nums[0]
+	for i := 1; i < len(nums); i++ {
+		if nums[i] == end+1 {
+			end = nums[i]
+		} else {
+			parts = append(parts, rangeStr(start, end))
+			start, end = nums[i], nums[i]
+		}
+	}
+	parts = append(parts, rangeStr(start, end))
+	return strings.Join(parts, ",")
+}
+
+func rangeStr(start, end int) string {
+	if start == end {
+		return strconv.Itoa(start)
+	}
+	return strconv.Itoa(start) + "-" + strconv.Itoa(end)
 }
 
 // resolvePaper 解析单个 token 为论文；失败返回 (nil, nil)。

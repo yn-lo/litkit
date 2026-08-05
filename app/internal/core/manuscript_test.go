@@ -182,3 +182,139 @@ func TestWriteManuscriptOutputs_PreviewSkipsReferences(t *testing.T) {
 		t.Errorf("预览模式应生成 %s", ManuscriptFormatted)
 	}
 }
+
+// ---- 编号折叠（相邻引用合并）----
+
+func TestCollapseNumbers(t *testing.T) {
+	cases := []struct {
+		nums []int
+		want string
+	}{
+		{[]int{1}, "1"},
+		{[]int{1, 2}, "1-2"},
+		{[]int{1, 2, 3}, "1-3"},
+		{[]int{1, 3}, "1,3"},
+		{[]int{1, 3, 4, 5}, "1,3-5"},
+		{[]int{1, 3, 5}, "1,3,5"},
+		{[]int{1, 2, 4, 5, 7}, "1-2,4-5,7"},
+	}
+	for _, c := range cases {
+		if got := collapseNumbers(c.nums); got != c.want {
+			t.Errorf("collapseNumbers(%v) = %q, want %q", c.nums, got, c.want)
+		}
+	}
+}
+
+func TestProcessManuscript_CollapseConsecutive(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2][@a3]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Text != "[1-3]" {
+		t.Errorf("Text = %q, want [1-3]", res.Text)
+	}
+	if res.CitationMap["a1"] != "[1-3]" {
+		t.Errorf("CitationMap[a1] = %q, want [1-3]", res.CitationMap["a1"])
+	}
+}
+
+func TestProcessManuscript_CollapseNonConsecutive(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
+
+	// a1→1, a2→2, a3→3; group [@a1][@a3] → [1,3]
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] x [@a2] x [@a1][@a3]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := "[1] x [2] x [1,3]"
+	if res.Text != want {
+		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
+
+func TestProcessManuscript_CollapseMixed(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
+	store.papers["a4"] = mustPaper("a4", "Paper Four", 2020, []model.Author{{Family: "Li"}}, "10.4/four")
+	store.papers["a5"] = mustPaper("a5", "Paper Five", 2021, []model.Author{{Family: "Zhang"}}, "10.5/five")
+
+	// a1→1, a2→2, a3→3, a4→4, a5→5; group [@a1][@a3][@a4][@a5] → [1,3-5]
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] x [@a2] x [@a1][@a3][@a4][@a5]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := "[1] x [2] x [1,3-5]"
+	if res.Text != want {
+		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
+
+func TestProcessManuscript_CollapseSpaceSeparated(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] [@a2]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Text != "[1-2]" {
+		t.Errorf("Text = %q, want [1-2]", res.Text)
+	}
+}
+
+func TestProcessManuscript_CollapseUnresolvedBreaksGroup(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@zzz][@a2]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := "[1][@zzz][2]"
+	if res.Text != want {
+		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
+
+func TestProcessManuscript_CollapseIEEE(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2][@a3]", StyleIEEE)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Text != "[1-3]" {
+		t.Errorf("Text = %q, want [1-3]", res.Text)
+	}
+}
+
+func TestProcessManuscript_CollapseAPA(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = pTwo
+
+	// APA 用 author-year，不折叠
+	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2]", StyleAPA)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := "(Vaswani, 2017)(Bengio, 2015)"
+	if res.Text != want {
+		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
