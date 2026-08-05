@@ -272,28 +272,50 @@ func checkR12(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR13 标题编号顺序：校验编号递增、不跳号、层级挂接合法。
+// checkR13 标题编号：强制编号（require_numbering）+ 层级对齐 + 顺序排列。
 //
-// 判定模型为编号栈：从一个合法编号可合法进入的下一编号为
-//   - 深入一层：父级编号 + 1（如 1.1 → 1.1.1）
-//   - 同级续号：栈中某祖先层级末位 +1（如 1.1 → 1.2，或 1.1 → 2）
+// 三层判定：
+//   - 无编号标题且 spec 要求编号 → 违规（FR-LINT 标题编号）
+//   - 有编号：markdown # 数须与编号深度一致（# 1、## 1.1、### 1.1.1）
+//   - 有编号：编号递增、不跳号、层级挂接合法（编号栈）
 //
-// 首个编号须为顶层（单级）且从 1 开始。违规情形：跳号、倒序、层级错乱、重复。
-func checkR13(src *Source, _ *ManuscriptSpec) []Violation {
+// 违规情形：未编号、层级错位、跳号、倒序、层级错乱、重复。
+func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 	var vs []Violation
 	prev := []int{}
 	first := true
+	requireNum := spec.Heading.NumberingRequired()
 	for i, ln := range src.Body {
 		t := strings.TrimSpace(ln)
 		if !isHeading(t) {
 			continue
 		}
+		hashes := 0
+		for hashes < len(t) && t[hashes] == '#' {
+			hashes++
+		}
 		_, num, _ := headingLevel(t)
+		line := src.bodyIdx[i]
 		if num == "" {
+			// 无编号：强制编号时违规（不参与顺序栈）
+			if requireNum {
+				vs = append(vs, Violation{
+					RuleID: ruleIDHeadingOrder, Line: line,
+					Problem:    "标题未带数字编号",
+					Suggestion: "按层级添加编号：# 1、## 1.1、### 1.1.1（编号深度与 # 数对齐）",
+				})
+			}
 			continue
 		}
 		parts := parseHeadingNum(num)
-		line := src.bodyIdx[i]
+		// 层级对齐：markdown # 数 == 编号深度
+		if hashes != len(parts) {
+			vs = append(vs, Violation{
+				RuleID: ruleIDHeadingOrder, Line: line,
+				Problem:    fmt.Sprintf("标题 %s 的 markdown 层级（%d 个 #）与编号深度（%d）不对齐", joinHeadingNum(parts), hashes, len(parts)),
+				Suggestion: "编号深度应与 # 数一致：# 1、## 1.1、### 1.1.1",
+			})
+		}
 		if first {
 			if len(parts) > 1 {
 				vs = append(vs, Violation{

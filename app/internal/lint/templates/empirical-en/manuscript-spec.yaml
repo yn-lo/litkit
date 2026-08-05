@@ -25,6 +25,7 @@ citation:
 heading:
   max_level: 4              # Max heading level
   max_length: 15            # Max heading length (no trailing punctuation)
+  require_numbering: true   # Headings must carry numeric numbers (1 / 1.1 / 1.1.1, aligned with markdown level)
 boast_words:
   - revolutionary
   - groundbreaking

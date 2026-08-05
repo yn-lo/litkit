@@ -12,9 +12,6 @@ litkit.db
 # 撰写约束密钥（verifier_models.json 三期可能含 LLM API key）
 .litkit/verifier_models.json
 
-# 测试工作目录（spec 固化：e:\Codes\litkit\workspace）
-workspace/
-
 # 构建产物（go build -o 输出于 app/）
 /litkit
 /litkit.exe
@@ -42,3 +39,6 @@ app/coverage.out
 
 #MCP
 app/internal/mcp/outputs
+
+# 测试工作目录（spec 固化：e:\Codes\litkit\workspace）
+workspace/

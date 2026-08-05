@@ -26,6 +26,7 @@ citation:
 heading:
   max_level: 4              # 标题最大层级
   max_length: 15            # 标题最大字数（末尾无标点）
+  require_numbering: true   # 标题必须带数字编号（1 / 1.1 / 1.1.1，与 markdown 层级对齐）
 boast_words:
   - 首次证实
   - 颠覆性

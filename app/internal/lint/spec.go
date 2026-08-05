@@ -51,10 +51,21 @@ type CitationSpec struct {
 	Style string `yaml:"style"` // gbt7714 | apa | ieee
 }
 
-// HeadingLimits 标题层级与长度上限。
+// HeadingLimits 标题层级、长度与编号要求。
 type HeadingLimits struct {
 	MaxLevel  int `yaml:"max_level"`
 	MaxLength int `yaml:"max_length"`
+	// RequireNumbering 标题是否必须带数字编号（1 / 1.1 / 1.1.1）。
+	// 指针语义：yaml 未指定时默认 true（全类型强制编号），显式 false 可关闭。
+	RequireNumbering *bool `yaml:"require_numbering"`
+}
+
+// NumberingRequired 返回是否强制标题编号（未配置时默认 true）。
+func (h *HeadingLimits) NumberingRequired() bool {
+	if h.RequireNumbering == nil {
+		return true
+	}
+	return *h.RequireNumbering
 }
 
 // DefaultSpec 返回默认撰写规范（empirical/zh，从 embed 模板读取）。

@@ -623,7 +623,7 @@ func mustParse(t *testing.T, content string) *Source {
 	return src
 }
 
-// ---- R1.3 标题编号顺序（review 专属，垂直切片）----
+// ---- R1.3 标题编号（顺序 + 强制编号 + 层级对齐）----
 
 // reviewRun 以综述类型运行验证（R1.3 仅 review 生效）。
 func reviewRun(t *testing.T, content string) FileReport {
@@ -634,7 +634,7 @@ func reviewRun(t *testing.T, content string) FileReport {
 
 func TestRule_R1_3_SkipTopLevel(t *testing.T) {
 	// 章节跳号：1 → 3（漏 2）
-	fr := reviewRun(t, "## 1 引言\n正文。\n## 3 结论\n正文。\n")
+	fr := reviewRun(t, "# 1 引言\n正文。\n# 3 结论\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("章节跳号（1→3）应报 R1.3")
 	}
@@ -642,7 +642,7 @@ func TestRule_R1_3_SkipTopLevel(t *testing.T) {
 
 func TestRule_R1_3_SkipSubLevel(t *testing.T) {
 	// 子级跳号：1.1 → 1.3（漏 1.2）
-	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.3 现状\n正文。\n")
+	fr := reviewRun(t, "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.3 现状\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("子级跳号（1.1→1.3）应报 R1.3")
 	}
@@ -650,12 +650,12 @@ func TestRule_R1_3_SkipSubLevel(t *testing.T) {
 
 func TestRule_R1_3_HierarchyJump(t *testing.T) {
 	// 层级错乱：1 → 1.1.1（跳两级）
-	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.1.1 深层\n正文。\n")
+	fr := reviewRun(t, "# 1 引言\n正文。\n### 1.1.1 深层\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("层级跳变（1→1.1.1）应报 R1.3")
 	}
 	// 子级出现在错误父级下：1.1 → 2.1
-	fr = reviewRun(t, "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 2.1 错误子级\n正文。\n")
+	fr = reviewRun(t, "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 2.1 错误子级\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("子级挂错父级（1.1→2.1）应报 R1.3")
 	}
@@ -663,7 +663,7 @@ func TestRule_R1_3_HierarchyJump(t *testing.T) {
 
 func TestRule_R1_3_Descending(t *testing.T) {
 	// 倒序：1.2 → 1.1
-	fr := reviewRun(t, "## 1 引言\n正文。\n## 1.2 背景\n正文。\n## 1.1 倒序\n正文。\n")
+	fr := reviewRun(t, "# 1 引言\n正文。\n## 1.2 背景\n正文。\n## 1.1 倒序\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("编号倒序（1.2→1.1）应报 R1.3")
 	}
@@ -671,8 +671,8 @@ func TestRule_R1_3_Descending(t *testing.T) {
 
 func TestRule_R1_3_ValidSequence_Passes(t *testing.T) {
 	// 合规序列：1 → 1.1 → 1.2 → 2 → 2.1 → 2.1.1
-	content := "## 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.2 现状\n正文。\n" +
-		"## 2 方法\n正文。\n## 2.1 设计\n正文。\n### 2.1.1 流程\n正文。\n"
+	content := "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.2 现状\n正文。\n" +
+		"# 2 方法\n正文。\n## 2.1 设计\n正文。\n### 2.1.1 流程\n正文。\n"
 	if got := violationsOf(reviewRun(t, content), "R1.3"); len(got) != 0 {
 		t.Errorf("合规编号序列不应报 R1.3，got %+v", got)
 	}
@@ -680,7 +680,7 @@ func TestRule_R1_3_ValidSequence_Passes(t *testing.T) {
 
 func TestRule_R1_3_FirstHeadingChecks(t *testing.T) {
 	// 首个标题非 1 开头
-	fr := reviewRun(t, "## 5 引言\n正文。\n")
+	fr := reviewRun(t, "# 5 引言\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("首个顶层编号非 1 应报 R1.3")
 	}
@@ -691,16 +691,43 @@ func TestRule_R1_3_FirstHeadingChecks(t *testing.T) {
 	}
 }
 
+func TestRule_R1_3_MissingNumbering(t *testing.T) {
+	// require_numbering=true 时，无编号标题应报 R1.3（review.md 真实场景）
+	content := "# 引言\n正文。\n## 概念与理论框架\n正文。\n"
+	fr := reviewRun(t, content)
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("无编号标题应报 R1.3（require_numbering）")
+	}
+}
+
+func TestRule_R1_3_HeadingLevelAlignment(t *testing.T) {
+	// 层级与编号深度不对齐：## 配顶层编号 1
+	fr := reviewRun(t, "## 1 引言\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("## 配编号 1（层级不对齐）应报 R1.3")
+	}
+	// # 配二级编号 1.1
+	fr = reviewRun(t, "# 1.1 背景\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("# 配编号 1.1（层级不对齐）应报 R1.3")
+	}
+	// 对齐序列通过：# 1 → ## 1.1 → ### 1.1.1 → # 2
+	ok := "# 1 引言\n正文。\n## 1.1 背景\n正文。\n### 1.1.1 定义\n正文。\n# 2 方法\n正文。\n"
+	if got := violationsOf(reviewRun(t, ok), "R1.3"); len(got) != 0 {
+		t.Errorf("对齐编号序列不应报 R1.3，got %+v", got)
+	}
+}
+
 func TestRule_R1_3_English(t *testing.T) {
 	// 英文综述：编号检查与语言无关，跳号同样拦截
-	content := "## 1 Introduction\nText.\n## 3 Methods\nText.\n"
+	content := "# 1 Introduction\nText.\n# 3 Methods\nText.\n"
 	fr := runContent(t, content, SpecForType(PaperTypeReview, LangEN),
 		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview})
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("英文标题跳号（1→3）应报 R1.3")
 	}
 	// 英文合规序列不报
-	ok := "## 1 Introduction\nText.\n## 2 Methods\nText.\n"
+	ok := "# 1 Introduction\nText.\n# 2 Methods\nText.\n"
 	if got := violationsOf(runContent(t, ok, SpecForType(PaperTypeReview, LangEN),
 		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview}), "R1.3"); len(got) != 0 {
 		t.Errorf("英文合规序列不应报 R1.3，got %+v", got)
@@ -708,15 +735,15 @@ func TestRule_R1_3_English(t *testing.T) {
 }
 
 func TestRule_R1_3_AppliesToAllTypes(t *testing.T) {
-	// 实证（empirical）与综述共用同一套编号顺序检查
-	content := "## 1 引言\n正文。\n## 3 方法\n正文。\n"
+	// 实证（empirical）与综述共用同一套编号检查
+	content := "# 1 引言\n正文。\n# 3 方法\n正文。\n"
 	fr := runContent(t, content, SpecForType(PaperTypeEmpirical, LangZH),
 		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("实证类型也应跑 R1.3（章节跳号 1→3）")
 	}
 	// 实证合规序列不报
-	okContent := "## 1 引言\n正文。\n## 2 方法\n正文。\n"
+	okContent := "# 1 引言\n正文。\n# 2 方法\n正文。\n"
 	fr = runContent(t, okContent, SpecForType(PaperTypeEmpirical, LangZH),
 		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
 	if got := violationsOf(fr, "R1.3"); len(got) != 0 {
