@@ -24,9 +24,13 @@ builds:
     binary: litkit
 
 archives:
-  - id: binary
+  - id: default
     formats:
-      - binary
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
