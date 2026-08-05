@@ -119,6 +119,29 @@ litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
 - **CLI**: every command outputs JSON (`--full` prints full metadata); `litkit --help` is self-describing.
 - **MCP**: `litkit mcp` starts a stdio Server registering `search_papers` / `get_paper_metadata` / `fetch_paper` / `process_manuscript` / `export_references` / `lint_init` / `verify_manuscript` / `lib_*` / `search_<source>` tools for clients like Claude Desktop / Trae.
 
+**MCP client setup (JSON)**: install litkit and add it to `PATH` (or use an absolute path in `command`), then add the snippet below to your client's MCP config — Claude Desktop: `claude_desktop_config.json` (Settings → Developer); IDEs like Trae / Cursor: their MCP configuration panel:
+
+```json
+{
+  "mcpServers": {
+    "litkit": {
+      "command": "litkit",
+      "args": ["mcp"],
+      "env": {
+        "LITKIT_WORK_DIR": "C:\\Users\\<your-name>\\litkit-workspace"
+      }
+    }
+  }
+}
+```
+
+Key points:
+
+- **`command`**: use `"litkit"` if it's on `PATH`; otherwise give an absolute path, e.g. `"C:\\tools\\litkit.exe"`.
+- **`env`**: JSON doesn't support comments and doesn't inherit shell `export`s. Set `LITKIT_WORK_DIR` explicitly here — without it, library / manuscript / compliance-gate tools won't work (`search_papers` still does; failed store upserts don't block search).
+- **macOS path**: `"LITKIT_WORK_DIR": "/Users/<your-name>/litkit-workspace"`.
+- After saving, restart the client — all tools above become callable in chat; each maps 1:1 to a CLI command with identical input/output.
+
 Full interface contract (CLI / MCP / data model): [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md).
 
 ## Documentation

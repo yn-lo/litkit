@@ -119,6 +119,29 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 - **CLI**：所有命令输出 JSON（`--full` 输出完整元数据）；`litkit --help` 自描述。
 - **MCP**：`litkit mcp` 启动 stdio Server，注册 `search_papers` / `get_paper_metadata` / `fetch_paper` / `process_manuscript` / `export_references` / `lint_init` / `verify_manuscript` / `lib_*` / `search_<source>` 等工具，供 Claude Desktop / Trae 等客户端调用。
 
+**MCP 客户端配置（JSON）**：先安装 litkit 并加入 `PATH`（或直接在 `command` 里写绝对路径），再把以下片段填入客户端的 MCP 配置——Claude Desktop 为 `claude_desktop_config.json`（Settings → Developer），Trae / Cursor 等 IDE 为各自的 MCP 配置面板：
+
+```json
+{
+  "mcpServers": {
+    "litkit": {
+      "command": "litkit",
+      "args": ["mcp"],
+      "env": {
+        "LITKIT_WORK_DIR": "C:\\Users\\<your-name>\\litkit-workspace"
+      }
+    }
+  }
+}
+```
+
+要点：
+
+- **`command`**：已加入 `PATH` 写 `"litkit"`；否则写绝对路径，如 `"C:\\tools\\litkit.exe"`。
+- **`env`**：JSON 不支持注释、也不继承 shell 的 `export`。`LITKIT_WORK_DIR` 必须在此显式给出，否则文献库 / 手稿 / 合规门禁类工具不可用（`search_papers` 除外，检索结果入库失败不阻断）。
+- **macOS 路径**：`"LITKIT_WORK_DIR": "/Users/<your-name>/litkit-workspace"`。
+- 保存后重启客户端，即可在对话中直接调用上述全部工具；每个工具与 CLI 命令一一对应、同输入同输出。
+
 完整接口契约（CLI / MCP / 数据模型）见 [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)。
 
 ## 文档导航
