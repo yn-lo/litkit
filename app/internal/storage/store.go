@@ -84,6 +84,10 @@ func Open(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("storage pragma busy_timeout: %w", err)
 	}
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("storage pragma foreign_keys: %w", err)
+	}
 
 	s := &Store{db: db, path: dbPath}
 	if err := s.migrate(); err != nil {
@@ -437,4 +441,102 @@ func (s *Store) Stats() (Stats, error) {
 		st.BySource[src] = n
 	}
 	return st, rows.Err()
+}
+
+// AddRef 记录一条引用标记（FR-LIB-07）。
+// (cite_key, sentence_hash, manuscript) 唯一约束确保同句幂等。
+func (s *Store) AddRef(ref model.PaperRef) error {
+	now := time.Now().Format(time.RFC3339)
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO paper_refs
+		(cite_key, sentence_hash, manuscript, sentence, created_at)
+		VALUES (?,?,?,?,?)`,
+		ref.CiteKey, ref.SentenceHash, ref.Manuscript, ref.Sentence, now)
+	if err != nil {
+		return fmt.Errorf("storage add ref: %w", err)
+	}
+	return nil
+}
+
+// AddRefs 批量写入引用标记（同句幂等）。
+func (s *Store) AddRefs(refs []model.PaperRef) error {
+	for _, ref := range refs {
+		if err := s.AddRef(ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RemoveRefsByManuscript 删除某手稿的全部引用标记（rebuild 安全）。
+func (s *Store) RemoveRefsByManuscript(manuscript string) error {
+	if _, err := s.db.Exec("DELETE FROM paper_refs WHERE manuscript = ?", manuscript); err != nil {
+		return fmt.Errorf("storage remove refs by manuscript: %w", err)
+	}
+	return nil
+}
+
+// GetRefsByManuscript 取某手稿的全部引用标记。
+func (s *Store) GetRefsByManuscript(manuscript string) ([]model.PaperRef, error) {
+	rows, err := s.db.Query(`SELECT cite_key, sentence_hash, manuscript, sentence
+		FROM paper_refs WHERE manuscript = ? ORDER BY id`, manuscript)
+	if err != nil {
+		return nil, fmt.Errorf("storage get refs by manuscript: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanRefs(rows)
+}
+
+// GetRefsByCiteKey 取某篇论文的全部引用标记。
+func (s *Store) GetRefsByCiteKey(citeKey string) ([]model.PaperRef, error) {
+	rows, err := s.db.Query(`SELECT cite_key, sentence_hash, manuscript, sentence
+		FROM paper_refs WHERE cite_key = ? ORDER BY id`, citeKey)
+	if err != nil {
+		return nil, fmt.Errorf("storage get refs by cite key: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanRefs(rows)
+}
+
+// scanRefs 扫描 paper_refs 查询行为 []model.PaperRef。
+func scanRefs(rows *sql.Rows) ([]model.PaperRef, error) {
+	var out []model.PaperRef
+	for rows.Next() {
+		var r model.PaperRef
+		if err := rows.Scan(&r.CiteKey, &r.SentenceHash, &r.Manuscript, &r.Sentence); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetCitationScore 查询评分缓存；未命中返回 (nil, nil)。
+func (s *Store) GetCitationScore(citeKey, sentenceHash, modelID, promptVersion string) (*model.CitationScore, error) {
+	var cs model.CitationScore
+	err := s.db.QueryRow(
+		`SELECT cite_key, sentence_hash, model_id, prompt_version, score, rationale
+		 FROM citation_scores
+		 WHERE cite_key = ? AND sentence_hash = ? AND model_id = ? AND prompt_version = ?`,
+		citeKey, sentenceHash, modelID, promptVersion,
+	).Scan(&cs.CiteKey, &cs.SentenceHash, &cs.ModelID, &cs.PromptVersion, &cs.Score, &cs.Rationale)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage get citation score: %w", err)
+	}
+	return &cs, nil
+}
+
+// SaveCitationScore 保存一条评分结果（INSERT OR REPLACE 幂等）。
+func (s *Store) SaveCitationScore(cs model.CitationScore) error {
+	now := time.Now().Format(time.RFC3339)
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO citation_scores
+		(cite_key, sentence_hash, model_id, prompt_version, score, rationale, scored_at)
+		VALUES (?,?,?,?,?,?,?)`,
+		cs.CiteKey, cs.SentenceHash, cs.ModelID, cs.PromptVersion, cs.Score, cs.Rationale, now)
+	if err != nil {
+		return fmt.Errorf("storage save citation score: %w", err)
+	}
+	return nil
 }

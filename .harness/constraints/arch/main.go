@@ -8,7 +8,7 @@
 //
 // 分层规则（对应 .harness/specs/architecture/boundaries.md）：
 //
-//	入口层 internal/mcp                      允许依赖 服务层/适配层/叶子层
+//	入口层 cmd/litkit                         允许依赖 服务层/适配层/叶子层
 //	服务层 internal/core·lint                允许依赖 适配层/叶子层
 //	适配层 internal/sources                   允许依赖 叶子层
 //	叶子层 internal/model·config·storage·util·embedding·buildinfo 只允许依赖其他叶子层
@@ -44,7 +44,7 @@ const (
 // entryPrefixes / servicePrefixes / adapterPrefixes / leafPrefixes
 // 目录前缀 → 层映射。新增目录时在此登记，并同步更新 boundaries.md。
 var (
-	entryPrefixes   = []string{"internal/mcp"}
+	entryPrefixes   = []string{}
 	servicePrefixes = []string{"internal/core", "internal/lint"}
 	adapterPrefixes = []string{"internal/sources"}
 	leafPrefixes    = []string{"internal/model", "internal/config", "internal/storage", "internal/util", "internal/embedding", "internal/buildinfo"}
@@ -172,7 +172,7 @@ func checkFile(root, rel string, violations *[]string) {
 		return
 	}
 
-	// 将相对模块根的路径转换为目录形式：internal/mcp/server.go → internal/mcp
+	// 将相对模块根的路径转换为目录形式。
 	dir := filepath.Dir(relToModule)
 	dir = filepath.ToSlash(dir)
 	// cmd/ 下的 main 包视为入口层

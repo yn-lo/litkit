@@ -11,15 +11,14 @@
 
 ## 接口同步（硬性）
 
-CLI 与 MCP 必须同输入同输出（FR-IFACE-03）。**新增或修改功能时三处同步**：
+CLI 与 api.md 保持同步。**新增或修改功能时两处同步**：
 
 | 改动 | 位置 |
 |---|---|
 | CLI 子命令 | `app/cmd/litkit/*.go` |
-| MCP 工具 | `app/internal/mcp/server.go` |
-| 接口契约 | `.harness/specs/reference/api.md`（§1 命令 / §2 工具） |
+| 接口契约 | `.harness/specs/reference/api.md`（§1 命令） |
 
-CI 的接口一致性检查（`.harness/constraints/sync`）机械化强制三处清单一致，遗漏会直接红。
+CI 的接口一致性检查（`.harness/constraints/sync`）机械化强制 CLI 命令清单与 api.md 一致，遗漏会直接红。
 
 ## 本地门禁
 
@@ -49,4 +48,4 @@ cd app && gofmt -l . && go test ./...
 ## 报告问题
 
 - 描述复现步骤、期望行为与实际行为、相关命令与输出。
-- 若涉及接口，注明 CLI 与 MCP 表现是否一致（FR-IFACE-03）。
+- 若涉及接口，注明与 api.md 接口文档是否一致。

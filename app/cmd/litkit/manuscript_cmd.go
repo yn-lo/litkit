@@ -97,7 +97,6 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 }
 
 // resolveStyle 由 --style / --lang 解析引用样式；无效值返回参数错误（退出码 2）。
-// 解析逻辑在 core.ResolveStyle（CLI/MCP 共用，FR-IFACE-03），此处仅转参数错误。
 func resolveStyle(lang, styleFlag string) (core.Style, error) {
 	s, err := core.ResolveStyle(lang, styleFlag)
 	if err != nil {
@@ -107,7 +106,7 @@ func resolveStyle(lang, styleFlag string) (core.Style, error) {
 }
 
 // writeManuscriptArtifacts 落盘 {base}_{ts}.md（正文+文末引用列表）/ .bib / .ris
-// +（可选）{base}_{ts}.docx（需 Pandoc，缺失优雅降级）。与 MCP 共用 core 产物函数（FR-IFACE-03）。
+// +（可选）{base}_{ts}.docx（需 Pandoc，缺失优雅降级）。
 func writeManuscriptArtifacts(outDir, base, ts string, res *core.ManuscriptResult, style core.Style, docx bool) (map[string]string, error) {
 	files, err := core.WriteManuscriptOutputs(outDir, base, ts, res, style)
 	if err != nil {

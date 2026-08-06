@@ -22,7 +22,7 @@
 
 ## 概览
 
-litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / MCP SDK / SQLite），CLI 为第一接口，MCP Server 为可选第二接口。面向 AI agent 与命令行用户，覆盖论文写作完整链路：
+litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），CLI 为唯一接口。面向 AI agent 与命令行用户，覆盖论文写作完整链路：
 
 - **跨源检索**：arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex 并发检索 + 去重，摘要工作流（不下载 PDF、不抽取全文）。
 - **元数据反查**：按 DOI / PMID / arXiv ID / 标题反查，入库 SQLite 本地文献库。
@@ -31,15 +31,15 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / MCP SDK / SQLit
 - **手稿排版**：解析 `[@citeKey]` 占位符为引用编号；`--preview` 输出自描述标记便于人工核查。
 - **撰写合规门禁**：19 条规则机械化验证（结构 / 数据 / 标点 / 引用 / 字数 / 行文）。
 
-**AI-first**：默认返回 AI 写作所需最小字段集（citeKey / title / firstAuthor / year / abstract），完整元数据按需取回；`--full` 供人类调试。CLI 输出 JSON 可被 AI shell 直接调用；`litkit mcp` 启动 stdio MCP Server，与 CLI 共享同一核心实现，同输入同输出。
+**AI-first**：默认返回 AI 写作所需最小字段集（citeKey / title / firstAuthor / year / abstract），完整元数据按需取回；`--full` 供人类调试。CLI 输出 JSON 可被 AI shell 直接调用。
 
 ## 项目原则
 
 - **AI-first 降噪**：接口设计以降低上下文噪声为第一约束。
-- **CLI 第一，MCP 第二**：CLI 为主接口，MCP 为可选第二接口，共享同一核心与源注册表。
+- **CLI 唯一接口**：全部功能经 CLI 命令完成。
 - **摘要工作流**：检索源必须提供摘要，无摘要论文默认过滤（FR-SEARCH-03）；不下载 PDF、不抽取全文。
 - **免费优先**：全部源为公开开放接口，无强制 API key；密钥一律走 `.env`（gitignored），禁止硬编码。
-- **接口同步**：新增功能 CLI / MCP 两处注册，并同步接口文档（FR-IFACE-03）。
+- **接口同步**：新增 CLI 功能同步接口文档 api.md。
 
 ## 功能
 
@@ -50,9 +50,8 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / MCP SDK / SQLit
 | 全文获取 | Unpaywall OA → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络） |
 | 规范引用 | `export -f bibtex\|ris\|text`；样式 GB/T 7714—2025 / APA / IEEE |
 | 手稿排版 | `[@citeKey]` → `[1][2]`；`--preview` / `--docx` / `-o` |
-| 撰写合规门禁 | `lint init` 生成项目 harness；`verify --mode draft\|chapter\|final` |
+| 撰写合规门禁 | `lint init` 生成项目 harness；`verify --mode draft\|chapter\|final`；`--report citation-refs` 引用相关性 LLM 评分 |
 | 文献库管理 | `lib search\|list\|rm\|stats\|path` |
-| MCP 接口 | `litkit mcp` 启动 stdio Server，工具与 CLI 一一对应 |
 
 ## 检索源策略
 
@@ -88,6 +87,9 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / MCP SDK / SQLit
 | `LITKIT_UNPAYWALL_EMAIL` | 可选，Unpaywall 合规邮箱（不设则跳过 OA 通道） |
 | `LITKIT_SCI_HUB_URL` | 可选，Sci-Hub 镜像地址（默认 sci-hub.se） |
 | `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | 可选，网络超时与重试 |
+| `LITKIT_LLM_API_KEY` | 可选，LLM 引用评分 API key（FR-LINT-08） |
+| `LITKIT_LLM_BASE_URL` | 可选，LLM 自托管 endpoint |
+| `LITKIT_VERIFY_LINT_LLM` | 可选，启用 LLM 引用评分（默认 false，避免意外远程调用） |
 
 ## 安装
 
@@ -112,37 +114,14 @@ litkit manuscript draft.md --lang zh                   # 5. 手稿排版（[@cit
 litkit manuscript draft.md --preview                   # 5b. 预览模式，便于人工核查
 litkit lint init --type empirical --lang zh            # 6. 生成撰写约束
 litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
+litkit verify chapter1.md --mode draft --report citation-refs  # 6c. 引用评分（需 LITKIT_VERIFY_LINT_LLM=true）
 ```
 
 ## AI 集成
 
 - **CLI**：所有命令输出 JSON（`--full` 输出完整元数据）；`litkit --help` 自描述。
-- **MCP**：`litkit mcp` 启动 stdio Server，注册 `search_papers` / `get_paper_metadata` / `fetch_paper` / `process_manuscript` / `export_references` / `lint_init` / `verify_manuscript` / `lib_*` / `search_<source>` 等工具，供 Claude Desktop / Trae 等客户端调用。
 
-**MCP 客户端配置（JSON）**：先安装 litkit 并加入 `PATH`（或直接在 `command` 里写绝对路径），再把以下片段填入客户端的 MCP 配置——Claude Desktop 为 `claude_desktop_config.json`（Settings → Developer），Trae / Cursor 等 IDE 为各自的 MCP 配置面板：
-
-```json
-{
-  "mcpServers": {
-    "litkit": {
-      "command": "litkit",
-      "args": ["mcp"],
-      "env": {
-        "LITKIT_WORK_DIR": "C:\\Users\\<your-name>\\litkit-workspace"
-      }
-    }
-  }
-}
-```
-
-要点：
-
-- **`command`**：已加入 `PATH` 写 `"litkit"`；否则写绝对路径，如 `"C:\\tools\\litkit.exe"`。
-- **`env`**：JSON 不支持注释、也不继承 shell 的 `export`。`LITKIT_WORK_DIR` 必须在此显式给出，否则文献库 / 手稿 / 合规门禁类工具不可用（`search_papers` 除外，检索结果入库失败不阻断）。
-- **macOS 路径**：`"LITKIT_WORK_DIR": "/Users/<your-name>/litkit-workspace"`。
-- 保存后重启客户端，即可在对话中直接调用上述全部工具；每个工具与 CLI 命令一一对应、同输入同输出。
-
-完整接口契约（CLI / MCP / 数据模型）见 [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)。
+完整接口契约（CLI / 数据模型）见 [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)。
 
 ## 文档导航
 
@@ -150,7 +129,7 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 | --- | --- |
 | 需求基线（PRD） | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md) |
 | 架构与数据流 | [`.harness/specs/architecture/`](.harness/specs/architecture/) |
-| 接口规范（CLI / MCP / 数据模型） | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
+| 接口规范（CLI / 数据模型） | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
 | 开发计划 | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md) |
 | 开发约定 / 门禁 | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
 
@@ -161,7 +140,7 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
 
-# 接口一致性（CLI / MCP / api.md 三处同步，FR-IFACE-03）
+# 接口一致性（CLI / api.md 同步）
 cd .harness/constraints/sync && go run .
 
 # 触网测试（手动）

@@ -6,7 +6,7 @@ status: active
 owner: litkit-core
 ---
 
-> 本文件定义 CLI 命令、MCP 工具与环境变量。CLI 与 MCP 共享同一核心实现（同输入同输出）。
+> 本文件定义 CLI 命令与环境变量。
 > 数据模型（Paper/SearchResult/PaperSource）见 [`data-model.md`](data-model.md)。
 > 错误码与 VerifyIssue 结构见 [`error-codes.md`](error-codes.md)。
 
@@ -34,10 +34,10 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 | `-y, --year` | 精确年份过滤（源支持时） | 无 |
 | `--keep-no-abstract` | 保留无摘要论文（默认过滤，FR-SEARCH-03） | 关 |
 | `--exclude` | 逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库） | 无 |
-| `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-04） | 关 |
+| `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-02） | 关 |
 
 > 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `lib search`（二期）。
-> `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-04）。
+> `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-02）。
 > **检索词语言**：必须使用英文（各源英文语料为主，中文命中率极低，FR-SEARCH-11）。
 > **检索等级**：默认 `tiab`（题目+摘要+关键词），全文检索 `--mode full`（FR-SEARCH-12）；**时间范围**默认最近 3 年（FR-SEARCH-13）。
 
@@ -159,32 +159,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 
 退出码：`0` = 通过或仅需人工复核；`1` = 有 A 类违规需修复。
 
-```
-litkit mcp
-```
-
-> 启动 MCP Server（stdio 传输，供 Claude Desktop / Trae 等客户端发现调用）。
-> 工具与 CLI 命令一一对应，共享同一核心实现，保证同输入同输出（FR-IFACE-03）。
-> 工具清单见 §2；按 Ctrl-C 退出。
-
-## 2. MCP 工具
-
-传输：stdio。所有工具共享核心实现，行为与 CLI 等价。
-
-| 工具 | 入参 | 出参 |
-|---|---|---|
-| `search_papers` | query: string, sources?: []string, maxResultsPerSource?: int, year?: int, keepNoAbstract?: bool | `SearchResult` |
-| `get_paper_metadata` | idType: doi\|pmid\|arxiv\|title, identifier: string | `Paper \| null` |
-| `fetch_paper` | ref: citeKey\|doi | `{ citeKey, pdfPath?, fulltext, via }` |
-| `process_manuscript` | text: string, lang?: zh\|en, style?: string, preview?: bool, generateDocx?: bool, outputDir?: string | `{ processedText, referenceList(始终返回), citationMap, unresolved, files }` |
-| `export_references` | papers: []Paper, format: bibtex\|ris\|text, style?: string | `{ success, content }` |
-| `lint_init` | projectDir?: string, force?: bool, lang?: zh\|en, paperType?: review\|empirical, journal?: string | `{ status, files[], nextSteps }` |
-| `verify_manuscript` | files: []string, lang?: zh\|en, mode?: chapter\|draft\|final, paperType?: review\|empirical, rule?: string, skip?: string | `{ files[], passed, exitHint, manualChecklist }` |
-| `search_<source>` | query: string, maxResults?: int | 单源 `SearchResult` |
-| `lib_list` / `lib_search` / `lib_rm` | source?/keyword?/limit? / citeKey | 库内论文 / 命中 / 删除结果 |
-| `lib_stats` / `lib_path` | — | 统计 / 库路径 |
-
-## 3. 环境变量
+## 2. 环境变量
 
 | 变量 | 必需 | 作用 |
 |---|---|---|
@@ -196,17 +171,21 @@ litkit mcp
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
 | LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api |
 | LITKIT_EMBEDDING_API_KEY | api 模式必需 | 阿里百炼 / 硅基流动 embedding key |
-| LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（fetch/fetch_paper，FR-FETCH-02） |
+| LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（fetch，FR-FETCH-02） |
 | LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
 | LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
+| LITKIT_LLM_API_KEY | 引用评分必需（FR-LINT-08） | LLM 评分的 API key |
+| LITKIT_LLM_BASE_URL | 可选 | LLM API base URL（自托管/代理 endpoint） |
+| LITKIT_LLM_TIMEOUT_MS | 可选 | LLM 单次评分超时（默认 30000） |
+| LITKIT_VERIFY_LINT_LLM | 可选 | 启用 LLM 引用评分，默认 false（避免意外远程调用） |
 
 ### .env 发现顺序
 
 `LITKIT_ENV_FILE` 指定 > `WORK_DIR/.env` > 当前目录 `.env` > 项目根 `.env`
 
-## 4. 数据交换格式
+## 3. 数据交换格式
 
 ### Paper
 

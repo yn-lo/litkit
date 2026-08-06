@@ -1,7 +1,6 @@
 // wireup.go 在 CLI 入口层组装依赖：config → registry/store/searcher。
 //
 // 入口层负责依赖注入（boundaries.md）；业务逻辑全部下沉 internal/core。
-// CLI 与 MCP（M5）将共享同一份 wireup，保证接口一致性（FR-IFACE-03）。
 package main
 
 import (

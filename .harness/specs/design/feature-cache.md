@@ -20,7 +20,8 @@ owner: litkit-core
 - 去重键确定性（原 FR-CACHE-02）：`dedup_key` = DOI > title+authors > paper_id
 - 库文件 `WORK_DIR/litkit.db`（FR-LIB-03）：随工作目录迁移，无 TTL
 - 引用标识 cite_key（FR-LIB-06）：3 字母 a-zA-Z 唯一，入库自动分配；AI 引用与引用标记唯一入口
-- 引用标记 paper_refs（FR-LIB-07）：记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿）；同句重复引用幂等
+- 引用标记 paper_refs（FR-LIB-07）：记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿 + 行号）；同句重复引用幂等
+- 引用评分缓存 citation_scores（FR-LINT-08）：多模型对 (cite_key, sentence_hash) 的评分结果，主键 `(cite_key, sentence_hash, model_id, prompt_version)` 自然失效（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL
 - 增删查接口（FR-LIB-02）：`litkit lib list | search | rm | stats | path`
 - 本地 keyword 检索（FR-LIB-04）：M1 为 LIKE 检索（标题/作者/摘要）；FTS5+中文分词二期
 - 本地语义检索（FR-LIB-05）：二期（跨语言 embedding）
@@ -41,11 +42,11 @@ schema 以 `schema/schema.sql` 单文件管理，`//go:embed` 在 Open 时执行
 入库失败不阻断检索（透明降级）。
 
 ### 入口层
-`litkit lib` 子命令 + `lib_list` / `lib_search` / `lib_rm` / `lib_stats` / `lib_path` MCP 工具。
+`litkit lib` 子命令。
 
 ## 关键规则/约束
 
-- 入库元数据必须含摘要（C9 / FR-LIB-01）：无摘要论文不入库
+- 入库元数据必须含摘要（C8 / FR-LIB-01）：无摘要论文不入库
 - 库生命周期由工作目录决定（FR-LIB-03）：无 TTL、无 cache clear
 - dedup_key 决定同一篇论文（跨源去重语义入库，FR-SEARCH-02）
 - cite_key 唯一且稳定：论文被重复检索时保持不变

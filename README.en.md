@@ -22,7 +22,7 @@ An academic writing toolkit for Chinese researchers: cross-source paper search, 
 
 ## Overview
 
-litkit is a Go-based paper toolkit (Go 1.26 / cobra / MCP SDK / SQLite) with a **CLI-first** interface and an optional **MCP Server** interface. Designed for AI agents and command-line users, it covers the full academic writing pipeline:
+litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only interface. Designed for AI agents and command-line users, it covers the full academic writing pipeline:
 
 - **Cross-source search**: concurrent search + dedup across arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex, with an abstract-only workflow (no PDF download, no full-text extraction).
 - **Metadata lookup**: resolve by DOI / PMID / arXiv ID / title and store into a local SQLite library.
@@ -31,15 +31,15 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / MCP SDK / SQLite) with a *
 - **Manuscript typesetting**: `[@citeKey]` placeholders resolved to citation numbers; `--preview` emits self-describing marks for human review.
 - **Compliance gate**: 19 mechanical rules (structure / data / punctuation / citations / word count / prose).
 
-**AI-first**: responses default to the minimal field set AI needs (citeKey / title / firstAuthor / year / abstract); full metadata is fetched on demand; `--full` is the escape hatch for humans. The CLI outputs JSON consumable by AI shells; `litkit mcp` starts a stdio MCP Server sharing the same core, so both interfaces produce identical output for identical input.
+**AI-first**: responses default to the minimal field set AI needs (citeKey / title / firstAuthor / year / abstract); full metadata is fetched on demand; `--full` is the escape hatch for humans. The CLI outputs JSON consumable by AI shells.
 
 ## Project Principles
 
 - **AI-first, noise-reduced**: interface design optimizes for low context noise above all.
-- **CLI first, MCP second**: CLI is the primary interface, MCP is optional; both share the same core and source registry.
+- **CLI-only interface**: every feature is reachable through CLI commands.
 - **Abstract-only workflow**: every source must provide abstracts; papers without abstracts are filtered by default (FR-SEARCH-03); no PDF download, no full-text extraction at search time.
 - **Free-first**: all sources are public open APIs; no mandatory API keys; keys live in `.env` (gitignored), never hardcoded.
-- **Interface sync**: every new feature is registered on both CLI and MCP and mirrored in the API docs (FR-IFACE-03).
+- **Interface sync**: every new CLI feature is mirrored in the API docs api.md.
 
 ## Features
 
@@ -52,7 +52,6 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / MCP SDK / SQLite) with a *
 | Manuscript typesetting | `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o` |
 | Compliance gate | `lint init` scaffolds a project harness; `verify --mode draft\|chapter\|final` |
 | Library management | `lib search\|list\|rm\|stats\|path` |
-| MCP interface | `litkit mcp` starts a stdio Server; tools map 1:1 to CLI commands |
 
 ## Source Strategy
 
@@ -117,32 +116,8 @@ litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
 ## AI Integration
 
 - **CLI**: every command outputs JSON (`--full` prints full metadata); `litkit --help` is self-describing.
-- **MCP**: `litkit mcp` starts a stdio Server registering `search_papers` / `get_paper_metadata` / `fetch_paper` / `process_manuscript` / `export_references` / `lint_init` / `verify_manuscript` / `lib_*` / `search_<source>` tools for clients like Claude Desktop / Trae.
 
-**MCP client setup (JSON)**: install litkit and add it to `PATH` (or use an absolute path in `command`), then add the snippet below to your client's MCP config — Claude Desktop: `claude_desktop_config.json` (Settings → Developer); IDEs like Trae / Cursor: their MCP configuration panel:
-
-```json
-{
-  "mcpServers": {
-    "litkit": {
-      "command": "litkit",
-      "args": ["mcp"],
-      "env": {
-        "LITKIT_WORK_DIR": "C:\\Users\\<your-name>\\litkit-workspace"
-      }
-    }
-  }
-}
-```
-
-Key points:
-
-- **`command`**: use `"litkit"` if it's on `PATH`; otherwise give an absolute path, e.g. `"C:\\tools\\litkit.exe"`.
-- **`env`**: JSON doesn't support comments and doesn't inherit shell `export`s. Set `LITKIT_WORK_DIR` explicitly here — without it, library / manuscript / compliance-gate tools won't work (`search_papers` still does; failed store upserts don't block search).
-- **macOS path**: `"LITKIT_WORK_DIR": "/Users/<your-name>/litkit-workspace"`.
-- After saving, restart the client — all tools above become callable in chat; each maps 1:1 to a CLI command with identical input/output.
-
-Full interface contract (CLI / MCP / data model): [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md).
+Full interface contract (CLI / data model): [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md).
 
 ## Documentation
 
@@ -150,7 +125,7 @@ Full interface contract (CLI / MCP / data model): [`.harness/specs/reference/api
 | --- | --- |
 | Requirements (PRD) | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md) |
 | Architecture & data flow | [`.harness/specs/architecture/`](.harness/specs/architecture/) |
-| Interface spec (CLI / MCP / data model) | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
+| Interface spec (CLI / data model) | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
 | Roadmap | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md) |
 | Conventions / gates | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
 
@@ -161,7 +136,7 @@ Full interface contract (CLI / MCP / data model): [`.harness/specs/reference/api
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
 
-# Interface consistency (CLI / MCP / api.md, FR-IFACE-03)
+# Interface consistency (CLI / api.md)
 cd .harness/constraints/sync && go run .
 
 # Network integration tests (manual)

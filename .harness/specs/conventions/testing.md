@@ -12,7 +12,6 @@ owner: litkit-core
 |---|---|---|
 | 单元测试 | 各包 `*_test.go` | 离线 hermetic；mock 所有网络 IO（httptest）；CI 只跑此层 |
 | 触网测试 | `app/tests/integration/`（build tag `integration`，待二期补充） | 真实 API；`go test -tags integration ./tests/integration/`；不进 CI 默认流程 |
-| 一致性测试 | 双接口 | CLI 与 MCP 同输入同输出断言（FR-IFACE-03） |
 
 ## 规则
 
@@ -25,7 +24,6 @@ owner: litkit-core
 ## 背景与意图
 
 - **离线 hermetic 是 CI 的前提**：CI 环境无稳定外网，触网测试会让 CI 随机红
-- **一致性测试守护 C8**：CLI 与 MCP 共享核心，行为分叉即破坏接口一致性约束
 
 ## 具体门禁由约束层执行
 

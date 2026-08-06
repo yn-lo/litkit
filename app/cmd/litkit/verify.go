@@ -1,19 +1,24 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"litkit/internal/config"
+	"litkit/internal/core"
 	"litkit/internal/lint"
+	"litkit/internal/model"
 	"litkit/internal/storage"
 )
 
-// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证；R5.6 引用防伪查库）。
+// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证；R5.6 引用防伪查库；FR-LINT-08 引用评分）。
 //
 // 退出码（verify 专用语义）：
 //   - 0 全部通过（exitHint=pass）或仅 S 类需人工（exitHint=manual_review）
@@ -27,6 +32,8 @@ func newVerifyCmd(cfg *config.Config, store *storage.Store) *cobra.Command {
 对 Markdown 文稿执行规则检查，输出 JSON 报告。
 规则按模式递增启用：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文）。
 
+使用 --report citation-refs 可额外输出引用相关性评分（需 LITKIT_VERIFY_LINT_LLM=true）。
+
 退出码：0=通过或仅需人工复核；1=有 A 类违规需修复。
 AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 		Args: cobra.MinimumNArgs(1),
@@ -39,6 +46,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			paperType, _ := cmd.Flags().GetString("type")
 			ruleFlag, _ := cmd.Flags().GetString("rule")
 			skipFlag, _ := cmd.Flags().GetString("skip")
+			reportFlag, _ := cmd.Flags().GetString("report")
 
 			mode := lint.Mode(modeStr)
 			switch mode {
@@ -69,6 +77,12 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				return fmt.Errorf("verify: %w", err)
 			}
 
+			// 引用评分（FR-LINT-08）
+			if strings.Contains(reportFlag, "citation-refs") && store != nil {
+				cr := runCitationRelevance(args, store, cfg)
+				report.CitationRefs = cr
+			}
+
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Println(string(out))
 
@@ -83,7 +97,123 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从已有 spec 自动检测）")
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
+	cmd.Flags().String("report", "json", "报告格式：json（默认）| citation-refs（引用评分）")
 	return cmd
+}
+
+// runCitationRelevance 对文稿执行引用相关性评分（FR-LINT-08）。
+//
+// 在规则验证后额外执行，不产生 lint Violation，以独立报告形式输出。
+func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Config) *lint.CitationRelevanceReport {
+	cr := &lint.CitationRelevanceReport{Enabled: false}
+
+	if !cfg.VerifyLLMEnabled {
+		return cr
+	}
+
+	// 加载 verifier_models.json
+	vmPath := filepath.Join(cfg.WorkDir, ".litkit", "verifier_models.json")
+	vm, err := core.LoadVerifierModels(vmPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "litkit: 加载 verifier_models.json 失败: %v（跳过引用评分）\n", err)
+		return cr
+	}
+
+	timeout := time.Duration(cfg.LLMTimeoutMS) * time.Millisecond
+	engine := core.NewScorerEngine(store, vm, cfg.LLMAPIKey, cfg.LLMBaseURL, timeout, cfg.VerifyLLMEnabled)
+	if engine.IsDisabled() {
+		return cr
+	}
+
+	cr.Enabled = true
+	cr.Models = engine.EnabledModels()
+	ctx := context.Background()
+
+	for _, p := range paths {
+		src, err := lint.ParseSource(p)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "litkit: 解析 %s 失败: %v（跳过引用评分）\n", p, err)
+			continue
+		}
+
+		// 提取引用句
+		body := src.BodyContent()
+		lineNos := src.BodyLineNumbers()
+		refs := core.ExtractCiteSentences(body)
+		if len(refs) == 0 {
+			continue
+		}
+
+		// 重建 paper_refs（先删旧引用，再插新）
+		rel := relativePath(p, cfg.WorkDir)
+		_ = store.RemoveRefsByManuscript(rel)
+		refModels := make([]model.PaperRef, len(refs))
+		for i, r := range refs {
+			// 映射到原始行号
+			origLine := r.Line
+			if r.Line > 0 && r.Line <= len(lineNos) {
+				origLine = lineNos[r.Line-1]
+			}
+			refModels[i] = model.PaperRef{
+				CiteKey:      r.CiteKey,
+				SentenceHash: r.SentenceHash,
+				Manuscript:   rel,
+				Sentence:     r.Sentence,
+				Line:         origLine,
+			}
+		}
+		_ = store.AddRefs(refModels)
+
+		// 逐个评分
+		for _, r := range refs {
+			paper, err := store.GetByCiteKey(r.CiteKey)
+			if err != nil || paper == nil || paper.Abstract == "" {
+				continue
+			}
+			result, err := engine.Score(ctx, r.CiteKey, r.SentenceHash, r.Sentence, paper.Abstract)
+			if err != nil || result == nil {
+				continue
+			}
+			// 映射到原始行号
+			origLine := r.Line
+			if r.Line > 0 && r.Line <= len(lineNos) {
+				origLine = lineNos[r.Line-1]
+			}
+			cr.Results = append(cr.Results, lint.CitationRelevanceItem{
+				File:         rel,
+				Line:         origLine,
+				CiteKey:      r.CiteKey,
+				Sentence:     truncate(r.Sentence, 80), //nolint: mnd
+				MeanScore:    result.MeanScore,
+				Consensus:    result.Consensus,
+				Cached:       result.Cached,
+				LowScore:     result.MeanScore < 0.3, //nolint: mnd
+				LowConsensus: result.Consensus < 0.5, //nolint: mnd
+			})
+		}
+	}
+	return cr
+}
+
+// relativePath 将绝对路径转为相对工作目录的路径。
+func relativePath(path, workDir string) string {
+	if workDir == "" {
+		return path
+	}
+	rel, err := filepath.Rel(workDir, path)
+	if err != nil {
+		return path
+	}
+	return rel
+}
+
+// truncate 截断字符串到指定最大长度（中文按一个字符计）。
+func truncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
 }
 
 // loadVerifySpec 从工作目录加载 manuscript-spec.yaml。
@@ -92,14 +222,12 @@ func loadVerifySpec(workDir, paperType, lang string) *lint.ManuscriptSpec {
 	if paperType == "" || lang == "" {
 		types, err := lint.ListPaperTypes(workDir)
 		if err == nil && len(types) == 1 {
-			// 自动检测到唯一类型
 			p := lint.TypeSpecPath(workDir, types[0])
 			spec, err := lint.LoadSpec(p)
 			if err == nil {
 				return spec
 			}
 		}
-		// 无法确定类型，用默认值
 		fmt.Fprintln(os.Stderr, "litkit: 未指定 --type/--lang 且无法自动检测，使用默认阈值")
 		return lint.DefaultSpec()
 	}

@@ -25,7 +25,7 @@ owner: litkit-core
 - **分层依赖**：入口层 → 服务层 → 适配层 → 叶子层，单向；`internal/` 天然隔离外部引用。详见 [`../architecture/boundaries.md`](../architecture/boundaries.md)
 - **数据模型纯净**：`internal/model/` 不 import 任何上层包
 - **源抽象**：所有学术源必须实现 `PaperSource` 接口，禁止绕过注册表
-- **注册同步**：新增功能必须在 CLI 与 MCP 两处注册，机械化检查防遗漏
+- **接口同步**：新增 CLI 功能必须同步 api.md 接口文档，机械化检查防遗漏
 - **禁止硬编码密钥**：一律经 `internal/config` 读取，写入 `.env`（gitignored）
 - **错误处理**：见 [`error-handling.md`](error-handling.md)
 - **上下文**：所有网络调用接受 `context.Context`，支持超时与取消
@@ -40,7 +40,7 @@ go vet              (编译器级检查)
 go test ./...       (单元测试，离线)
 go test -cover      (覆盖率 ≥ 60%)
 arch-check          (分层依赖)
-sync-check          (CLI/MCP/api.md 一致性 + 文档断链)
+sync-check          (CLI/api.md 一致性 + 文档断链)
 govulncheck         (依赖漏洞扫描)
 ```
 

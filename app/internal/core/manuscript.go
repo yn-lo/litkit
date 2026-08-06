@@ -281,7 +281,7 @@ func ManuscriptStamp(t time.Time) string {
 	return t.Format("20060102_150405")
 }
 
-// RenderReferenceList 渲染编号引用列表（formatted.md 文末 / MCP referenceList 共用）。
+// RenderReferenceList 渲染编号引用列表（formatted.md 文末）。
 func RenderReferenceList(papers []model.Paper, style Style) (string, error) {
 	var b strings.Builder
 	for i, p := range papers {
@@ -313,7 +313,7 @@ func formattedContent(res *ManuscriptResult, style Style) (string, error) {
 // WriteManuscriptOutputs 落盘 {base}_{ts}.md（正文+文末引用列表）/ {base}_{ts}.bib / {base}_{ts}.ris。
 //
 // 返回 逻辑名 → 绝对路径 映射（ManuscriptFormatted/ManuscriptBib/ManuscriptRIS）；
-// 不含 docx（由调用方按需经 PandocToDocx 转换）。CLI 与 MCP 共用（FR-IFACE-03）。
+// 不含 docx（由调用方按需经 PandocToDocx 转换）。
 func WriteManuscriptOutputs(outDir, base, ts string, res *ManuscriptResult, style Style) (map[string]string, error) {
 	files := make(map[string]string)
 	text, err := formattedContent(res, style)

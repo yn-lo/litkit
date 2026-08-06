@@ -32,7 +32,7 @@ owner: litkit-core
 |---|---|
 | internal/sources/source.go：PaperSource 接口 + 降级公共逻辑 | FR-SRC-01 |
 | internal/util/ratelimit：每源令牌桶（x/time/rate）+ 429/503 指数退避重试 | NFR-PERF-04、NFR-REL-01/04 |
-| internal/sources/registry.go：源注册表（CLI 与 MCP 共用） | FR-SRC-18、FR-IFACE-03 |
+| internal/sources/registry.go：源注册表 | FR-SRC-18 |
 | 源适配：arXiv、PubMed、OpenAlex | FR-SRC-02/03/06 |
 | 源适配：bioRxiv/medRxiv、Semantic Scholar | FR-SRC-04/05 |
 | core/search：并发检索、单源失败隔离、三级去重、无摘要过滤 | FR-SEARCH-01/02/03/06 |
@@ -82,25 +82,6 @@ owner: litkit-core
 
 **验收**：zh/en 模式各自违规样例全部被检出；违规项含 rule_id/problem/suggestion；改 yaml 后 `init --refresh` 同步 AGENTS.md。
 
-## M5 MCP 接口（已完成）
-
-**范围**：MCP Server、工具注册、与 CLI 共享核心。
-
-| 任务 | 对应 FR |
-|---|---|
-| internal/mcp/：mcp-go SDK stdio Server | FR-IFACE-02 |
-| 工具绑定：search_papers / get_paper_metadata / process_manuscript / export_references | FR-IFACE-02 |
-| 工具绑定：lint_init / verify_manuscript / search_<source> / lib_list / lib_search / lib_rm / lib_stats / lib_path | FR-IFACE-02 |
-| 一致性测试：CLI 与 MCP 同输入同输出 | FR-IFACE-03 |
-
-> 已落地：internal/mcp 包注册全部 11 个静态工具 + 按注册表动态生成 search_<source>；
-> `litkit mcp` 子命令接线（stdio）；MCP 工具直接调用 core/lint/storage 共享核心；
-> 一致性测试经内存传输验证工具清单与离线工具输出（export_references / verify_manuscript / lint_init / process_manuscript 等）。
-
-**产出**：MCP Server 可被 Claude Desktop / Trae 发现并调用全部工具。
-
-**验收**：客户端调用 search_papers 与 CLI search 输出一致。
-
 ## M6 发布（已完成）
 
 **范围**：打包、CI 门禁完善、文档与示例。
@@ -111,13 +92,13 @@ owner: litkit-core
 | CI：gofmt / golangci-lint / go vet / go test / coverage / govulncheck | NFR-MAINT-02/03、NFR-SEC-03 |
 | 文档核对（断链检查）、.env.example | FR-CONFIG-03 |
 | 示例与快速开始完善 | — |
-| 开源发布（Apache-2.0、README/CONTRIBUTING） | C12 |
+| 开源发布（Apache-2.0、README/CONTRIBUTING） | C11 |
 
 > 已落地：app/.goreleaser.yml（linux/darwin/windows × amd64/arm64，版本经 ldflags 注入
 > internal/buildinfo，snapshot 构建验证通过）；CI 部署 .github/workflows/ci.yml（替换
 > registration/link 两个占位为 .harness/constraints/sync 检查器，docs job 补 setup-go）；
-> sync 检查器（CLI/api.md §1、MCP/api.md §2 三处清单一致 + CLAUDE.md/.harness 断链检查，
-> 已并入本地 gate 第 8 项）；README / LICENSE（Apache-2.0）/ CONTRIBUTING；api.md 补 `litkit mcp` 条目。
+> sync 检查器（CLI/api.md 清单一致 + CLAUDE.md/.harness 断链检查，已并入本地 gate 第 8 项）；
+> README / LICENSE（Apache-2.0）/ CONTRIBUTING。
 
 **产出**：可安装、CI 全绿、文档一致。
 
@@ -140,19 +121,24 @@ owner: litkit-core
 
 **验收**：中文 query 检索本地英文文献命中（FR-LIB-05）；本地库万级规模检索 < 1s。
 
-## M8 LLM 引用相关性评分（三期）
+## M8 LLM 引用相关性评分（三期，一期 core 已落地）
 
 **范围**：FR-LINT-08 落地——LLM 对文稿中引用文献的句子与该文献内容的相关性评分。
 
-| 任务 | 对应 FR |
-|---|---|
-| 评分服务抽象：Scorer 接口（multi-model 交叉打分 + 增量缓存） | FR-LINT-08 |
-| 多模型组合 POC：开源模型（本地推理）vs API 模型选型与阈值标定 | FR-LINT-08 |
-| 文稿引用句抽取 + 文献摘要对齐输入构造 | FR-LINT-08 |
-| 评分结果接入 verify 报告（新增 S 类规则项） | FR-LINT-04/05 |
-| 配置项落地：模型组合 / 阈值 / 缓存策略 | FR-LINT-07 |
+| 任务 | 对应 FR | 状态 |
+|---|---|---|
+| 评分服务抽象：Scorer 接口 + ScorerEngine（多模型扇出 + 增量缓存 + 优雅降级） | FR-LINT-08 | ✅ 已完成 |
+| 文稿引用句抽取（ExtractCiteSentences，锚点前后找句末标点，支持中/英/全角句点） | FR-LINT-08 | ✅ 已完成 |
+| Layer 0 数字集合规则（CheckNumericConsistency，免费确定性检查） | FR-LINT-08 | ✅ 已完成 |
+| citation_scores 表（SQLite 缓存，主键自然失效） | FR-LINT-08 | ✅ 已完成 |
+| paper_refs 表 + store 接口（引用标记全量扫描入库，按手稿维度 rebuild） | FR-LIB-07 | ✅ 已完成 |
+| `litkit verify --report citation-refs` 输出引用评分报告 | FR-LINT-04/05 | ✅ 已完成 |
+| 配置项落地：verifier_models.json（模型清单/阈值/提示词版本，不含 API key） | FR-LINT-07 | ✅ 已完成 |
+| 多模型组合 POC：开源模型（本地推理）vs API 模型选型与阈值标定 | FR-LINT-08 | ⏳ 待做 |
+| Layer 1 embedding 语义预筛（依赖 M7 embedding 基础设施） | FR-LINT-08 | ⏳ 待 M7 |
+| 人工标注集阈值校准 | FR-LINT-08 | ⏳ 待做 |
 
-**产出**：`litkit verify --rule citation-relevance` 输出引用句-文献相关性评分与建议。
+**产出**：`litkit verify --report citation-refs` 输出引用句-文献相关性评分与建议。
 
 **验收**：多模型评分一致率达标；增量缓存命中率 ≥80%（避免重复打分）；阈值经人工标注集校准。
 
@@ -164,7 +150,6 @@ owner: litkit-core
 | M2 检索 | FR-SRC / FR-SEARCH / FR-LIB | M1 | 一期 |
 | M3 引用 | FR-REF / FR-LIB | M2 | 一期 |
 | M4 lint | FR-LINT（除 08） | M1 | 一期 |
-| M5 MCP | FR-IFACE | M2/M3 | 一期 |
 | M6 发布 | NFR | M3/M4 | 一期 |
 | M7 语义检索与二期源 | FR-SEARCH-09、FR-LIB-04/05、FR-SRC-07/08 | M2/M3 | 二期 |
 | M8 LLM 引用评分 | FR-LINT-08 | M4/M7 | 三期 |

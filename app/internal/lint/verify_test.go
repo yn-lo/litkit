@@ -634,7 +634,7 @@ func reviewRun(t *testing.T, content string) FileReport {
 
 func TestRule_R1_3_SkipTopLevel(t *testing.T) {
 	// 章节跳号：1 → 3（漏 2）
-	fr := reviewRun(t, "# 1 引言\n正文。\n# 3 结论\n正文。\n")
+	fr := reviewRun(t, "# 大标题\n# 1 引言\n正文。\n# 3 结论\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("章节跳号（1→3）应报 R1.3")
 	}
@@ -642,7 +642,7 @@ func TestRule_R1_3_SkipTopLevel(t *testing.T) {
 
 func TestRule_R1_3_SkipSubLevel(t *testing.T) {
 	// 子级跳号：1.1 → 1.3（漏 1.2）
-	fr := reviewRun(t, "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.3 现状\n正文。\n")
+	fr := reviewRun(t, "# 大标题\n# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.3 现状\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("子级跳号（1.1→1.3）应报 R1.3")
 	}
@@ -650,12 +650,12 @@ func TestRule_R1_3_SkipSubLevel(t *testing.T) {
 
 func TestRule_R1_3_HierarchyJump(t *testing.T) {
 	// 层级错乱：1 → 1.1.1（跳两级）
-	fr := reviewRun(t, "# 1 引言\n正文。\n### 1.1.1 深层\n正文。\n")
+	fr := reviewRun(t, "# 大标题\n# 1 引言\n正文。\n### 1.1.1 深层\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("层级跳变（1→1.1.1）应报 R1.3")
 	}
 	// 子级出现在错误父级下：1.1 → 2.1
-	fr = reviewRun(t, "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 2.1 错误子级\n正文。\n")
+	fr = reviewRun(t, "# 大标题\n# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 2.1 错误子级\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("子级挂错父级（1.1→2.1）应报 R1.3")
 	}
@@ -663,56 +663,79 @@ func TestRule_R1_3_HierarchyJump(t *testing.T) {
 
 func TestRule_R1_3_Descending(t *testing.T) {
 	// 倒序：1.2 → 1.1
-	fr := reviewRun(t, "# 1 引言\n正文。\n## 1.2 背景\n正文。\n## 1.1 倒序\n正文。\n")
+	fr := reviewRun(t, "# 大标题\n# 1 引言\n正文。\n## 1.2 背景\n正文。\n## 1.1 倒序\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("编号倒序（1.2→1.1）应报 R1.3")
 	}
 }
 
 func TestRule_R1_3_ValidSequence_Passes(t *testing.T) {
-	// 合规序列：1 → 1.1 → 1.2 → 2 → 2.1 → 2.1.1
-	content := "# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.2 现状\n正文。\n" +
+	// 合规序列：大标题 → 1 → 1.1 → 1.2 → 2 → 2.1 → 2.1.1
+	content := "# 大标题\n# 1 引言\n正文。\n## 1.1 背景\n正文。\n## 1.2 现状\n正文。\n" +
 		"# 2 方法\n正文。\n## 2.1 设计\n正文。\n### 2.1.1 流程\n正文。\n"
 	if got := violationsOf(reviewRun(t, content), "R1.3"); len(got) != 0 {
 		t.Errorf("合规编号序列不应报 R1.3，got %+v", got)
 	}
 }
 
-func TestRule_R1_3_FirstHeadingChecks(t *testing.T) {
-	// 首个标题非 1 开头
-	fr := reviewRun(t, "# 5 引言\n正文。\n")
+func TestRule_R1_3_FirstNumberedChecks(t *testing.T) {
+	// 首个编号章节非 1 开头
+	fr := reviewRun(t, "# 大标题\n# 5 引言\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("首个顶层编号非 1 应报 R1.3")
 	}
-	// 首个标题为深层，缺少父级
-	fr = reviewRun(t, "## 1.1 背景\n正文。\n")
+	// 首个编号章节为深层，缺少父级
+	fr = reviewRun(t, "# 大标题\n## 1.1 背景\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("首个编号为子级应报 R1.3（缺少父级）")
 	}
 }
 
+func TestRule_R1_3_TitleChecks(t *testing.T) {
+	// 首个标题带编号 → 缺大标题
+	fr := reviewRun(t, "# 1 引言\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("首个标题带编号应报 R1.3（缺大标题）")
+	}
+	// 无任何标题 → 缺大标题
+	fr = reviewRun(t, "只有正文没有标题。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("无任何标题应报 R1.3（缺大标题）")
+	}
+	// 大标题（无编号）+ 合规编号章节 → 通过
+	ok := "# 外科术后疼痛恐惧研究进展\n# 1 引言\n正文。\n# 2 结论\n正文。\n"
+	if got := violationsOf(reviewRun(t, ok), "R1.3"); len(got) != 0 {
+		t.Errorf("大标题+合规章节不应报 R1.3，got %+v", got)
+	}
+	// 大标题后的无编号标题仍报未编号（只有第一个无编号标题是大标题）
+	fr = reviewRun(t, "# 大标题\n# 引言\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("大标题之后的无编号标题应报 R1.3（未编号）")
+	}
+}
+
 func TestRule_R1_3_MissingNumbering(t *testing.T) {
-	// require_numbering=true 时，无编号标题应报 R1.3（review.md 真实场景）
-	content := "# 引言\n正文。\n## 概念与理论框架\n正文。\n"
+	// require_numbering=true 时，大标题之后的无编号标题应报 R1.3（review.md 真实场景）
+	content := "# 疼痛恐惧综述\n# 引言\n正文。\n## 概念与理论框架\n正文。\n"
 	fr := reviewRun(t, content)
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
-		t.Error("无编号标题应报 R1.3（require_numbering）")
+		t.Error("无编号章节标题应报 R1.3（require_numbering）")
 	}
 }
 
 func TestRule_R1_3_HeadingLevelAlignment(t *testing.T) {
 	// 层级与编号深度不对齐：## 配顶层编号 1
-	fr := reviewRun(t, "## 1 引言\n正文。\n")
+	fr := reviewRun(t, "# 大标题\n## 1 引言\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("## 配编号 1（层级不对齐）应报 R1.3")
 	}
 	// # 配二级编号 1.1
-	fr = reviewRun(t, "# 1.1 背景\n正文。\n")
+	fr = reviewRun(t, "# 大标题\n# 1.1 背景\n正文。\n")
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("# 配编号 1.1（层级不对齐）应报 R1.3")
 	}
-	// 对齐序列通过：# 1 → ## 1.1 → ### 1.1.1 → # 2
-	ok := "# 1 引言\n正文。\n## 1.1 背景\n正文。\n### 1.1.1 定义\n正文。\n# 2 方法\n正文。\n"
+	// 对齐序列通过：大标题 → # 1 → ## 1.1 → ### 1.1.1 → # 2
+	ok := "# 大标题\n# 1 引言\n正文。\n## 1.1 背景\n正文。\n### 1.1.1 定义\n正文。\n# 2 方法\n正文。\n"
 	if got := violationsOf(reviewRun(t, ok), "R1.3"); len(got) != 0 {
 		t.Errorf("对齐编号序列不应报 R1.3，got %+v", got)
 	}
@@ -720,14 +743,14 @@ func TestRule_R1_3_HeadingLevelAlignment(t *testing.T) {
 
 func TestRule_R1_3_English(t *testing.T) {
 	// 英文综述：编号检查与语言无关，跳号同样拦截
-	content := "# 1 Introduction\nText.\n# 3 Methods\nText.\n"
+	content := "# Title\n# 1 Introduction\nText.\n# 3 Methods\nText.\n"
 	fr := runContent(t, content, SpecForType(PaperTypeReview, LangEN),
 		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview})
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("英文标题跳号（1→3）应报 R1.3")
 	}
 	// 英文合规序列不报
-	ok := "# 1 Introduction\nText.\n# 2 Methods\nText.\n"
+	ok := "# Title\n# 1 Introduction\nText.\n# 2 Methods\nText.\n"
 	if got := violationsOf(runContent(t, ok, SpecForType(PaperTypeReview, LangEN),
 		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview}), "R1.3"); len(got) != 0 {
 		t.Errorf("英文合规序列不应报 R1.3，got %+v", got)
@@ -736,17 +759,119 @@ func TestRule_R1_3_English(t *testing.T) {
 
 func TestRule_R1_3_AppliesToAllTypes(t *testing.T) {
 	// 实证（empirical）与综述共用同一套编号检查
-	content := "# 1 引言\n正文。\n# 3 方法\n正文。\n"
+	content := "# 标题\n# 1 引言\n正文。\n# 3 方法\n正文。\n"
 	fr := runContent(t, content, SpecForType(PaperTypeEmpirical, LangZH),
 		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
 	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
 		t.Error("实证类型也应跑 R1.3（章节跳号 1→3）")
 	}
 	// 实证合规序列不报
-	okContent := "# 1 引言\n正文。\n# 2 方法\n正文。\n"
+	okContent := "# 标题\n# 1 引言\n正文。\n# 2 方法\n正文。\n"
 	fr = runContent(t, okContent, SpecForType(PaperTypeEmpirical, LangZH),
 		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
 	if got := violationsOf(fr, "R1.3"); len(got) != 0 {
 		t.Errorf("实证合规序列不应报 R1.3，got %+v", got)
+	}
+}
+
+// ---- R1.5 章节完整性（spec.Sections 比对）----
+
+// reviewFullContent 覆盖 review-zh 全部章节的合规文稿骨架。
+const reviewFullContent = "# 疼痛恐惧研究进展\n" +
+	"# 1 引言\n正文。\n" +
+	"# 2 文献检索方法\n正文。\n" +
+	"# 3 主题分析\n正文。\n" +
+	"## 3.1 评估工具\n正文。\n" +
+	"# 4 讨论与展望\n正文。\n" +
+	"# 5 结论\n正文。\n"
+
+func TestRule_R1_5_MissingSections(t *testing.T) {
+	// 只有引言和结论：缺 文献检索方法/主题分析/讨论与展望
+	fr := reviewRun(t, "# 标题\n# 1 引言\n正文。\n# 2 结论\n正文。\n")
+	got := violationsOf(fr, "R1.5")
+	if len(got) != 3 {
+		t.Fatalf("应报 3 个缺失章节，got %d: %+v", len(got), got)
+	}
+	joined := got[0].Problem + got[1].Problem + got[2].Problem
+	if !strings.Contains(joined, "文献检索方法") || !strings.Contains(joined, "主题分析") {
+		t.Errorf("应指明缺失章节名，got %+v", got)
+	}
+}
+
+func TestRule_R1_5_AllPresent_Passes(t *testing.T) {
+	if got := violationsOf(reviewRun(t, reviewFullContent), "R1.5"); len(got) != 0 {
+		t.Errorf("全部章节齐全不应报 R1.5，got %+v", got)
+	}
+}
+
+// ---- R1.6 空章节 ----
+
+func TestRule_R1_6_EmptySection(t *testing.T) {
+	// 标题下无正文（下一非空行直接是另一个标题）
+	fr := reviewRun(t, "# 标题\n# 1 引言\n# 2 结论\n正文。\n")
+	if got := violationsOf(fr, "R1.6"); len(got) != 1 {
+		t.Fatalf("空章节应报 1 次 R1.6，got %+v", got)
+	}
+	// 文末标题无正文也算空章节
+	fr = reviewRun(t, "# 标题\n# 1 引言\n正文。\n# 2 结论\n")
+	if got := violationsOf(fr, "R1.6"); len(got) != 1 {
+		t.Fatalf("文末空章节应报 R1.6，got %+v", got)
+	}
+	// 有正文的章节不报；大标题豁免
+	if got := violationsOf(reviewRun(t, "# 标题\n# 1 引言\n正文。\n"), "R1.6"); len(got) != 0 {
+		t.Errorf("正常章节不应报 R1.6，got %+v", got)
+	}
+}
+
+// ---- R1.7 空/重复标题 ----
+
+func TestRule_R1_7_EmptyHeading(t *testing.T) {
+	fr := reviewRun(t, "# 标题\n#\n# 1 引言\n正文。\n")
+	if got := violationsOf(fr, "R1.7"); len(got) == 0 {
+		t.Error("空标题（# 后无文字）应报 R1.7")
+	}
+}
+
+func TestRule_R1_7_DuplicateHeading(t *testing.T) {
+	// 重复编号：两个 1.1
+	fr := reviewRun(t, "# 标题\n# 1 引言\n## 1.1 背景\n正文。\n## 1.1 重复\n正文。\n")
+	if got := violationsOf(fr, "R1.7"); len(got) == 0 {
+		t.Error("重复编号标题应报 R1.7")
+	}
+	// 重复文字：两个"结论"
+	fr = reviewRun(t, "# 标题\n# 1 结论\n正文。\n# 2 结论\n正文。\n")
+	if got := violationsOf(fr, "R1.7"); len(got) == 0 {
+		t.Error("重复文字标题应报 R1.7")
+	}
+	// 不重复则不报
+	if got := violationsOf(reviewRun(t, "# 标题\n# 1 引言\n正文。\n# 2 结论\n正文。\n"), "R1.7"); len(got) != 0 {
+		t.Errorf("不重复标题不应报 R1.7，got %+v", got)
+	}
+}
+
+// ---- R1.8 图表交叉引用 ----
+
+func TestRule_R1_8_FigureTableXref(t *testing.T) {
+	// 引用表2但全文无表2定义 → 违规
+	fr := reviewRun(t, "# 标题\n# 1 引言\n如表2所示。\n")
+	if got := violationsOf(fr, "R1.8"); len(got) == 0 {
+		t.Error("引用不存在的表2应报 R1.8")
+	}
+	// 引用表1且表1定义存在（题注紧邻表格）→ 通过
+	ok := "# 标题\n# 1 引言\n如表1所示。\n表1 患者基线资料\n| 项目 | 值 |\n|---|---|\n| A | 1 |\n"
+	if got := violationsOf(reviewRun(t, ok), "R1.8"); len(got) != 0 {
+		t.Errorf("表1有定义不应报 R1.8，got %+v", got)
+	}
+	// 引用图1且图1定义存在（题注紧邻图片）→ 通过
+	okFig := "# 标题\n# 1 引言\n见图1。\n图1 流程图\n![流程图](fig1.png)\n"
+	if got := violationsOf(reviewRun(t, okFig), "R1.8"); len(got) != 0 {
+		t.Errorf("图1有定义不应报 R1.8，got %+v", got)
+	}
+	// 英文：Table 2 无定义 → 违规
+	frEn := runContent(t, "# Title\n# 1 Introduction\nAs shown in Table 2.\n",
+		SpecForType(PaperTypeReview, LangEN),
+		Options{Lang: "en", Mode: ModeChapter, PaperType: PaperTypeReview})
+	if got := violationsOf(frEn, "R1.8"); len(got) == 0 {
+		t.Error("英文引用不存在的 Table 2 应报 R1.8")
 	}
 }

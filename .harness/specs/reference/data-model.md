@@ -9,7 +9,7 @@ owner: litkit-core
 > Paper / PaperSummary / SearchResult / PaperSource 的 Go 类型定义与去重/入库键约定。
 > 与接口契约（JSON 形态）见 [`api.md`](api.md)；分层归属见 [`../architecture/boundaries.md`](../architecture/boundaries.md)。
 >
-> **AI-first 设计**（FR-IFACE-04）：search/lib 默认输出 PaperSummary（5 字段），
+> **AI-first 设计**（FR-IFACE-02）：search/lib 默认输出 PaperSummary（5 字段），
 > 完整 Paper 落 SQLite 由 citeKey 按需取回；`--full` 输出完整 Paper 供调试。
 
 ## 1. Paper（核心载体，最底层）
@@ -44,7 +44,7 @@ type Paper struct {
 
 > 约定：可选字段用零值（空串 / 0）表示"不可用"，JSON 输出中空串等价于 null 语义。
 
-## 1b. PaperSummary（AI agent 默认输出，FR-IFACE-04）
+## 1b. PaperSummary（AI agent 默认输出，FR-IFACE-02）
 
 ```go
 // PaperSummary 面向 AI agent 的精简论文视图。
@@ -99,7 +99,34 @@ cite_key（引用标识，FR-LIB-06）：
 ```
 
 `paper_refs` 表记录引用标记（FR-LIB-07）：`(cite_key, sentence_hash, manuscript)` 唯一，
-同句重复引用幂等；`sentence_hash` 为引用句的 sha256 前缀指纹。
+同句重复引用幂等；`sentence_hash` 为引用句的 sha256 前缀指纹；`line` 记录在原文中的行号。
+
+```go
+// PaperRef 手稿引用标记
+type PaperRef struct {
+    CiteKey      string `json:"citeKey"`      // 被引论文 cite_key
+    SentenceHash string `json:"sentenceHash"` // 引用句 sha256 前缀指纹
+    Manuscript   string `json:"manuscript"`   // 手稿文件名（相对 WORK_DIR）
+    Sentence     string `json:"sentence"`     // 引用句原文，评分输入
+    Line         int    `json:"line"`         // 在原文中的行号（1 起）
+}
+```
+
+`citation_scores` 表记录引用评分缓存（FR-LINT-08）：主键 `(cite_key, sentence_hash, model_id, prompt_version)`，
+跳过缓存行（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL。
+
+```go
+// CitationScore 引用评分缓存行
+type CitationScore struct {
+    CiteKey       string  `json:"citeKey"`       // 被引论文 cite_key
+    SentenceHash  string  `json:"sentenceHash"`  // 引用句指纹
+    ModelID       string  `json:"modelId"`       // 评分模型标识
+    PromptVersion string  `json:"promptVersion"` // 提示词版本（改 prompt 失效）
+    Score         float64 `json:"score"`         // 相关性评分 [0, 1]
+    Rationale     string  `json:"rationale"`     // 评分理由（可选）
+    ScoredAt      string  `json:"scoredAt"`      // 评分时间
+}
+```
 
 ## 5. PaperSource 接口
 

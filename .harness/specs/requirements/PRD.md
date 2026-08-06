@@ -17,7 +17,7 @@ owner: litkit-core
 
 ## 1. 项目概述
 
-litkit 是一个面向**国内学术写作场景**的论文工具包：检索文献（摘要级工作流）、生成规范引用、排版手稿、并强制约束 AI 撰写内容的学术规范性。以 **CLI** 为第一接口、**MCP Server** 为可选第二接口对外服务。
+litkit 是一个面向**国内学术写作场景**的论文工具包：检索文献（摘要级工作流）、生成规范引用、排版手稿、并强制约束 AI 撰写内容的学术规范性。以 **CLI** 为唯一接口对外服务。
 
 核心价值主张：
 
@@ -25,7 +25,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 - **摘要工作流**：基于检索返回的元数据与摘要工作，不下载 PDF、不抽取全文
 - **统一检索**：单次调用跨多个国内可达学术平台检索，结果标准化、去重合并
 - **双模式检索**：本地文献库支持 keyword（FTS5+中文分词）与语义（跨语言，本地 embedding）双模式；远程检索保持 keyword 原生排序
-- **AI 友好**：CLI 输出 JSON 可被 AI shell 调用；MCP 可被客户端发现调用
+- **AI 友好**：CLI 输出 JSON 可被 AI shell 调用
 - **撰写合规门禁**：将论文撰写规范机械化为可执行验证，AI 输出违规即验证失败
 - **免费优先**：核心源全部基于公开 API，无订阅依赖
 
@@ -45,7 +45,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 |---|---|---|
 | G1 | 统一检索 | 单次调用并发查询 ≥5 个国内可达学术源，输出含摘要，结果去重 |
 | G2 | 中文优先 | zh/en 双写作模式；GB/T 7714 支持中英文文献混排著录 |
-| G3 | AI 友好 | CLI 输出 JSON；MCP 工具可被主流客户端发现 |
+| G3 | AI 友好 | CLI 输出 JSON，可被 AI shell 直接调用 |
 | G4 | 撰写合规门禁 | 规则集按 zh/en 分设，验证失败输出三要素 |
 | G5 | 可扩展 | 新增学术源 ≤1 个适配文件 + 2 处注册 |
 | G6 | 可维护 | 静态类型检查、单元测试、覆盖率门禁机械化 |
@@ -141,7 +141,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 ### 4.3 FR-FETCH 全文获取（可选能力，非摘要工作流默认路径）
 
-> 摘要工作流仍为默认（C2）；全文获取为**按需可选能力**，由 `litkit fetch` / `fetch_paper` 显式触发，不改变检索入库行为。
+> 摘要工作流仍为默认（C2）；全文获取为**按需可选能力**，由 `litkit fetch` 显式触发，不改变检索入库行为。
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
@@ -164,7 +164,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-REF-07 | 内置 CSL 样式经 citeproc 引擎渲染 | P1 | 内置 5 个 .csl；核心样式（GB/T 7714 / APA / IEEE）优先走原生格式化器，CSL 仅用于原生未覆盖样式；`--docx` 按 style 选用 |
 | FR-REF-08 | `manuscript` 完整流水线 | P0 | Markdown → formatted.md + refs.bib + refs.ris + references.txt +（可选）docx |
 | FR-REF-09 | 未解析占位符归入 unresolved 列表 | P1 | 不静默丢失 |
-| FR-REF-10 | `export_references` 批量导出 | P1 | bibtex/ris/text 三格式 |
+| FR-REF-10 | `litkit export` 批量导出 | P1 | bibtex/ris/text 三格式 |
 | FR-REF-11 | docx 转换依赖 Pandoc，缺失时优雅降级 | P1 | 跳过 docx，其余产物正常 |
 
 ### 4.4 FR-LINT 论文撰写约束验证
@@ -178,8 +178,8 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单 checklist.md | P1 | 覆盖 M 类规则 |
 | FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；改后 `litkit init --refresh` 同步 AGENTS.md |
-| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。本期仅做接口预留与配置占位，不实现 |
-| FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令；MCP `verify_manuscript` 同步可用 |
+| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：M7 embedding 依赖（Layer 1 语义预筛）、人工标注集阈值校准 |
+| FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令 |
 | FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | AGENTS.md 携带由 manuscript-spec.yaml 渲染的精简祈使句段落（非 yaml 数据复制），AI 写稿时自动遵守，事后 verify 兜底 |
 
 ### 4.5 FR-LIB 本地文献库
@@ -187,7 +187,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
 | FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 入库元数据必须含摘要；检索结果自动 upsert 入库 |
-| FR-LIB-02 | 增删查接口（CLI + MCP） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
+| FR-LIB-02 | 增删查接口（CLI） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
 | FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**未设置 LITKIT_WORK_DIR 时拒绝执行（errNoWorkDir），不退化为 CWD，避免污染任意目录**。**测试固化目录：`e:\Codes\litkit\workspace`** |
 | FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | M1 为 LIKE 检索（标题/作者/摘要）；FTS5+分词二期 |
 | FR-LIB-05 | 本地语义检索（跨语言） | P1 | 中文 query 可命中英文文献（导入时生成 embedding）；嵌入信息可重建 |
@@ -211,10 +211,8 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-IFACE-01 | CLI 为第一接口 | P0 | 全部功能可经 CLI 完成；输出 JSON |
-| FR-IFACE-02 | MCP Server 为可选第二接口 | P0 | stdio 传输，注册全部工具；客户端可发现调用 |
-| FR-IFACE-03 | CLI 与 MCP 共享同一核心实现 | P0 | 新增功能两处注册（机械化检查防止遗漏） |
-| FR-IFACE-04 | 输出精简（AI-first） | P0 | search/lib 默认返回 PaperSummary（citeKey/title/firstAuthor/year/abstract）；`--full` 返回完整元数据。降低 AI agent 上下文噪声 |
+| FR-IFACE-01 | CLI 为唯一接口 | P0 | 全部功能可经 CLI 完成；输出 JSON |
+| FR-IFACE-02 | 输出精简（AI-first） | P0 | search/lib 默认返回 PaperSummary（citeKey/title/firstAuthor/year/abstract）；`--full` 返回完整元数据。降低 AI agent 上下文噪声 |
 
 ### 4.8 FR-CONFIG 配置
 
@@ -267,8 +265,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | ID | 需求 | 度量 |
 |---|---|---|
 | NFR-COMP-01 | 跨平台单一二进制 | Windows / macOS / Linux；无运行时依赖（goreleaser 交叉编译） |
-| NFR-COMP-02 | MCP 客户端兼容 | Claude Desktop / Trae / 任意 MCP 客户端 |
-| NFR-COMP-03 | CLI 可被 AI shell 调用 | 帮助信息自描述，退出码语义化 |
+| NFR-COMP-02 | CLI 可被 AI shell 调用 | 帮助信息自描述，退出码语义化 |
 
 ## 6. 技术栈（Go）
 
@@ -276,7 +273,6 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 |---|---|---|
 | 语言 | Go 1.26（2026-02 发布，当前最新稳定版） | 静态类型、编译期检查、单一二进制；1.27（2026-08 发布）后可评估升级 |
 | CLI | spf13/cobra v1.9+ | 子命令、自动帮助生成、shell 补全 |
-| MCP | modelcontextprotocol/go-sdk v1.7+ | 官方 Go SDK（2026-07-27），stdio 传输，支持 2026-07-28 MCP 规范 |
 | HTTP | net/http（标准库） | 零依赖；超时/重试自封装 |
 | XML/Atom | encoding/xml（标准库） | arXiv Atom / PubMed EUtils |
 | HTML | goquery（可选源） | 需 HTML 抓取的源（预留，二期） |
@@ -289,7 +285,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | docx | Pandoc（外部二进制，可选） | 缺失时仅 docx 不可用 |
 | 构建/发布 | goreleaser v2.17+ | 跨平台单一二进制（Windows/macOS/Linux） |
 
-> 版本核实日期：2026-08-02（Go 1.26 / go-sdk v1.7.0 / modernc.org/sqlite v1.54 / cobra v1.9 / goreleaser v2.17 均为当时最新稳定版）。
+> 版本核实日期：2026-08-02（Go 1.26 / modernc.org/sqlite v1.54 / cobra v1.9 / goreleaser v2.17 均为当时最新稳定版）。
 
 > Go 单一二进制分发：模板、CSL 样式文件经 go:embed 编译进二进制，用户无需安装运行时或依赖。
 
@@ -310,22 +306,7 @@ litkit lint init    [project_dir] [--force] [--type review|empirical] [--lang zh
 litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical]
 ```
 
-### 7.2 MCP 工具（关键）
-
-| 工具 | 入参 | 出参 |
-|---|---|---|
-| `search_papers` | query, sources, max_results_per_source, year | total, source_results, errors, papers[] |
-| `get_paper_metadata` | id_type(doi/pmid/arxiv/title), identifier | Paper \| null |
-| `fetch_paper` | cite_key 或 id_type+identifier | { citeKey, pdfPath, fulltext, via } |
-| `process_manuscript` | text, lang, style, generate_docx, output_dir | processed_text, reference_list, citation_map, unresolved, files{} |
-| `export_references` | papers[], format, style | success, content |
-| `lint_init` | project_dir, force, lang, paperType, journal | 初始化状态 + next_steps |
-| `verify_manuscript` | files[], lang, mode, paperType, rule, skip | issues[]（问题/修复/规则编号） |
-| `search_<source>` | 各源特定 | 同 search_papers 结构 |
-| `lib_list` / `lib_search` / `lib_rm` | source/keyword/limit / cite_key | 库内论文 / 命中 / 删除结果 |
-| `lib_stats` / `lib_path` | — | 文献库统计 / 库路径 |
-
-### 7.3 环境变量
+### 7.2 环境变量
 
 | 变量 | 必需 | 作用 |
 |---|---|---|
@@ -351,7 +332,6 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 - 平台能力矩阵与实测结果一致
 - 静态类型检查 / 单元测试 / 覆盖率门禁全部通过
 - 单元测试离线 hermetic；触网测试单独目录手动触发
-- CLI 与 MCP 全部工具行为一致（同输入同输出）
 - 文档引用无断链，文档声明与实现一致
 
 ## 10. 约束与假设
@@ -365,11 +345,10 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 - **C5 单向分层**：入口层 → 服务层 → 适配层 → 叶子层，禁止反向依赖
 - **C6 数据模型纯净**：核心数据载体不依赖任何上层模块
 - **C7 统一源抽象**：所有学术源实现统一接口
-- **C8 接口一致性**：CLI 与 MCP 共享核心实现，禁止行为分叉
-- **C9 入库元数据必须含摘要**
-- **C10 语义检索双模式（仅本地文献库）**：本地模型默认（免费优先），可选 API 提升质量；不强制外部依赖；远程检索保持 keyword
-- **C11 授权预留**：本期不实现认证/授权，仅在接口层预留扩展点
-- **C12 开源发布**：核心代码开源（Apache-2.0）
+- **C8 入库元数据必须含摘要**
+- **C9 语义检索双模式（仅本地文献库）**：本地模型默认（免费优先），可选 API 提升质量；不强制外部依赖；远程检索保持 keyword
+- **C10 授权预留**：本期不实现认证/授权，仅在接口层预留扩展点
+- **C11 开源发布**：核心代码开源（Apache-2.0）
 
 ### 10.2 假设
 

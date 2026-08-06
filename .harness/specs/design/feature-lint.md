@@ -30,7 +30,12 @@ AGENTS.md 携带由 manuscript-spec.yaml 渲染的「撰写硬性规定」段（
 - `verify`：--lang/--mode（chapter/draft/final）/--rule/--skip，三要素报错（FR-LINT-05）
 - checklist.md 人工审查清单（M 类规则）（FR-LINT-06）
 - manuscript-spec.yaml 阈值配置：字数/引用数/章节/标题层级/引用样式（FR-LINT-07）
-- 引用验证（LLM 评分，增量缓存）（FR-LINT-08，三期）
+- 引用验证（LLM 评分，增量缓存）（FR-LINT-08，已实现一期 core）
+  - scrore 接口与 ScorerEngine（多模型扇出 + 增量缓存 + 优雅降级）
+  - ExtractCiteSentences（引用句抽取，锚点前后找句末标点，跳过代码块/参考文献）
+  - CheckNumericConsistency（Layer 0 数字集合规则，免费确定性检查）
+  - citation_scores 表（SQLite 缓存，主键自然失效）
+  - `litkit verify --report citation-refs` 输出
 - 验证命令在终端运行（lint init 返回 next_steps）（FR-LINT-09）
 
 ### 不包含
@@ -50,7 +55,7 @@ AGENTS.md 携带由 manuscript-spec.yaml 渲染的「撰写硬性规定」段（
 manuscript-spec.yaml、verifier_models.json。
 
 ### 入口层
-`litkit init`（--type/--lang/--refresh/--force）+ `litkit verify`（--lang/--mode/--rule/--skip，FR-IFACE-03 两处注册）。
+`litkit init`（--type/--lang/--refresh/--force）+ `litkit verify`（--lang/--mode/--rule/--skip）。
 
 ## 关键规则/约束
 
@@ -71,6 +76,11 @@ manuscript-spec.yaml、verifier_models.json。
 - **Markdown 分段**：排除代码块/参考文献/表格后检查 Body
 - **纯函数设计**：lint.Run() 无 IO，接收文本与配置返回 Report；CLI 是薄壳（读文件 → Run → 输出 JSON）
 - **exitHint 三值**：pass / fix_and_rerun / manual_review；退出码 0=通过或仅需人工复核，1=有 A 类违规
+- **引用评分（FR-LINT-08）**：`--report citation-refs` 在规则验证后额外执行，输出包含 enabled/models/results 的 JSON 块
+  - 三层漏斗：Layer 0 数字集合规则（免费确定性）→ Layer 1 embedding 语义预筛（依赖 M7）→ Layer 2 LLM 多模型评分
+  - 禁用模式：LITKIT_VERIFY_LINT_LLM=false 或无可启用模型时静默跳过，不报错
+  - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API
+  - 优雅降级：部分模型失败（401/超时）不影响其他模型评分
 
 ## 测试要求
 
@@ -80,4 +90,3 @@ manuscript-spec.yaml、verifier_models.json。
 - [x] zh/en 各自违规样例全部被检出（FR-LINT-02/03 验收）
 - [x] 三要素完整性测试：rule_id / problem / suggestion 全有
 - [x] mode 递增范围测试：chapter/draft/final 启用规则递增
-- [x] CLI 与 MCP 一致性测试（FR-IFACE-03，M5 落地：verify_manuscript / lint_init 走内存传输验证）

@@ -12,7 +12,6 @@ owner: litkit-core
 |---|---|
 | 语言 | Go ≥ 1.26（静态类型、单一二进制、原生并发） |
 | CLI | spf13/cobra |
-| MCP | modelcontextprotocol/go-sdk（stdio 传输） |
 | HTTP / XML | net/http、encoding/xml（标准库） |
 | HTML（可选源） | goquery |
 | 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL（可选） |
@@ -29,7 +28,7 @@ owner: litkit-core
 四层单向依赖架构，详见 [`boundaries.md`](boundaries.md)：
 
 ```
-cmd/litkit · internal/mcp       入口层（参数解析与注册，不含业务逻辑）
+cmd/litkit                       入口层（参数解析与注册，不含业务逻辑）
 internal/core                   服务层（检索去重 / 本地库双模式检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 缓存 / 文献库）
 internal/sources                适配层（每个学术源一个适配器，实现 PaperSource 接口）
 internal/model · config · storage · util · embedding   叶子层（数据模型 / 配置 / SQLite / embedding / 工具）
@@ -38,7 +37,7 @@ internal/model · config · storage · util · embedding   叶子层（数据模
 ## 部署拓扑
 
 - **单一二进制分发**：模板与 CSL 样式经 `go:embed` 编译进二进制，用户无需安装运行时或依赖
-- **三个入口共享同一核心**：`litkit` CLI（第一接口）、MCP Server（可选第二接口）、未来可扩展 HTTP/Web（入口层加适配器即可）
+- **单一入口共享核心**：`litkit` CLI 为唯一入口；未来可扩展 HTTP/Web（入口层加适配器即可）
 - **数据落盘**：`WORK_DIR/litkit.db`（本地文献库，检索结果自动入库）、`WORK_DIR` 下输出文件
 
 ## 关键约束

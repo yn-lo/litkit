@@ -37,8 +37,6 @@ func run() int {
 }
 
 // newRootCmd 构造根命令并注册全部子命令。
-//
-// 子命令清单与 PRD 7.1 一致；新增功能须同步 MCP 注册（FR-IFACE-03）。
 func newRootCmd(d *deps) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "litkit",
@@ -48,7 +46,6 @@ func newRootCmd(d *deps) *cobra.Command {
 跨源检索文献（摘要工作流）、生成规范引用（GB/T 7714—2025 / APA / IEEE）、
 排版手稿、AI 撰写合规门禁。
 
-CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 输出默认 JSON，可被 AI shell 调用。`,
 		SilenceUsage: true,
 		Version:      buildinfo.Version, // 启用 --version / version 子命令（goreleaser ldflags 注入）
@@ -64,7 +61,6 @@ CLI 为第一接口（FR-IFACE-01）；MCP Server 为可选第二接口。
 		newLibraryCmd(d.store),
 		newLintCmd(d.cfg),
 		newVerifyCmd(d.cfg, d.store),
-		newMcpCmd(d),
 	)
 	return root
 }

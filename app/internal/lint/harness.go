@@ -23,7 +23,7 @@ var templatesFS embed.FS
 // 独立于 litkit 自身开发约束 .harness/；统一 litkit 在宿主目录的命名空间。
 const LitkitDir = ".litkit"
 
-// 文件权限常量（mnd：避免魔法值；0600：verifier_models.json 可能含 API key）。
+// 文件权限常量（mnd：避免魔法值）。
 const (
 	harnessDirPerm  = 0o750
 	harnessFilePerm = 0o600

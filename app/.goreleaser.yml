@@ -1,6 +1,6 @@
 # goreleaser 发布配置（在 app/ 执行：goreleaser build --snapshot / goreleaser release）。
 # 输出单一静态二进制，跨平台（linux/darwin/windows × amd64/arm64）；
-# 版本经 ldflags 注入 internal/buildinfo.Version（CLI --version / MCP serverInfo 共用）。
+# 版本经 ldflags 注入 internal/buildinfo.Version（CLI --version 共用）。
 
 project_name: litkit
 

@@ -36,3 +36,42 @@ CREATE TABLE IF NOT EXISTS papers (
 CREATE INDEX IF NOT EXISTS idx_papers_doi     ON papers(doi);
 CREATE INDEX IF NOT EXISTS idx_papers_source  ON papers(source);
 CREATE INDEX IF NOT EXISTS idx_papers_title   ON papers(title);
+
+-- paper_refs 引用标记表（FR-LIB-07）。
+-- 记录"手稿中哪句话引用哪篇文献"——由 verify 流程全量扫描手稿维护。
+-- (cite_key, sentence_hash, manuscript) 唯一：同句同引同手稿幂等。
+-- 该表是 citation_scores 的事实基础，两者解耦不共享主键。
+CREATE TABLE IF NOT EXISTS paper_refs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    cite_key      TEXT NOT NULL REFERENCES papers(cite_key) ON DELETE CASCADE,
+    sentence_hash TEXT NOT NULL,           -- sha256 前缀指纹
+    manuscript    TEXT NOT NULL,            -- 手稿文件名（相对 WORK_DIR）
+    sentence      TEXT NOT NULL DEFAULT '', -- 引用句原文
+    created_at    TEXT NOT NULL,
+    UNIQUE(cite_key, sentence_hash, manuscript)
+);
+
+CREATE INDEX IF NOT EXISTS idx_refs_manuscript  ON paper_refs(manuscript);
+CREATE INDEX IF NOT EXISTS idx_refs_cite_key    ON paper_refs(cite_key);
+
+-- citation_scores LLM 引用相关性评分缓存（FR-LINT-08）。
+-- 主键 (cite_key, sentence_hash, model_id, prompt_version) 自带失效语义：
+--   - 句子改了 → sentence_hash 变 → 自动不命中
+--   - prompt 升级 → prompt_version 变 → 自动不命中
+--   - 换模型 → model_id 变 → 自动不命中
+-- 无 TTL——库生命周期由工作目录决定（FR-LIB-03），评分结果随库文件走。
+-- 不带 manuscript 字段：同句同引同模型同 prompt 跨手稿共享评分（LLM 评分是纯函数）。
+CREATE TABLE IF NOT EXISTS citation_scores (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    cite_key       TEXT NOT NULL REFERENCES papers(cite_key) ON DELETE CASCADE,
+    sentence_hash  TEXT NOT NULL,
+    model_id       TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    score          REAL NOT NULL CHECK(score >= 0.0 AND score <= 1.0),
+    rationale      TEXT NOT NULL DEFAULT '',
+    scored_at      TEXT NOT NULL,
+    UNIQUE(cite_key, sentence_hash, model_id, prompt_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_scores_lookup ON citation_scores(cite_key, sentence_hash);
+CREATE INDEX IF NOT EXISTS idx_scores_model  ON citation_scores(model_id);

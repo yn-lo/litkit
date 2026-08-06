@@ -4,5 +4,5 @@
 // 本地开发（go build / go run）保持 "dev"。
 package buildinfo
 
-// Version 版本号；CLI 与 MCP 实现信息共用（CLAUDE.md 接口同步约束）。
+// Version 版本号。
 var Version = "dev"

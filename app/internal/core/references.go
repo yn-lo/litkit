@@ -755,8 +755,7 @@ func RISFromPapers(ps []model.Paper) string {
 	return b.String()
 }
 
-// ResolveStyle 由 lang/style 解析引用样式（CLI/MCP 共用，FR-IFACE-03）。
-// 显式 style 优先（gb7714-2025|apa|ieee）；否则按 lang：zh→gb7714-2025、en→apa；无效返回错误。
+// ResolveStyle 由 lang/style 解析引用样式。
 func ResolveStyle(lang, style string) (Style, error) {
 	if style != "" {
 		s := Style(style)

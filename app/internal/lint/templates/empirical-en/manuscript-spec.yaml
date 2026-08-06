@@ -3,6 +3,7 @@
 #
 # Writing rules (pre-instruction):
 # - Write in academic English; define abbreviations at first use
+# - Heading structure: first heading is the paper title (unnumbered); chapters numbered from 1, aligned with # level (# 1, ## 1.1, ### 1.1.1)
 # - No lists or bold in body text; no back-references or self-promotion
 # - Report statistics with consistent decimals; percentages rounded to 1 decimal
 

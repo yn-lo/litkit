@@ -11,7 +11,7 @@ owner: litkit-core
 ## 1. 检索数据流（search）
 
 ```
-CLI/MCP → core.Search(ctx, ...)
+CLI → core.Search(ctx, ...)
   1. 归一化参数（query、sources、maxResults、year）
   2. 生成缓存键 hash(query|source|params)，查缓存 → 命中即返回（零网络 IO）
   3. errgroup 并发调用各源 adapter.Search(ctx, ...)

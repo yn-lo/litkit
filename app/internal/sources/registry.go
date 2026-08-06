@@ -9,9 +9,7 @@ import (
 	"litkit/internal/util/ratelimit"
 )
 
-// Registry 源注册表（FR-SRC-18、FR-IFACE-03）。
-//
-// CLI 与 MCP 共用同一注册表实例，保证接口一致性（C8）。
+// Registry 源注册表（FR-SRC-18）。
 type Registry struct {
 	mu      sync.RWMutex
 	sources map[string]PaperSource
@@ -85,8 +83,7 @@ func newHTTPClient(timeoutMS, retries int) *httpclient.Client {
 // NewDefaultRegistry 按配置创建并填充默认源注册表（FR-SRC-18）。
 //
 // 一期默认源（platform-matrix.md）：arxiv、pubmed、biorxiv、medrxiv、
-// semantic_scholar、openalex。新增源在此登记，CLI 与 MCP 共用此构造
-// 以保证接口同步（FR-IFACE-03）。
+// semantic_scholar、openalex。新增源在此登记。
 //
 // 限速取合规保守值（platform-matrix.md），避免触发上游 429（NFR-PERF-04）。
 func NewDefaultRegistry(cfg *config.Config) *Registry {

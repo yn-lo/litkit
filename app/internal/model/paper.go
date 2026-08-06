@@ -82,3 +82,26 @@ func (p Paper) ComputeID() string {
 
 // HasAbstract 报告该论文是否携带摘要（空串视为无摘要）。
 func (p Paper) HasAbstract() bool { return strings.TrimSpace(p.Abstract) != "" }
+
+// PaperRef 手稿引用标记（FR-LIB-07）。
+// 记录"哪句话引用哪篇文献"——verify 流程全量扫描手稿落此表，
+// LLM 评分以 sentence_hash 为键取用。
+type PaperRef struct {
+	CiteKey      string `json:"citeKey"`      // 被引论文 cite_key
+	SentenceHash string `json:"sentenceHash"` // 引用句 sha256 前缀指纹
+	Manuscript   string `json:"manuscript"`   // 手稿文件名（相对 WORK_DIR）
+	Sentence     string `json:"sentence"`     // 引用句原文，评分输入
+	Line         int    `json:"line"`         // 在原文中的行号（1 起）
+}
+
+// CitationScore LLM 引用相关性评分结果（FR-LINT-08）。
+// 主键天然适配"增量缓存"：sentence_hash 变了（句子改了）→ 自动不命中；
+// prompt_version 变了（Prompt 升级）→ 自动不命中；model_id 变了 → 自动不命中。
+type CitationScore struct {
+	CiteKey       string  `json:"citeKey"`
+	SentenceHash  string  `json:"sentenceHash"`
+	ModelID       string  `json:"modelId"`
+	PromptVersion string  `json:"promptVersion"`
+	Score         float64 `json:"score"`     // 0.0 ~ 1.0
+	Rationale     string  `json:"rationale"` // LLM 评分理由
+}

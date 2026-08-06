@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -27,6 +28,8 @@ const (
 	DefaultRecentYears       = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
 	DefaultSearchMode        = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
 	DefaultSearchTimeoutMS   = 60000  // 默认整体检索超时（含全部源并发 + 重试）
+	DefaultLLMTimeoutMS      = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
+	DefaultVerifyLLMEnabled  = false  // LLM 评分默认关闭（避免意外远程调用）
 )
 
 // Config litkit 运行配置。全部经环境变量读取（FR-CONFIG-01）。
@@ -48,6 +51,10 @@ type Config struct {
 	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
 	SciHubURL             string // Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03）
 	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads）
+	LLMAPIKey             string // LLM 评分 API key（FR-LINT-08）
+	LLMBaseURL            string // LLM API base URL（自托管 / 代理 endpoint）
+	LLMTimeoutMS          int    // LLM 单次评分超时，默认 30000
+	VerifyLLMEnabled      bool   // LLM 评分开关，默认关闭（LITKIT_VERIFY_LINT_LLM）
 }
 
 // Load 发现并加载 .env，返回填充好的 Config。
@@ -120,6 +127,10 @@ func loadFrom(envFile string) (*Config, error) {
 		UnpaywallEmail:        os.Getenv("LITKIT_UNPAYWALL_EMAIL"),
 		SciHubURL:             getenvDefault("LITKIT_SCI_HUB_URL", "https://sci-hub.se"),
 		FetchDownloadDir:      os.Getenv("LITKIT_FETCH_DOWNLOAD_DIR"),
+		LLMAPIKey:             os.Getenv("LITKIT_LLM_API_KEY"),
+		LLMBaseURL:            os.Getenv("LITKIT_LLM_BASE_URL"),
+		LLMTimeoutMS:          getenvInt("LITKIT_LLM_TIMEOUT_MS", DefaultLLMTimeoutMS),
+		VerifyLLMEnabled:      getenvBool("LITKIT_VERIFY_LINT_LLM", DefaultVerifyLLMEnabled),
 	}
 	// 负数/零值下界钳制：负重试次数会使 httpclient 重试循环不执行而返回 nil 响应；
 	// 非正超时会退化为无超时
@@ -162,4 +173,17 @@ func getenvInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func getenvBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

@@ -28,7 +28,7 @@ const (
 	ModeFinal   Mode = "final"
 )
 
-// ruleIDHeadingOrder R1.3 标题编号顺序规则的 ID。
+// ruleIDHeadingOrder R1.3 标题规范规则的 ID。
 const ruleIDHeadingOrder = "R1.3"
 
 // P 值格式阈值（R2.1）与引用密度阈值（R5.3）。
@@ -44,6 +44,7 @@ const (
 	percent          = 100.0
 
 	// 高频规则 ID（goconst）
+	ruleR17        = "R1.7"
 	ruleR21        = "R2.1"
 	ruleCiteExists = "R5.6" // 引用存在性校验（[@citeKey] 须在本地库中）
 )
@@ -92,6 +93,7 @@ var (
 	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                   // [数字]
 	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                      // 标点后紧跟引用（违规）
 	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                               // 引用占位符 [@citeKey]
+	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)          // 图表引用/题注
 	redundantRes    = []*regexp.Regexp{
 		regexp.MustCompile(`进行`),
 		regexp.MustCompile(`通过.*使`),
@@ -272,18 +274,18 @@ func checkR12(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR13 标题编号：强制编号（require_numbering）+ 层级对齐 + 顺序排列。
+// checkR13 标题审查：大标题存在性 + 强制编号（require_numbering）+ 层级对齐 + 顺序排列。
 //
-// 三层判定：
-//   - 无编号标题且 spec 要求编号 → 违规（FR-LINT 标题编号）
+// 判定模型：
+//   - 第一个标题是论文大标题，必须无编号；首个标题带编号或全文无标题 → 缺大标题
+//   - 大标题之后的标题须带编号（require_numbering 开启时），且从 1 开始
 //   - 有编号：markdown # 数须与编号深度一致（# 1、## 1.1、### 1.1.1）
 //   - 有编号：编号递增、不跳号、层级挂接合法（编号栈）
-//
-// 违规情形：未编号、层级错位、跳号、倒序、层级错乱、重复。
 func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 	var vs []Violation
 	prev := []int{}
-	first := true
+	firstHeading := true  // 尚未处理第一个标题
+	firstNumbered := true // 尚未处理第一个编号标题
 	requireNum := spec.Heading.NumberingRequired()
 	for i, ln := range src.Body {
 		t := strings.TrimSpace(ln)
@@ -297,7 +299,12 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 		_, num, _ := headingLevel(t)
 		line := src.bodyIdx[i]
 		if num == "" {
-			// 无编号：强制编号时违规（不参与顺序栈）
+			if firstHeading {
+				// 首个无编号标题 = 大标题，合法，不参与编号栈
+				firstHeading = false
+				continue
+			}
+			// 大标题之后的无编号标题：强制编号时违规（不参与顺序栈）
 			if requireNum {
 				vs = append(vs, Violation{
 					RuleID: ruleIDHeadingOrder, Line: line,
@@ -307,6 +314,15 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 			}
 			continue
 		}
+		if firstHeading {
+			// 首个标题带编号 → 缺大标题
+			vs = append(vs, Violation{
+				RuleID: ruleIDHeadingOrder, Line: line,
+				Problem:    "缺少大标题：首个标题带编号",
+				Suggestion: "根据文章内容设计一个合适的大标题置于文首（不编号），章节从 1 开始编号",
+			})
+		}
+		firstHeading = false
 		parts := parseHeadingNum(num)
 		// 层级对齐：markdown # 数 == 编号深度
 		if hashes != len(parts) {
@@ -316,7 +332,7 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 				Suggestion: "编号深度应与 # 数一致：# 1、## 1.1、### 1.1.1",
 			})
 		}
-		if first {
+		if firstNumbered {
 			if len(parts) > 1 {
 				vs = append(vs, Violation{
 					RuleID: ruleIDHeadingOrder, Line: line,
@@ -326,20 +342,28 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 			}
 			if parts[0] != 1 {
 				vs = append(vs, Violation{
-					RuleID: "R1.3", Line: line,
+					RuleID: ruleIDHeadingOrder, Line: line,
 					Problem:    fmt.Sprintf("顶层章节编号应从 1 开始，got %d", parts[0]),
 					Suggestion: "顶层章节编号从 1 开始递增",
 				})
 			}
-			first = false
+			firstNumbered = false
 		} else if !validNextHeading(prev, parts) {
 			vs = append(vs, Violation{
-				RuleID: "R1.3", Line: line,
+				RuleID: ruleIDHeadingOrder, Line: line,
 				Problem:    fmt.Sprintf("标题编号 %s 顺序异常（上一编号 %s）", joinHeadingNum(parts), joinHeadingNum(prev)),
 				Suggestion: "编号须按层级递增排列：同级顺延、子级在父级下从 1 开始",
 			})
 		}
 		prev = parts
+	}
+	if firstHeading {
+		// 全文无任何标题
+		vs = append(vs, Violation{
+			RuleID: ruleIDHeadingOrder, Line: 1,
+			Problem:    "缺少大标题：全文未找到任何标题",
+			Suggestion: "根据文章内容设计一个合适的大标题置于文首（不编号）",
+		})
 	}
 	return vs
 }
@@ -396,6 +420,201 @@ func validNextHeading(prev, parts []int) bool {
 		}
 	}
 	return false
+}
+
+// checkR15 章节完整性：spec.Sections 每项须出现在某个标题文字中（去编号、忽略大小写）。
+//
+// 缺口防护：AI 漏写整章时，编号/层级检查均无法发现，需与章节清单显式比对。
+func checkR15(src *Source, spec *ManuscriptSpec) []Violation {
+	if len(spec.Sections) == 0 {
+		return nil
+	}
+	var headings []string
+	for _, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		if _, _, text := headingLevel(t); text != "" {
+			headings = append(headings, strings.ToLower(text))
+		}
+	}
+	var vs []Violation
+	for _, sec := range spec.Sections {
+		secLower := strings.ToLower(sec)
+		found := false
+		for _, h := range headings {
+			if strings.Contains(h, secLower) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			vs = append(vs, Violation{
+				RuleID:     "R1.5",
+				Line:       1,
+				Problem:    "缺少章节：" + sec,
+				Suggestion: "按 manuscript-spec.yaml 的 sections 清单补齐该章节",
+			})
+		}
+	}
+	return vs
+}
+
+// checkR16 空章节：编号标题到下一个标题之间无任何内容违规。
+//
+// 大标题（首个无编号标题）豁免；判定基于原始 Lines，章节内的表格/图片行算有内容。
+func checkR16(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	first := true
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		_, num, _ := headingLevel(t)
+		if first {
+			first = false
+			if num == "" {
+				continue // 大标题豁免
+			}
+		}
+		if num == "" {
+			continue // 未编号标题由 R1.3 处理
+		}
+		start := src.bodyIdx[i]   // 标题行号（1 起）
+		end := len(src.Lines) + 1 // 下一标题行号；无则视为文件末尾后一行
+		for j := i + 1; j < len(src.Body); j++ {
+			if isHeading(strings.TrimSpace(src.Body[j])) {
+				end = src.bodyIdx[j]
+				break
+			}
+		}
+		hasContent := false
+		for k := start; k < end-1; k++ { // 0-based：标题行之后到下一标题之前
+			if strings.TrimSpace(src.Lines[k]) != "" {
+				hasContent = true
+				break
+			}
+		}
+		if !hasContent {
+			vs = append(vs, Violation{
+				RuleID:     "R1.6",
+				Line:       start,
+				Problem:    "标题下无正文内容",
+				Suggestion: "补充该章节正文，或删除空标题",
+			})
+		}
+	}
+	return vs
+}
+
+// checkR17 空/重复标题：# 后无文字违规；编号或文字重复在第二次出现处违规。
+func checkR17(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	seenNum := map[string]int{}  // 编号 → 首现行号
+	seenText := map[string]int{} // 文字（小写）→ 首现行号
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		_, num, text := headingLevel(t)
+		line := src.bodyIdx[i]
+		if num == "" && text == "" {
+			vs = append(vs, Violation{
+				RuleID:     ruleR17,
+				Line:       line,
+				Problem:    "空标题（# 后无文字）",
+				Suggestion: "删除空标题或补充标题文字",
+			})
+			continue
+		}
+		if num != "" {
+			if prevLine, dup := seenNum[num]; dup {
+				vs = append(vs, Violation{
+					RuleID:     ruleR17,
+					Line:       line,
+					Problem:    fmt.Sprintf("标题编号 %s 重复（首次出现在第 %d 行）", num, prevLine),
+					Suggestion: "修正编号，保证唯一且按层级递增",
+				})
+			} else {
+				seenNum[num] = line
+			}
+		}
+		if text != "" {
+			key := strings.ToLower(text)
+			if prevLine, dup := seenText[key]; dup {
+				vs = append(vs, Violation{
+					RuleID:     ruleR17,
+					Line:       line,
+					Problem:    fmt.Sprintf("标题文字“%s”重复（首次出现在第 %d 行）", text, prevLine),
+					Suggestion: "修改标题文字，避免重复",
+				})
+			} else {
+				seenText[key] = line
+			}
+		}
+	}
+	return vs
+}
+
+// figTableKey 归一化图表键：表/table → tableN，图/figure → figureN。
+func figTableKey(kind, num string) string {
+	switch strings.ToLower(kind) {
+	case "表", "table":
+		return "table" + num
+	default:
+		return "figure" + num
+	}
+}
+
+// nearTableOrImage 判断第 i 行 ±2 行内是否有 markdown 表格行（| 开头）或图片（![）。
+func nearTableOrImage(lines []string, i int) bool {
+	for j := i - 2; j <= i+2 && j < len(lines); j++ {
+		if j < 0 {
+			continue
+		}
+		t := strings.TrimSpace(lines[j])
+		if strings.HasPrefix(t, "|") || strings.Contains(t, "![") {
+			return true
+		}
+	}
+	return false
+}
+
+// checkR18 图表交叉引用：正文引用图/表 N 但全文找不到题注定义违规。
+//
+// 题注定义 = 题注行（图N/表N/Figure N/Table N）满足之一：标题行、含图片 ![、
+// 或 ±2 行内紧邻表格行（| 开头）。普通行文中的"如表1所示"不算定义。
+func checkR18(src *Source, _ *ManuscriptSpec) []Violation {
+	defined := map[string]bool{}
+	for i, ln := range src.Lines {
+		t := strings.TrimSpace(ln)
+		for _, m := range figTableRefRe.FindAllStringSubmatch(t, -1) {
+			if isHeading(t) || strings.Contains(t, "![") || nearTableOrImage(src.Lines, i) {
+				defined[figTableKey(m[1], m[2])] = true
+			}
+		}
+	}
+	var vs []Violation
+	reported := map[string]bool{}
+	for i, ln := range src.Body {
+		for _, m := range figTableRefRe.FindAllStringSubmatch(ln, -1) {
+			key := figTableKey(m[1], m[2])
+			if defined[key] || reported[key] {
+				continue
+			}
+			reported[key] = true
+			vs = append(vs, Violation{
+				RuleID:     "R1.8",
+				Line:       src.bodyIdx[i],
+				Problem:    fmt.Sprintf("引用了%s%s，但全文未找到对应题注定义", m[1], m[2]),
+				Suggestion: "补充该图表及题注（题注须紧邻表格或图片），或修正引用编号",
+			})
+		}
+	}
+	return vs
 }
 
 // checkR14 正文禁止加粗：Body 行含 **...** 违规（表格已在解析阶段排除）。
@@ -767,8 +986,12 @@ func AllRules() []Rule {
 		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
 		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
 		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
-		{ID: ruleIDHeadingOrder, Name: "标题编号顺序", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
+		{ID: ruleIDHeadingOrder, Name: "标题规范", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
 		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
+		{ID: "R1.5", Name: "章节完整性", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR15},
+		{ID: "R1.6", Name: "空章节", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR16},
+		{ID: ruleR17, Name: "空/重复标题", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR17},
+		{ID: "R1.8", Name: "图表交叉引用", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR18},
 		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
 		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
 		{ID: "R3.2", Name: "中文引号", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},

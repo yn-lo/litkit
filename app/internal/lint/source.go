@@ -73,3 +73,13 @@ func ParseSource(path string) (*Source, error) {
 	}
 	return src, nil
 }
+
+// BodyContent 返回以 \n 连接的正文文本（供 core.ExtractCiteSentences 使用）。
+func (s *Source) BodyContent() string {
+	return strings.Join(s.Body, "\n")
+}
+
+// BodyLineNumbers 返回 Body 各行对应的原始行号。
+func (s *Source) BodyLineNumbers() []int {
+	return s.bodyIdx
+}

@@ -32,7 +32,7 @@ func paper(title, doi string, authors ...string) model.Paper {
 
 func TestOpen_CreatesTables(t *testing.T) {
 	s := newTestStore(t)
-	for _, tbl := range []string{"papers"} {
+	for _, tbl := range []string{"papers", "paper_refs", "citation_scores"} {
 		var n int
 		err := s.db.QueryRow(
 			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tbl,
@@ -549,5 +549,198 @@ func TestStats_Counts(t *testing.T) {
 	}
 	if st.DBPath == "" {
 		t.Fatal("Stats 应含 DBPath")
+	}
+}
+
+// ---- paper_refs 引用标记 ----
+
+func TestAddRef_InsertsIdempotent(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("RefTest", "10.1/ref"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+
+	ref := model.PaperRef{CiteKey: k, SentenceHash: "abc123", Manuscript: "ch1.md", Sentence: "该方法[@Kxq]有效"}
+	if err := s.AddRef(ref); err != nil {
+		t.Fatalf("AddRef: %v", err)
+	}
+	// 同句幂等
+	if err := s.AddRef(ref); err != nil {
+		t.Fatalf("AddRef 二次: %v", err)
+	}
+
+	refs, err := s.GetRefsByManuscript("ch1.md")
+	if err != nil {
+		t.Fatalf("GetRefsByManuscript: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("应只有 1 条引用标记，got %d", len(refs))
+	}
+	if refs[0].CiteKey != k || refs[0].SentenceHash != "abc123" {
+		t.Fatalf("引用标记内容 round-trip 不一致，got %+v", refs[0])
+	}
+}
+
+func TestAddRef_MultipleManuscripts(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("MultiMs", "10.1/multi"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	// 同一句 hash 出现在不同手稿 → 两条独立记录
+	if err := s.AddRef(model.PaperRef{CiteKey: k, SentenceHash: "h1", Manuscript: "a.md", Sentence: "t1"}); err != nil {
+		t.Fatalf("AddRef a.md: %v", err)
+	}
+	if err := s.AddRef(model.PaperRef{CiteKey: k, SentenceHash: "h1", Manuscript: "b.md", Sentence: "t1"}); err != nil {
+		t.Fatalf("AddRef b.md: %v", err)
+	}
+
+	all, err := s.GetRefsByCiteKey(k)
+	if err != nil {
+		t.Fatalf("GetRefsByCiteKey: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("两个手稿应有 2 条引用标记，got %d", len(all))
+	}
+}
+
+func TestRemoveRefsByManuscript_Scoped(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("RemoveMs", "10.1/rm"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	if err := s.AddRef(model.PaperRef{CiteKey: k, SentenceHash: "h1", Manuscript: "a.md", Sentence: "t1"}); err != nil {
+		t.Fatalf("AddRef a.md: %v", err)
+	}
+	if err := s.AddRef(model.PaperRef{CiteKey: k, SentenceHash: "h2", Manuscript: "b.md", Sentence: "t2"}); err != nil {
+		t.Fatalf("AddRef b.md: %v", err)
+	}
+	if err := s.RemoveRefsByManuscript("a.md"); err != nil {
+		t.Fatalf("RemoveRefsByManuscript: %v", err)
+	}
+	refsA, _ := s.GetRefsByManuscript("a.md")
+	if len(refsA) != 0 {
+		t.Fatal("a.md 的引用标记应被删除")
+	}
+	refsB, _ := s.GetRefsByManuscript("b.md")
+	if len(refsB) != 1 {
+		t.Fatal("b.md 的引用标记应保留")
+	}
+}
+
+func TestGetRefsByCiteKey_Empty(t *testing.T) {
+	s := newTestStore(t)
+	refs, err := s.GetRefsByCiteKey("zzz")
+	if err != nil {
+		t.Fatalf("GetRefsByCiteKey: %v", err)
+	}
+	if len(refs) != 0 {
+		t.Fatalf("不存在的 cite_key 应返回空列表，got %d", len(refs))
+	}
+}
+
+// ---- citation_scores 评分缓存 ----
+
+func TestGetCitationScore_MissingReturnsNil(t *testing.T) {
+	s := newTestStore(t)
+	cs, err := s.GetCitationScore("zzz", "hash", "gpt-4o", "v1")
+	if err != nil {
+		t.Fatalf("GetCitationScore: %v", err)
+	}
+	if cs != nil {
+		t.Fatal("未命中应返回 nil")
+	}
+}
+
+func TestSaveAndGetCitationScore(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("ScoreTest", "10.1/score"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+
+	cs := model.CitationScore{
+		CiteKey:       k,
+		SentenceHash:  "hash1",
+		ModelID:       "gpt-4o",
+		PromptVersion: "v1",
+		Score:         0.85,
+		Rationale:     "该方法与摘要一致",
+	}
+	if err := s.SaveCitationScore(cs); err != nil {
+		t.Fatalf("SaveCitationScore: %v", err)
+	}
+
+	got, err := s.GetCitationScore(k, "hash1", "gpt-4o", "v1")
+	if err != nil {
+		t.Fatalf("GetCitationScore: %v", err)
+	}
+	if got == nil {
+		t.Fatal("应命中评分缓存")
+	}
+	if got.Score != 0.85 || got.Rationale != "该方法与摘要一致" {
+		t.Fatalf("评分 round-trip 不一致，got %+v", got)
+	}
+}
+
+func TestCitationScore_KeyInvalidates(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("KeyInv", "10.1/keyinv"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+
+	cs := model.CitationScore{CiteKey: k, SentenceHash: "h1", ModelID: "m1", PromptVersion: "v1", Score: 0.9}
+	if err := s.SaveCitationScore(cs); err != nil {
+		t.Fatalf("SaveCitationScore: %v", err)
+	}
+
+	// 同句同模型不同 prompt_version → 不命中
+	miss, err := s.GetCitationScore(k, "h1", "m1", "v2")
+	if err != nil {
+		t.Fatalf("GetCitationScore: %v", err)
+	}
+	if miss != nil {
+		t.Fatal("prompt_version 不同应不命中")
+	}
+
+	// 同句同 prompt 不同模型 → 不命中
+	miss2, err := s.GetCitationScore(k, "h1", "m2", "v1")
+	if err != nil {
+		t.Fatalf("GetCitationScore: %v", err)
+	}
+	if miss2 != nil {
+		t.Fatal("model_id 不同应不命中")
+	}
+}
+
+// ---- 级联删除 ----
+
+func TestForget_CascadesToRefsAndScores(t *testing.T) {
+	s := newTestStore(t)
+	k, _, err := s.UpsertPaper(paper("CascadeTest", "10.1/cascade"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	if err := s.AddRef(model.PaperRef{CiteKey: k, SentenceHash: "h1", Manuscript: "ms.md", Sentence: "t"}); err != nil {
+		t.Fatalf("AddRef: %v", err)
+	}
+	if err := s.SaveCitationScore(model.CitationScore{CiteKey: k, SentenceHash: "h1", ModelID: "m1", PromptVersion: "v1", Score: 0.5}); err != nil {
+		t.Fatalf("SaveCitationScore: %v", err)
+	}
+
+	if _, err := s.Forget(k); err != nil {
+		t.Fatalf("Forget: %v", err)
+	}
+
+	refs, _ := s.GetRefsByCiteKey(k)
+	if len(refs) != 0 {
+		t.Fatal("论文删除后 paper_refs 应级联删除")
+	}
+	cs, _ := s.GetCitationScore(k, "h1", "m1", "v1")
+	if cs != nil {
+		t.Fatal("论文删除后 citation_scores 应级联删除")
 	}
 }

@@ -181,3 +181,52 @@ func TestLoad_secretsFromEnv(t *testing.T) {
 		t.Errorf("SemanticScholarAPIKey 读取失败：got %q", cfg.SemanticScholarAPIKey)
 	}
 }
+
+func TestLoad_llmConfig(t *testing.T) {
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_LLM_API_KEY", "sk-abc123")
+	t.Setenv("LITKIT_LLM_BASE_URL", "https://llm.example.com/v1")
+	t.Setenv("LITKIT_LLM_TIMEOUT_MS", "60000")
+	t.Setenv("LITKIT_VERIFY_LINT_LLM", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LLMAPIKey != "sk-abc123" {
+		t.Errorf("LLMAPIKey 读取失败：got %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMBaseURL != "https://llm.example.com/v1" {
+		t.Errorf("LLMBaseURL 读取失败：got %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMTimeoutMS != 60000 {
+		t.Errorf("LLMTimeoutMS 应为 60000，got %d", cfg.LLMTimeoutMS)
+	}
+	if !cfg.VerifyLLMEnabled {
+		t.Errorf("VerifyLLMEnabled 应为 true")
+	}
+}
+
+func TestLoad_llmDefaults(t *testing.T) {
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_LLM_API_KEY", "")
+	t.Setenv("LITKIT_LLM_BASE_URL", "")
+	t.Setenv("LITKIT_LLM_TIMEOUT_MS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LLMAPIKey != "" {
+		t.Errorf("LLMAPIKey 默认应为空，got %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMBaseURL != "" {
+		t.Errorf("LLMBaseURL 默认应为空，got %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMTimeoutMS != 30000 {
+		t.Errorf("LLMTimeoutMS 默认应为 30000，got %d", cfg.LLMTimeoutMS)
+	}
+	if cfg.VerifyLLMEnabled {
+		t.Errorf("VerifyLLMEnabled 默认应为 false")
+	}
+}

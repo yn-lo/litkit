@@ -1,4 +1,32 @@
 {
-  "_comment": "LLM 引用相关性评分配置（FR-LINT-08，三期）。一期留空；接入模型后在此配置模型 API。",
-  "models": []
+  "_comment": "LLM 引用相关性评分模型清单（FR-LINT-08）。",
+  "_comment2": "API key 不进此文件，每模型按 model_id 去 config 查 LITKIT_LLM_API_KEY。",
+  "prompt_version": "v1",
+  "consensus_threshold": 0.7,
+  "models": [
+    {
+      "id": "gpt-4o",
+      "provider": "openai",
+      "enabled": false,
+      "weight": 1.0
+    },
+    {
+      "id": "deepseek-chat",
+      "provider": "deepseek",
+      "enabled": false,
+      "weight": 1.0
+    },
+    {
+      "id": "qwen-plus",
+      "provider": "alibaba",
+      "enabled": false,
+      "weight": 1.0
+    }
+  ],
+  "scoring": {
+    "min_models": 2,
+    "agreement_ratio": 0.67,
+    "low_score_threshold": 0.3,
+    "medium_score_threshold": 0.6
+  }
 }

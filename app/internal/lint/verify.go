@@ -20,10 +20,31 @@ type Options struct {
 
 // Report 多文件验证汇总。
 type Report struct {
-	Files           []FileReport `json:"files"`
-	Passed          bool         `json:"passed"`
-	ExitHint        string       `json:"exitHint"` // "pass" / "fix_and_rerun" / "manual_review"
-	ManualChecklist []string     `json:"manualChecklist,omitempty"`
+	Files           []FileReport             `json:"files"`
+	Passed          bool                     `json:"passed"`
+	ExitHint        string                   `json:"exitHint"` // "pass" / "fix_and_rerun" / "manual_review"
+	ManualChecklist []string                 `json:"manualChecklist,omitempty"`
+	CitationRefs    *CitationRelevanceReport `json:"citationRefs,omitempty"` // 引用评分报告（可选）
+}
+
+// CitationRelevanceReport 引用相关性评分汇总。
+type CitationRelevanceReport struct {
+	Enabled bool                    `json:"enabled"` // 是否启用 LLM 评分
+	Models  []string                `json:"models,omitempty"`
+	Results []CitationRelevanceItem `json:"results,omitempty"`
+}
+
+// CitationRelevanceItem 单条引用的相关性评分结果。
+type CitationRelevanceItem struct {
+	File         string  `json:"file"`
+	Line         int     `json:"line"`
+	CiteKey      string  `json:"citeKey"`
+	Sentence     string  `json:"sentence"`
+	MeanScore    float64 `json:"meanScore"`
+	Consensus    float64 `json:"consensus"`
+	Cached       bool    `json:"cached"`
+	LowScore     bool    `json:"lowScore"`     // meanScore < 0.3}
+	LowConsensus bool    `json:"lowConsensus"` // consensus < 0.5
 }
 
 // FileReport 单文件验证结果。

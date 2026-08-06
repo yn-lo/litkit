@@ -75,7 +75,7 @@ jobs:
           cd .harness/constraints/arch
           go run .
 
-      - name: Interface consistency (CLI vs MCP vs api.md, FR-IFACE-03)
+      - name: Interface consistency (CLI vs api.md)
         run: |
           cd .harness/constraints/sync
           go run .

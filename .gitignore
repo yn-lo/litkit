@@ -37,8 +37,5 @@ Thumbs.db
 paper_toolkit_mcp/
 app/coverage.out
 
-#MCP
-app/internal/mcp/outputs
-
 # 测试工作目录（spec 固化：e:\Codes\litkit\workspace）
 workspace/
