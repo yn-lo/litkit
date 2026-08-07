@@ -48,6 +48,7 @@ cd app && goreleaser build --snapshot
 - **摘要工作流**：不下载 PDF、不抽取全文；检索源必须提供摘要（无摘要源不纳入，FR-SRC-19），检索结果无摘要论文默认过滤（FR-SEARCH-03）；入库元数据必须含摘要
 - **不可逆操作**：禁止 force push 主分支
 - **输出**：代码中严禁使用 emoji 提示
+- **测试目录**：如果要进行真实环境的测试，默认将.exe文件放在本项目workspace目录
 
 # Ponytail, lazy senior dev mode
 

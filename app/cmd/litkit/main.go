@@ -6,6 +6,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -29,8 +30,10 @@ func run() int {
 	if err := newRootCmd(d).Execute(); err != nil {
 		var pe *paramError
 		if errors.As(err, &pe) {
+			fmt.Fprintln(os.Stderr, "错误:", pe.msg)
 			return 2
 		}
+		fmt.Fprintln(os.Stderr, "错误:", err.Error())
 		return 1
 	}
 	return 0
@@ -47,8 +50,13 @@ func newRootCmd(d *deps) *cobra.Command {
 排版手稿、AI 撰写合规门禁。
 
 输出默认 JSON，可被 AI shell 调用。`,
-		SilenceUsage: true,
-		Version:      buildinfo.Version, // 启用 --version / version 子命令（goreleaser ldflags 注入）
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Version:       buildinfo.Version,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cmd.Println(cmd.UsageString())
+			return &paramError{msg: "请使用 --help 查看使用方法"}
+		},
 	}
 	root.AddCommand(
 		newInitCmd(d.cfg),
