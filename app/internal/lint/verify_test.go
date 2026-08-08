@@ -448,6 +448,42 @@ func TestRun_skipAndOnly(t *testing.T) {
 	}
 }
 
+func TestRun_checkAndSkipCheck(t *testing.T) {
+	content := "# 标题：冒号\n\n【注意】内容。\n"
+	// --check=todo：仅跑 todo 类别（R9.1）
+	opts := zhChapter()
+	opts.OnlyCategories = []Category{CatTodo}
+	fr := runContent(t, content, DefaultSpec(), opts)
+	if got := violationsOf(fr, "R9.1"); len(got) == 0 {
+		t.Error("--check=todo 应保留 R9.1")
+	}
+	if got := violationsOf(fr, "R7.1"); len(got) != 0 {
+		t.Errorf("--check=todo 应排除 R7.1（heading 类别），got %v", got)
+	}
+	// --skip-check=todo：跳过 todo 类别
+	opts = zhChapter()
+	opts.SkipCategories = []Category{CatTodo}
+	fr = runContent(t, content, DefaultSpec(), opts)
+	if got := violationsOf(fr, "R9.1"); len(got) != 0 {
+		t.Errorf("--skip-check=todo 应排除 R9.1，got %v", got)
+	}
+	if got := violationsOf(fr, "R7.1"); len(got) == 0 {
+		t.Error("--skip-check=todo 不应影响 R7.1")
+	}
+	// --check=citation,word_counts：仅跑引用+字数类别
+	opts = zhFinal()
+	opts.OnlyCategories = []Category{CatCitation, CatWordCounts}
+	fr = runContent(t, "短文。\n", DefaultSpec(), opts)
+	// R8.1（word_counts）应跑
+	if got := violationsOf(fr, "R8.1"); len(got) == 0 {
+		t.Error("--check=citation,word_counts 应保留 R8.1")
+	}
+	// R9.1（todo）不应跑
+	if got := violationsOf(fr, "R9.1"); len(got) != 0 {
+		t.Errorf("--check=citation,word_counts 应排除 R9.1，got %v", got)
+	}
+}
+
 func TestRunFiles_exitHint(t *testing.T) {
 	dir := t.TempDir()
 	// A 类违规文件

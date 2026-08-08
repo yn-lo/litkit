@@ -51,8 +51,8 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
 		t.Fatalf("initWorkdir: %v", err)
 	}
-	// .env / AGENTS.md / litkit.db
-	for _, name := range []string{".env", "AGENTS.md", "litkit.db"} {
+	// .env / .litkit/AGENTS.md / .litkit/litkit.db
+	for _, name := range []string{".env", ".litkit/AGENTS.md", ".litkit/litkit.db"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("应生成 %s：%v", name, err)
 		}
@@ -67,12 +67,12 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		}
 	}
 	// AGENTS.md 应含检索命令 + 论文类型清单
-	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".litkit", "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
 	got := string(data)
-	for _, want := range []string{"litkit search", "--mode", "litkit verify", "ls .litkit/", "不写摘要"} {
+	for _, want := range []string{"litkit search", "--mode", "litkit verify", "--check", "ls .litkit/", "不写摘要"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}

@@ -32,6 +32,9 @@ func newVerifyCmd(cfg *config.Config, store *storage.Store) *cobra.Command {
 对 Markdown 文稿执行规则检查，输出 JSON 报告。
 规则按模式递增启用：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文）。
 
+使用 --check 可仅运行指定检查类别（逗号分隔），如 --check citation,word_counts。
+可用类别：language, structure, statistics, punctuation, style, citation, heading, boast_words, word_counts, todo
+
 使用 --report citation-refs 可额外输出引用相关性评分（需 LITKIT_VERIFY_LINT_LLM=true）。
 
 退出码：0=通过或仅需人工复核；1=有 A 类违规需修复。
@@ -46,6 +49,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			paperType, _ := cmd.Flags().GetString("type")
 			ruleFlag, _ := cmd.Flags().GetString("rule")
 			skipFlag, _ := cmd.Flags().GetString("skip")
+			checkFlag, _ := cmd.Flags().GetString("check")
+			skipCheckFlag, _ := cmd.Flags().GetString("skip-check")
 			reportFlag, _ := cmd.Flags().GetString("report")
 
 			mode := lint.Mode(modeStr)
@@ -64,12 +69,23 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			// 加载阈值配置
 			spec := loadVerifySpec(cfg.WorkDir, paperType, lang)
 
+			onlyCats, err := parseCategories(checkFlag)
+			if err != nil {
+				return &paramError{msg: fmt.Sprintf("verify: %v", err)}
+			}
+			skipCats, err := parseCategories(skipCheckFlag)
+			if err != nil {
+				return &paramError{msg: fmt.Sprintf("verify: %v", err)}
+			}
+
 			opts := lint.Options{
-				Lang:      lang,
-				Mode:      mode,
-				PaperType: paperType,
-				Only:      splitCSV(ruleFlag),
-				Skip:      splitCSV(skipFlag),
+				Lang:           lang,
+				Mode:           mode,
+				PaperType:      paperType,
+				Only:           splitCSV(ruleFlag),
+				Skip:           splitCSV(skipFlag),
+				OnlyCategories: onlyCats,
+				SkipCategories: skipCats,
 			}
 
 			report, err := lint.RunFilesWithStore(args, spec, opts, store)
@@ -97,6 +113,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从已有 spec 自动检测）")
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
+	cmd.Flags().String("check", "", "仅运行指定检查类别（逗号分隔，如 citation,word_counts）")
+	cmd.Flags().String("skip-check", "", "跳过指定检查类别（逗号分隔）")
 	cmd.Flags().String("report", "json", "报告格式：json（默认）| citation-refs（引用评分）")
 	return cmd
 }
@@ -255,4 +273,34 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseCategories 将逗号分隔的类别字符串解析为 []lint.Category，校验合法性。
+func parseCategories(s string) ([]lint.Category, error) {
+	parts := splitCSV(s)
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	valid := map[string]bool{}
+	for _, c := range lint.ValidCategories() {
+		valid[string(c)] = true
+	}
+	out := make([]lint.Category, 0, len(parts))
+	for _, p := range parts {
+		if !valid[p] {
+			return nil, fmt.Errorf("无效检查类别 %q（可选 %s）", p, joinCategoryNames())
+		}
+		out = append(out, lint.Category(p))
+	}
+	return out, nil
+}
+
+// joinCategoryNames 拼接全部合法类别名（用于错误提示）。
+func joinCategoryNames() string {
+	cats := lint.ValidCategories()
+	names := make([]string, len(cats))
+	for i, c := range cats {
+		names[i] = string(c)
+	}
+	return strings.Join(names, ",")
 }

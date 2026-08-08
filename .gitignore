@@ -4,8 +4,7 @@
 !.env.example
 
 # 运行时数据（本地文献库，无独立缓存层）
-litkit.db
-*.db
+.litkit/litkit.db
 *.db-shm
 *.db-wal
 

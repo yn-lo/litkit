@@ -1,4 +1,4 @@
-# Review manuscript spec — comments are AI-readable; no extra step after editing thresholds.
+# Empirical manuscript spec — comments are AI-readable; no extra step after editing thresholds.
 # AI must-read: This file is the single source of truth for writing rules.
 #
 # Writing rules (pre-instruction):
@@ -7,19 +7,19 @@
 # - No lists or bold in body text; no back-references or self-promotion
 # - Report statistics with consistent decimals; percentages rounded to 1 decimal
 
-paper_type: review
+paper_type: empirical
 lang: en
 journal: ""
 sections:
   - Introduction
-  - Search Strategy
-  - Thematic Analysis
-  - Discussion and Outlook
+  - Methods
+  - Results
+  - Discussion
   - Conclusion
 word_counts:
-  total: [3500, 5000]       # Total word count [min, max]
+  total: [3500, 6000]       # Total word count [min, max]
   abstract: [200, 500]      # Abstract word count [min, max]
-  paragraph: [100, 400]     # Per-paragraph word count [min, max]
+  paragraph: [200, 400]     # Per-paragraph word count [min, max]
 citation:
   count: [20, 40]           # Total citation count [min, max]
   style: apa                # Citation style: gbt7714 | apa | ieee
@@ -59,3 +59,92 @@ boast_words:
   - in conclusion
   - ever-evolving
   - vibrant
+  - pivotal
+  - cutting-edge
+  - transformative
+  - innovative
+  - holistic
+  - multifaceted
+  - nuanced
+  - paramount
+  - vital
+  - dynamic
+  - exceptional
+  - invaluable
+  - remarkable
+  - compelling
+  - impactful
+  - substantial
+  - leverage
+  - utilize
+  - facilitate
+  - optimize
+  - streamline
+  - embark
+  - underscore
+  - foster
+  - cultivate
+  - unlock
+  - elevate
+  - amplify
+  - illuminate
+  - resonate
+  - navigate
+  - showcase
+  - highlight
+  - emphasize
+  - furthermore
+  - moreover
+  - additionally
+  - consequently
+  - subsequently
+  - nevertheless
+  - nonetheless
+  - hence
+  - thus
+  - accordingly
+  - notably
+  - importantly
+  - ultimately
+  - essentially
+  - realm
+  - testament
+  - beacon
+  - ecosystem
+  - interplay
+  - framework
+  - utilizing
+  - leveraging
+  - fostering
+  - underscoring
+  - navigating
+  - showcasing
+  - highlighting
+  - emphasizing
+  - it is important to note
+  - it is important to
+  - in today
+  - this paper will explore
+  - this study aims to
+  - there are several
+  - by doing so
+  - moving forward
+  - undeniably
+  - undoubtedly
+  - take a closer look
+  - plays a crucial role
+  - a wide range of
+  - when it comes to
+  - not only
+  - but also
+  - delve into
+  - in the realm of
+  - pivotal role
+  - testament to
+  - ever-changing
+  - fast-paced
+  - it is worth mentioning
+  - it should be noted
+  - it is essential to
+  - it is critical to
+  - it is imperative to

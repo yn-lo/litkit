@@ -1,6 +1,6 @@
 # litkit — AI agent 使用说明
 
-> litkit工具使用地图，由 `litkit init` 生成。
+> litkit 工具使用地图，由 `litkit init` 生成。
 > 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`（AI 必读）。
 
 ## 核心命令
@@ -9,6 +9,9 @@
   - `-s arxiv,pubmed` 源过滤；`-n 5` 每源条数；`--mode tiab|full` 检索等级
 - `litkit lib list / search / rm / stats / path` — 文献库管理
 - `litkit verify manuscript/*.md --type <type> --lang <lang>` — 验证文稿格式
+  - `--check citation,word_counts` 仅运行指定检查类别
+  - `--skip-check boast_words` 跳过指定检查类别
+  - 可用类别：language, structure, statistics, punctuation, style, citation, heading, boast_words, word_counts, todo
 
 ## 论文类型
 

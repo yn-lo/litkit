@@ -61,7 +61,7 @@ func loadDeps() *deps {
 
 	store := (*storage.Store)(nil)
 	if cfg.WorkDir != "" {
-		store, err = storage.Open(filepath.Join(cfg.WorkDir, storage.DefaultDBName))
+		store, err = storage.Open(storage.DBPath(cfg.WorkDir))
 		if err != nil {
 			// 库初始化失败不阻断检索：退化为不入库（检索仍可用）
 			fmt.Fprintf(os.Stderr, "litkit: storage init failed, search 将不入库: %v\n", err)

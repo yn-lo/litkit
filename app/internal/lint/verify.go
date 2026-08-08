@@ -11,11 +11,13 @@ const exitPass = "pass"
 
 // Options 一次多文件验证的聚合配置。
 type Options struct {
-	Lang      string   // "zh" / "en"
-	Mode      Mode     // chapter / draft / final
-	PaperType string   // review / empirical（空=不过滤类型）
-	Only      []string // --rule 仅运行指定规则（空=全部）
-	Skip      []string // --skip 跳过指定规则
+	Lang           string     // "zh" / "en"
+	Mode           Mode       // chapter / draft / final
+	PaperType      string     // review / empirical（空=不过滤类型）
+	Only           []string   // --rule 仅运行指定规则（空=全部）
+	Skip           []string   // --skip 跳过指定规则
+	OnlyCategories []Category // --check 仅运行指定检查类别（空=全部）
+	SkipCategories []Category // --skip-check 跳过指定检查类别
 }
 
 // Report 多文件验证汇总。
@@ -62,6 +64,15 @@ func contains(list []string, s string) bool {
 	return false
 }
 
+func categoryIn(list []Category, c Category) bool {
+	for _, x := range list {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
 func langOK(rule Rule, lang string) bool {
 	for _, l := range rule.Langs {
 		if l == lang {
@@ -102,6 +113,12 @@ func Run(src *Source, spec *ManuscriptSpec, opts Options) FileReport {
 			continue
 		}
 		if contains(opts.Skip, rule.ID) {
+			continue
+		}
+		if len(opts.OnlyCategories) > 0 && !categoryIn(opts.OnlyCategories, rule.Category) {
+			continue
+		}
+		if categoryIn(opts.SkipCategories, rule.Category) {
 			continue
 		}
 		rep.Violations = append(rep.Violations, rule.Check(src, spec)...)

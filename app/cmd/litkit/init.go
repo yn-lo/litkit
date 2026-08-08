@@ -16,7 +16,7 @@ import (
 
 // envTemplate 工作目录 .env 模板（litkit init 生成，FR-CONFIG-03）。
 const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-CONFIG-03）\n" +
-	"# 所有默认值均可在此调整；AI 经本目录的 AGENTS.md 获知这些配置\n" +
+	"# 所有默认值均可在此调整；AI 经 .litkit/AGENTS.md 获知这些配置\n" +
 	"\n" +
 	"# 工作目录（必填：未设置时 litkit 拒绝执行，FR-LIB-03）\n" +
 	"LITKIT_WORK_DIR=.\n" +
@@ -38,14 +38,14 @@ const (
 // newInitCmd 构造 `litkit init` 子命令。
 //
 // 两步式：
-//  1. 项目基础设施：.env + litkit.db + AGENTS.md（根，项目级通用信息）
+//  1. 项目基础设施：.env + .litkit/（litkit.db + AGENTS.md + 共享文件）
 //  2. 论文类型目录：.litkit/<type-lang>/ 的 manuscript-spec.yaml
 //
 // --type + --lang 必填（终端下可交互输入）。
 func newInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init --type review|empirical --lang zh|en [--journal NAME]",
-		Short: "初始化项目（.env + litkit.db + 根 AGENTS.md）并注册论文类型",
+		Short: "初始化项目（.env + .litkit/ 目录）并注册论文类型",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// 工作目录必须显式设置（FR-LIB-03），前置检查
@@ -118,7 +118,7 @@ func initWorkdir(dir string, force bool, paperType, lang, journal string) error 
 	})
 }
 
-// ensureProjectInfra 确保项目基础设施存在（.env + litkit.db + .litkit/ 共享文件 + 根 AGENTS.md）。
+// ensureProjectInfra 确保项目基础设施存在（.env + .litkit/ 下 litkit.db + AGENTS.md + 共享文件）。
 func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	created := []string{}
 
@@ -136,19 +136,19 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	}
 	created = append(created, infraFiles...)
 
-	// 根 AGENTS.md（项目级通用信息，从 embed 模板复制）
+	// AGENTS.md（项目级通用信息，从 embed 模板复制到 .litkit/）
 	rootAgents, err := lint.RootAgentsContent()
 	if err != nil {
 		return nil, err
 	}
-	if ok, err := writeIfAbsent(filepath.Join(dir, "AGENTS.md"), rootAgents, force); err != nil {
+	if ok, err := writeIfAbsent(filepath.Join(dir, lint.LitkitDir, "AGENTS.md"), rootAgents, force); err != nil {
 		return nil, err
 	} else if ok {
-		created = append(created, "AGENTS.md")
+		created = append(created, filepath.Join(lint.LitkitDir, "AGENTS.md"))
 	}
 
 	// litkit.db（幂等：已存在则跳过建表）
-	dbPath := filepath.Join(dir, storage.DefaultDBName)
+	dbPath := storage.DBPath(dir)
 	dbExisted := fileExists(dbPath)
 	store, err := storage.Open(dbPath)
 	if err != nil {
@@ -156,7 +156,7 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	}
 	defer func() { _ = store.Close() }()
 	if !dbExisted {
-		created = append(created, storage.DefaultDBName)
+		created = append(created, filepath.Join(".litkit", storage.DefaultDBName))
 	}
 
 	return created, nil

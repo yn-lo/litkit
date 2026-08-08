@@ -1,6 +1,6 @@
 // Package storage 基于 SQLite 的文献库持久化（叶子层）。
 //
-// 库文件跟随工作目录（FR-LIB-03：WORK_DIR/litkit.db），生命周期由工作目录
+// 库文件跟随工作目录（FR-LIB-03：WORK_DIR/.litkit/litkit.db），生命周期由工作目录
 // 决定：删除工作目录即删除库，因此不引入 TTL/缓存清理（FR-CACHE 并入 FR-LIB）。
 //
 // 分层归属：叶子层，可被 internal/core 依赖；不 import 任何上层包。
@@ -26,8 +26,13 @@ import (
 //go:embed schema/*.sql
 var schemaFS embed.FS
 
-// DefaultDBName 库文件名（FR-LIB-03：WORK_DIR/litkit.db）。
+// DefaultDBName 库文件名（FR-LIB-03：WORK_DIR/.litkit/litkit.db）。
 const DefaultDBName = "litkit.db"
+
+// DBPath 返回工作目录下数据库文件的绝对路径（.litkit/litkit.db）。
+func DBPath(workDir string) string {
+	return filepath.Join(workDir, ".litkit", DefaultDBName)
+}
 
 // 存储常量（mnd：避免魔法值）。
 const (

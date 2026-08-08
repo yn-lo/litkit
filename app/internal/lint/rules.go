@@ -28,6 +28,23 @@ const (
 	ModeFinal   Mode = "final"
 )
 
+// Category 规则检查类别（对应 spec yaml 顶层分组，用于 --check/--skip-check 筛选）。
+type Category string
+
+// 检查类别常量。
+const (
+	CatLanguage    Category = "language"    // 语言合规（R0.x）
+	CatStructure   Category = "structure"   // 章节结构（R1.x）
+	CatStatistics  Category = "statistics"  // 统计格式（R2.x）
+	CatPunctuation Category = "punctuation" // 标点符号（R3.x）
+	CatStyle       Category = "style"       // 行文风格（R4.x）
+	CatCitation    Category = "citation"    // 引用规范（R5.x, R6.x）
+	CatHeading     Category = "heading"     // 标题规范（R7.1）
+	CatBoastWords  Category = "boast_words" // 自我夸大/AI痕迹（R7.2）
+	CatWordCounts  Category = "word_counts" // 字数统计（R8.x）
+	CatTodo        Category = "todo"        // 用户标记（R9.x）
+)
+
 // ruleIDHeadingOrder R1.3 标题规范规则的 ID。
 const ruleIDHeadingOrder = "R1.3"
 
@@ -71,13 +88,14 @@ type Violation struct {
 
 // Rule 一条验证规则。
 type Rule struct {
-	ID     string
-	Name   string
-	Langs  []string // ["zh"] / ["en"] / ["zh","en"]
-	Types  []string // 适用论文类型，空=全部（如 ["empirical"] 仅实证）
-	Method Method
-	From   Mode // 从该模式起启用
-	Check  func(src *Source, spec *ManuscriptSpec) []Violation
+	ID       string
+	Name     string
+	Category Category // 检查类别（对应 spec yaml 顶层分组）
+	Langs    []string // ["zh"] / ["en"] / ["zh","en"]
+	Types    []string // 适用论文类型，空=全部（如 ["empirical"] 仅实证）
+	Method   Method
+	From     Mode // 从该模式起启用
+	Check    func(src *Source, spec *ManuscriptSpec) []Violation
 }
 
 // 预编译正则（mnd：集中管理，避免规则函数内重复编译）。
@@ -982,31 +1000,36 @@ func checkR83(src *Source, spec *ManuscriptSpec) []Violation {
 // Types 维度：空=全部类型适用；仅特定类型时标注（如 R2.1 P值仅 empirical）。
 func AllRules() []Rule {
 	rules := []Rule{
-		{ID: "R0.1", Name: "全文中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR01},
-		{ID: "R0.2", Name: "标题中文", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
-		{ID: "R1.1", Name: "章节层级", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
-		{ID: "R1.2", Name: "标题长度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
-		{ID: ruleIDHeadingOrder, Name: "标题规范", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
-		{ID: "R1.4", Name: "正文禁止加粗", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
-		{ID: "R1.5", Name: "章节完整性", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR15},
-		{ID: "R1.6", Name: "空章节", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR16},
-		{ID: ruleR17, Name: "空/重复标题", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR17},
-		{ID: "R1.8", Name: "图表交叉引用", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR18},
-		{ID: ruleR21, Name: "P值格式", Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
-		{ID: "R3.1", Name: "全半角", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
-		{ID: "R3.2", Name: "中文引号", Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},
-		{ID: "R4.2", Name: "句式冗余", Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
-		{ID: "R5.1", Name: "引用占位符", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
-		{ID: "R5.2", Name: "待引证标记", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
-		{ID: "R5.3", Name: "引用密度", Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
-		{ID: "R6.1", Name: "引用位置", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61},
-		{ID: "R7.1", Name: "标题冒号", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71},
-		{ID: "R7.2", Name: "自我夸大", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
-		{ID: "R8.1", Name: "全文字数", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR81},
-		{ID: "R8.2", Name: "摘要字数", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},
-		{ID: "R8.3", Name: "段长", Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR83},
-		{ID: "R9.1", Name: "用户标记", Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR91},
+		{ID: "R0.1", Name: "全文中文", Category: CatLanguage, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR01},
+		{ID: "R0.2", Name: "标题中文", Category: CatLanguage, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
+		{ID: "R1.1", Name: "章节层级", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
+		{ID: "R1.2", Name: "标题长度", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
+		{ID: ruleIDHeadingOrder, Name: "标题规范", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
+		{ID: "R1.4", Name: "正文禁止加粗", Category: CatStructure, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
+		{ID: "R1.5", Name: "章节完整性", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR15},
+		{ID: "R1.6", Name: "空章节", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR16},
+		{ID: ruleR17, Name: "空/重复标题", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR17},
+		{ID: "R1.8", Name: "图表交叉引用", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR18},
+		{ID: ruleR21, Name: "P值格式", Category: CatStatistics, Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
+		{ID: "R3.1", Name: "全半角", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
+		{ID: "R3.2", Name: "中文引号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},
+		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
+		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
+		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
+		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
+		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61},
+		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71},
+		{ID: "R7.2", Name: "自我夸大", Category: CatBoastWords, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
+		{ID: "R8.1", Name: "全文字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR81},
+		{ID: "R8.2", Name: "摘要字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},
+		{ID: "R8.3", Name: "段长", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR83},
+		{ID: "R9.1", Name: "用户标记", Category: CatTodo, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR91},
 	}
 	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
 	return rules
+}
+
+// ValidCategories 返回全部合法的检查类别（用于 CLI 校验和帮助文本）。
+func ValidCategories() []Category {
+	return []Category{CatLanguage, CatStructure, CatStatistics, CatPunctuation, CatStyle, CatCitation, CatHeading, CatBoastWords, CatWordCounts, CatTodo}
 }
