@@ -147,17 +147,23 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 		created = append(created, filepath.Join(lint.LitkitDir, "AGENTS.md"))
 	}
 
+	// .litkit/skills/ Agent Skills（用户按自己 AI 工具手动复制到对应 skills 路径）
+	skillFiles, err := lint.InitSkills(dir, force)
+	if err != nil {
+		return nil, err
+	}
+	created = append(created, skillFiles...)
+
 	// litkit.db（幂等：已存在则跳过建表）
+	// loadDeps（PersistentPreRunE）可能已提前调用 storage.Open 创建了 db 文件，
+	// 此处再次 Open 确保测试路径（直接调用 initWorkdir）也能创建 db。
 	dbPath := storage.DBPath(dir)
-	dbExisted := fileExists(dbPath)
 	store, err := storage.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("init: storage open: %w", err)
 	}
-	defer func() { _ = store.Close() }()
-	if !dbExisted {
-		created = append(created, filepath.Join(".litkit", storage.DefaultDBName))
-	}
+	_ = store.Close()
+	created = append(created, filepath.Join(".litkit", storage.DefaultDBName))
 
 	return created, nil
 }

@@ -66,6 +66,30 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("应生成 %s：%v", rel, err)
 		}
 	}
+	// .litkit/skills/ Agent Skills
+	skillPath := filepath.Join(dir, ".litkit", "skills", "litkit", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Errorf("应生成 .litkit/skills/litkit/SKILL.md：%v", err)
+	}
+	skillData, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	skillContent := string(skillData)
+	for _, want := range []string{"name: litkit", "litkit search", "litkit verify", "--check"} {
+		if !strings.Contains(skillContent, want) {
+			t.Errorf("SKILL.md 应含 %q", want)
+		}
+	}
+	// references 文件
+	for _, rel := range []string{
+		".litkit/skills/litkit/references/literature-search.md",
+		".litkit/skills/litkit/references/manuscript-writing.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("应生成 %s：%v", rel, err)
+		}
+	}
 	// AGENTS.md 应含检索命令 + 论文类型清单
 	data, err := os.ReadFile(filepath.Join(dir, ".litkit", "AGENTS.md"))
 	if err != nil {

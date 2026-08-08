@@ -13,6 +13,9 @@ import (
 
 //go:embed templates/verifier_models.json
 //go:embed templates/root-AGENTS.md
+//go:embed templates/skills/litkit/SKILL.md
+//go:embed templates/skills/litkit/references/literature-search.md
+//go:embed templates/skills/litkit/references/manuscript-writing.md
 //go:embed templates/empirical-zh/manuscript-spec.yaml
 //go:embed templates/review-zh/manuscript-spec.yaml
 //go:embed templates/empirical-en/manuscript-spec.yaml
@@ -23,6 +26,10 @@ var templatesFS embed.FS
 // 独立于 litkit 自身开发约束 .harness/；统一 litkit 在宿主目录的命名空间。
 const LitkitDir = ".litkit"
 
+// SkillsSubDir .litkit 下的 Skills 子目录。
+// init 时生成到此目录，用户按自己 AI 工具手动复制到对应 skills 路径。
+const SkillsSubDir = "skills"
+
 // 文件权限常量（mnd：避免魔法值）。
 const (
 	harnessDirPerm  = 0o750
@@ -32,6 +39,13 @@ const (
 // sharedFiles 项目级共享文件（复制到 .litkit/ 根目录）。
 var sharedFiles = []struct{ rel, tmpl string }{
 	{"verifier_models.json", "templates/verifier_models.json"},
+}
+
+// skillFiles Agent Skills 文件（复制到 .litkit/skills/ 目录）。
+var skillFiles = []struct{ rel, tmpl string }{
+	{"litkit/SKILL.md", "templates/skills/litkit/SKILL.md"},
+	{"litkit/references/literature-search.md", "templates/skills/litkit/references/literature-search.md"},
+	{"litkit/references/manuscript-writing.md", "templates/skills/litkit/references/manuscript-writing.md"},
 }
 
 // SpecPath 返回 .litkit/<type-lang>/manuscript-spec.yaml 的绝对路径。
@@ -167,4 +181,28 @@ func RootAgentsContent() (string, error) {
 		return "", fmt.Errorf("lint: embed root-AGENTS.md: %w", err)
 	}
 	return string(data), nil
+}
+
+// InitSkills 生成 Agent Skills 文件（.litkit/skills/ 目录）。
+// 已存在且未 force 时跳过。返回创建的相对路径。
+func InitSkills(dir string, force bool) ([]string, error) {
+	created := []string{}
+	for _, f := range skillFiles {
+		data, err := templatesFS.ReadFile(f.tmpl)
+		if err != nil {
+			return created, fmt.Errorf("lint: embed %s: %w", f.tmpl, err)
+		}
+		path := filepath.Join(dir, LitkitDir, SkillsSubDir, f.rel)
+		if err := os.MkdirAll(filepath.Dir(path), harnessDirPerm); err != nil {
+			return created, fmt.Errorf("lint: mkdir %s: %w", filepath.Dir(path), err)
+		}
+		if fileExists(path) && !force {
+			continue
+		}
+		if err := os.WriteFile(path, data, harnessFilePerm); err != nil {
+			return created, fmt.Errorf("lint: write %s: %w", path, err)
+		}
+		created = append(created, filepath.Join(LitkitDir, SkillsSubDir, filepath.ToSlash(f.rel)))
+	}
+	return created, nil
 }
