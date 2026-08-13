@@ -20,6 +20,7 @@ import (
 //go:embed templates/review-zh/manuscript-spec.yaml
 //go:embed templates/empirical-en/manuscript-spec.yaml
 //go:embed templates/review-en/manuscript-spec.yaml
+//go:embed templates/book-zh/manuscript-spec.yaml
 var templatesFS embed.FS
 
 // LitkitDir 宿主工作目录的约束目录名。

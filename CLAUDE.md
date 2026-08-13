@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-国内学术写作场景的论文工具包：跨源检索摘要、生成规范引用（GB/T 7714—2025 / APA / IEEE）、排版手稿、AI 撰写合规门禁。Go 1.26 / cobra / modernc.org/sqlite；CLI 唯一接口。
+国内学术医学写作场景的论文工具包：跨源检索摘要、生成规范引用（GB/T 7714—2025 / APA / IEEE）、排版手稿、AI 撰写合规门禁。Go 1.26 / cobra / modernc.org/sqlite；CLI 唯一接口。
 
 **AI-first 定位**：工具输出面向 AI agent 调用，接口设计以**降低上下文噪声**为第一约束——默认返回 AI 写作所需最小字段集（citeKey/title/firstAuthor/year/abstract），完整元数据落 SQLite 由 citeKey 句柄按需取回；`--full` 逃生口供人类调试。
 

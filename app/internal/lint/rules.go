@@ -117,7 +117,39 @@ var (
 		regexp.MustCompile(`通过.*使`),
 		regexp.MustCompile(`对.*进行`),
 	}
+
+	// book 中文编号体系（yueshu.md 二、标题层次）：第一篇/第一章/第一节/一、/（一）/1./（1）
+	bookCNNumRe    = regexp.MustCompile(`^第[一二三四五六七八九十百零]+[篇章节]`)   // 第X篇/第X章/第X节
+	bookCNOrderRe  = regexp.MustCompile(`^[一二三四五六七八九十百零]+、`)        // 一、
+	bookCNParenRe  = regexp.MustCompile(`^[（(][一二三四五六七八九十百零]+[)）]`) // （一）
+	bookNumDotRe   = regexp.MustCompile(`^\d+\.\s`)                 // 1. 六级
+	bookNumParenRe = regexp.MustCompile(`^[（(]\d+[)）]`)             // （1）七级
+	bookDotNumRe   = regexp.MustCompile(`^\d+(?:\.\d+)+`)           // 1.1.1 点分编号（禁用）
+	bookPureNumRe  = regexp.MustCompile(`^\d+[、．.]?\s`)             // 纯数字编号（应改用中文体系）
+
+	// R3.3 数字范围规范（yueshu.md 八、数字）
+	rangeHyphenPctRe  = regexp.MustCompile(`\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?%`)                            // 10-16% → 10%～16%
+	rangeUnitBothRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*[a-zA-Z℃°]+\s*[～~]\s*\d+(?:\.\d+)?\s*[a-zA-Z℃°]+`) // 10kg～15kg → 10～15kg
+	yearRangeWaveRe   = regexp.MustCompile(`\d{4}年\s*[～~]\s*\d{4}年`)                                           // 1988年～1998年 → 1988—1998年
+	hourRangeDashRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*—\s*\d+(?:\.\d+)?\s*(?:小时|分钟|天|周)`)                // 24—48小时 → 24～48小时
+	doubleSlashUnitRe = regexp.MustCompile(`[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+`)                  // mg/kg/d → mg/(kg·d)
+
+	// R3.4 计量单位（yueshu.md 五、计量单位）：数字后的中文单位词 / 英制旧制单位
+	cnUnitRe = regexp.MustCompile(`\d+(?:\.\d+)?\s*(?:毫米汞柱|毫米水柱|毫克|微克|纳克|千克|公斤|克|厘米|毫米|千米|公里|米|毫升|升|毫摩尔|摩尔|兆帕|千帕|帕|千瓦|瓦|千伏|伏|毫安|安|兆赫|千赫|赫兹|焦耳|牛顿|摄氏度|华氏度|英寸|磅|英尺|尺|寸|两|钱|卡|石)`)
 )
+
+// numberPatterns R3.3 子模式表（命中任一即违规，每行报一次）。
+var numberPatterns = []struct {
+	re         *regexp.Regexp
+	problem    string
+	suggestion string
+}{
+	{rangeHyphenPctRe, "范围连接符用了连字符且百分号位置不当", "写为 10%～16% 形式（百分号只在范围末）"},
+	{rangeUnitBothRe, "单位重复出现在范围两端", "写为 10～15kg 形式（单位只在范围末）"},
+	{yearRangeWaveRe, "年份范围使用了波浪线", "年份范围用一字线：1988—1998年"},
+	{hourRangeDashRe, "时间跨度使用了一字线", "时间范围用波浪线：24～48小时"},
+	{doubleSlashUnitRe, "复合单位分母含多个斜线", "分母用圆括号且只保留一条斜线：5 mg/(kg·d)"},
+}
 
 // countWords 统计字数：中文字符（Han）按 1 字计，英文按空格分词计。
 // 返回 (总字数, 英文词数)；英文词定义为含至少一个 ASCII 字母的 token。
@@ -300,6 +332,10 @@ func checkR12(src *Source, spec *ManuscriptSpec) []Violation {
 //   - 有编号：markdown # 数须与编号深度一致（# 1、## 1.1、### 1.1.1）
 //   - 有编号：编号递增、不跳号、层级挂接合法（编号栈）
 func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
+	// book 采用中文编号体系（第一篇/第一章/一、/（一）），与论文点分编号不同，走独立分支
+	if spec.PaperType == PaperTypeBook {
+		return checkBookHeading(src, spec)
+	}
 	var vs []Violation
 	prev := []int{}
 	firstHeading := true  // 尚未处理第一个标题
@@ -384,6 +420,163 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 		})
 	}
 	return vs
+}
+
+// checkBookHeading 书籍标题审查（yueshu.md 二、标题层次）。
+//
+// 判定模型（book 中文编号体系）：
+//   - 首个标题为文件顶层：默认 auto 下可为书名（无编号）或任意合法编号，
+//     兼容整本书/单章/单节成文件；book_top_level 可强制指定（book=须书名，chapter=须篇/章级）
+//   - 禁用 1.1.1 点分编号；纯数字编号应改用中文体系
+//   - 篇/章/节编号同类连续递进（第一章→第二章）
+//   - 标题层级（# 数）逐级递进，不可跳级
+func checkBookHeading(src *Source, spec *ManuscriptSpec) []Violation {
+	var vs []Violation
+	firstHeading := true     // 首个标题 = 文件顶层（书名或最高编号标题）
+	prevHashes := 0          // 上一标题的 markdown # 数
+	topSeq := map[byte]int{} // 篇/章/节 → 上一个数字（同类连续）
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		hashes := 0
+		for hashes < len(t) && t[hashes] == '#' {
+			hashes++
+		}
+		rest := strings.TrimSpace(t[hashes:])
+		line := src.bodyIdx[i]
+		if firstHeading {
+			firstHeading = false
+			if rest == "" {
+				vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+					Problem: "空标题（# 后无文字）", Suggestion: "删除空标题或补充标题"})
+				continue
+			}
+			if !bookTopLevelOK(rest, spec.BookTopLevel) {
+				problem, suggestion := bookTopLevelHint(spec.BookTopLevel)
+				vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+					Problem: problem, Suggestion: suggestion})
+			}
+			prevHashes = hashes
+			continue
+		}
+		// 点分编号（1.1.1）禁用
+		if bookDotNumRe.MatchString(rest) {
+			vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+				Problem:    "标题使用了点分编号（1.1.1 国际编号方式）",
+				Suggestion: "改用中文编号体系：第一篇/第一章/第一节/一、/（一）/1./（1）"})
+			continue
+		}
+		// 未编号 / 纯数字编号
+		if !isBookNumbered(rest) {
+			problem, suggestion := "标题未带中文编号", "按层级添加中文编号：第一章/第一节/一、/（一）/1./（1）"
+			if bookPureNumRe.MatchString(rest) {
+				problem, suggestion = "标题使用了纯数字编号", "改用中文编号体系（如 第一章、第一节、一、）"
+			}
+			vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+				Problem: problem, Suggestion: suggestion})
+			continue
+		}
+		// 层级跳变（# 数只能逐级递进）
+		if hashes > prevHashes+1 {
+			vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+				Problem:    fmt.Sprintf("标题层级从 %d 跳至 %d", prevHashes, hashes),
+				Suggestion: "标题层级应逐级递进，不可跳级"})
+		}
+		prevHashes = hashes
+		// 篇/章/节编号连续（同类各自递进）
+		if m := bookCNNumRe.FindString(rest); m != "" {
+			kind := m[len(m)-1] // 篇/章/节
+			n := cnToInt(m[1 : len(m)-1])
+			if prev, ok := topSeq[kind]; ok && n != prev+1 {
+				vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: line,
+					Problem:    fmt.Sprintf("%s编号不连续（上一%s为 %d，got %d）", string(kind), string(kind), prev, n),
+					Suggestion: "编号须连续递进"})
+			}
+			topSeq[kind] = n
+		}
+	}
+	if firstHeading {
+		vs = append(vs, Violation{RuleID: ruleIDHeadingOrder, Line: 1,
+			Problem: "缺少标题：全文未找到任何标题", Suggestion: "根据书稿内容补充文件顶层标题（书名或章节标题）"})
+	}
+	return vs
+}
+
+// bookTopLevelOK 判断首个标题是否符合 book_top_level 要求的文件顶层级别。
+func bookTopLevelOK(rest, level string) bool {
+	switch level {
+	case "book":
+		return !isBookNumbered(rest) // 整本书单文件：首标题须为书名（无编号）
+	case "chapter":
+		m := bookCNNumRe.FindString(rest)
+		return m != "" && (strings.HasSuffix(m, "章") || strings.HasSuffix(m, "篇"))
+	case "section":
+		return isBookNumbered(rest) // 节文件：任意合法中文编号
+	default: // auto / 空
+		return true // 书名或任意合法编号均可
+	}
+}
+
+// bookTopLevelHint 返回 book_top_level 校验未通过时的违规提示。
+func bookTopLevelHint(level string) (problem, suggestion string) {
+	switch level {
+	case "book":
+		return "缺少书名：首个标题带编号", "设计一个不编号的书名置于文首"
+	case "chapter":
+		return "首个标题不是篇/章级", "文件顶层标题应为 第X篇/第X章（如 第一章 ×××）"
+	default: // section
+		return "首个标题未带中文编号", "文件顶层标题应为 第X节 或更低级中文编号（第一节/一、/（一））"
+	}
+}
+
+// isBookNumbered 判断标题文字是否带合法的中文编号（book 七级体系之一）。
+func isBookNumbered(rest string) bool {
+	return bookCNNumRe.MatchString(rest) || bookCNOrderRe.MatchString(rest) ||
+		bookCNParenRe.MatchString(rest) || bookNumDotRe.MatchString(rest) || bookNumParenRe.MatchString(rest)
+}
+
+// cnToInt 中文数字转阿拉伯数字（支持 一~九、十、百、零 组合，如 十五=15、一百零二=102）。
+func cnToInt(s string) int {
+	section, digit := 0, 0
+	for _, r := range s {
+		switch r {
+		case '零':
+			digit = 0
+		case '一':
+			digit = 1
+		case '二':
+			digit = 2
+		case '三':
+			digit = 3
+		case '四':
+			digit = 4
+		case '五':
+			digit = 5
+		case '六':
+			digit = 6
+		case '七':
+			digit = 7
+		case '八':
+			digit = 8
+		case '九':
+			digit = 9
+		case '十':
+			if digit == 0 {
+				digit = 1
+			}
+			section += digit * 10
+			digit = 0
+		case '百':
+			if digit == 0 {
+				digit = 1
+			}
+			section += digit * 100
+			digit = 0
+		}
+	}
+	return section + digit
 }
 
 // parseHeadingNum 将编号串 "1.2.3" 拆为 []int{1,2,3}。
@@ -741,6 +934,36 @@ func checkR32(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// checkR33 数字范围规范（yueshu.md 八、数字）：范围用波浪线、百分号只在范围末、
+// 年份范围用一字线、复合单位分母用圆括号。
+func checkR33(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	for i, ln := range src.Body {
+		for _, p := range numberPatterns {
+			if p.re.MatchString(ln) {
+				vs = append(vs, Violation{RuleID: "R3.3", Line: src.bodyIdx[i],
+					Problem: p.problem, Suggestion: p.suggestion})
+				break
+			}
+		}
+	}
+	return vs
+}
+
+// checkR34 计量单位（yueshu.md 五、计量单位）：禁用中文单位词与英制/旧制单位。
+// 时间单位例外（5～8天、6小时单独使用用中文）。
+func checkR34(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	for i, ln := range src.Body {
+		if cnUnitRe.MatchString(ln) {
+			vs = append(vs, Violation{RuleID: "R3.4", Line: src.bodyIdx[i],
+				Problem:    "使用了中文计量单位词或英制/旧制单位",
+				Suggestion: "改用法定计量单位符号（如 mg、cm、mmHg）；时间单位可用中文（5～8天）"})
+		}
+	}
+	return vs
+}
+
 // checkR51 引用占位符：(Author, 2024) 与 [数字] 违规（参考文献段已排除）。
 func checkR51(src *Source, _ *ManuscriptSpec) []Violation {
 	var vs []Violation
@@ -1013,6 +1236,8 @@ func AllRules() []Rule {
 		{ID: ruleR21, Name: "P值格式", Category: CatStatistics, Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
 		{ID: "R3.1", Name: "全半角", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
 		{ID: "R3.2", Name: "中文引号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},
+		{ID: "R3.3", Name: "数字范围", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR33},
+		{ID: "R3.4", Name: "计量单位", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR34},
 		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
 		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},

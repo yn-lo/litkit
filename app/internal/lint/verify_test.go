@@ -911,3 +911,170 @@ func TestRule_R1_8_FigureTableXref(t *testing.T) {
 		t.Error("英文引用不存在的 Table 2 应报 R1.8")
 	}
 }
+
+// ---- R1.3 book 中文编号体系（yueshu.md 二、标题层次）----
+
+// bookRun 以书籍类型运行验证（R1.3 走中文编号分支）。
+func bookRun(t *testing.T, content string) FileReport {
+	t.Helper()
+	return runContent(t, content, SpecForType(PaperTypeBook, LangZH),
+		Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeBook})
+}
+
+// bookFullContent 覆盖 7 级标题体系的合规书稿骨架。
+const bookFullContent = "# 腹部创伤外科学\n" +
+	"# 第一章 腹部创伤外科应用解剖学\n正文内容。\n" +
+	"## 第一节 腹壁和腹膜腔的解剖\n正文内容。\n" +
+	"### 一、腹壁的解剖特点\n正文内容。\n" +
+	"#### （一）腹前外侧腹壁层次\n正文内容。\n" +
+	"## 第二节 腹膜腔的解剖\n正文内容。\n" +
+	"# 第二章 腹部创伤的临床特点\n正文内容。\n"
+
+func TestRule_R1_3_Book_ValidChineseNumbering(t *testing.T) {
+	if got := violationsOf(bookRun(t, bookFullContent), "R1.3"); len(got) != 0 {
+		t.Errorf("合规中文编号不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_Book_SkipChapterNumber(t *testing.T) {
+	fr := bookRun(t, "# 书名\n# 第一章 概述\n正文。\n# 第三章 跳号\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("章号跳号（第一章→第三章）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_Book_BanDotNumbering(t *testing.T) {
+	fr := bookRun(t, "# 书名\n# 第一章 概述\n正文。\n## 1.1 背景\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("点分编号（1.1）应报 R1.3（禁用 1.1.1 国际编号）")
+	}
+}
+
+func TestRule_R1_3_Book_BanPureNumber(t *testing.T) {
+	fr := bookRun(t, "# 书名\n# 1 概述\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("纯数字编号（1）应报 R1.3（应改用中文编号体系）")
+	}
+}
+
+func TestRule_R1_3_Book_MissingNumbering(t *testing.T) {
+	fr := bookRun(t, "# 书名\n# 第一章 概述\n正文。\n## 背景\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("无编号标题应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_Book_HierarchyJump(t *testing.T) {
+	fr := bookRun(t, "# 书名\n# 第一章 概述\n正文。\n### 一、跳级\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("层级跳变（#→###）应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_Book_AutoTopLevel_SectionFile(t *testing.T) {
+	// auto（默认）：一节一个文件，首个标题为"第一节"（合法编号），不应误报缺书名
+	fr := bookRun(t, "## 第一节 腹壁和腹膜腔的解剖\n正文。\n### 一、腹壁的解剖特点\n正文。\n#### （一）腹前外侧腹壁层次\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) != 0 {
+		t.Errorf("节文件（首个标题为第一节）不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_Book_AutoTopLevel_ChapterFile(t *testing.T) {
+	// auto（默认）：一章一个文件，首个标题为"第一章"
+	fr := bookRun(t, "# 第一章 腹部创伤外科应用解剖学\n正文。\n## 第一节 腹壁和腹膜腔的解剖\n正文。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) != 0 {
+		t.Errorf("章文件（首个标题为第一章）不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_Book_AutoTopLevel_NoTitle(t *testing.T) {
+	// auto：完全无标题仍报缺失
+	fr := bookRun(t, "只有正文没有标题。\n")
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("auto：全文无标题应报 R1.3")
+	}
+}
+
+func TestRule_R1_3_Book_RequireBookTitle(t *testing.T) {
+	spec := SpecForType(PaperTypeBook, LangZH)
+	spec.BookTopLevel = "book"
+	opts := Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeBook}
+	// 首标题带编号 → 缺书名
+	fr := runContent(t, "# 第一章 概述\n正文。\n", spec, opts)
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("book 模式：首个标题带编号应报 R1.3（缺书名）")
+	}
+	// 书名 + 章 → 通过
+	ok := runContent(t, "# 书名\n# 第一章 概述\n正文。\n", spec, opts)
+	if got := violationsOf(ok, "R1.3"); len(got) != 0 {
+		t.Errorf("book 模式：书名+章不应报 R1.3，got %+v", got)
+	}
+}
+
+func TestRule_R1_3_Book_RequireChapter(t *testing.T) {
+	spec := SpecForType(PaperTypeBook, LangZH)
+	spec.BookTopLevel = "chapter"
+	opts := Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeBook}
+	// 首标题为节级 → 违规（须从篇/章级开始）
+	fr := runContent(t, "## 第一节 概述\n正文。\n", spec, opts)
+	if got := violationsOf(fr, "R1.3"); len(got) == 0 {
+		t.Error("chapter 模式：首个标题为节级应报 R1.3")
+	}
+	// 首标题为章级 → 通过
+	ok := runContent(t, "# 第一章 概述\n正文。\n", spec, opts)
+	if got := violationsOf(ok, "R1.3"); len(got) != 0 {
+		t.Errorf("chapter 模式：首个标题为章级不应报 R1.3，got %+v", got)
+	}
+}
+
+// ---- R3.3 数字范围规范（yueshu.md 八、数字）----
+
+func TestRule_R3_3(t *testing.T) {
+	cases := []struct {
+		content string
+		want    int
+	}{
+		{"约占10-16%左右。\n", 1},     // → 占10%～16%
+		{"体重10kg～15kg。\n", 1},    // → 10～15kg
+		{"温度3℃～5℃。\n", 1},        // → 3～5℃
+		{"1988年～1998年。\n", 1},    // → 1988—1998年
+		{"创伤后24—48小时。\n", 1},     // → 24～48小时
+		{"剂量为5 mg/kg/d。\n", 1},   // → 5 mg/(kg·d)
+		{"占10%～16%。\n", 0},       // 合规
+		{"体重10～15kg。\n", 0},      // 合规
+		{"温度3～5℃。\n", 0},         // 合规
+		{"1988—1998年。\n", 0},     // 合规
+		{"创伤后24～48小时。\n", 0},     // 合规
+		{"剂量为5 mg/(kg·d)。\n", 0}, // 合规
+	}
+	for _, c := range cases {
+		fr := runContent(t, c.content, DefaultSpec(), zhDraft())
+		if got := len(violationsOf(fr, "R3.3")); got != c.want {
+			t.Errorf("%q 期望 %d 条 R3.3 违规，got %d：%v", c.content, c.want, got, violationsOf(fr, "R3.3"))
+		}
+	}
+}
+
+// ---- R3.4 计量单位（yueshu.md 五、计量单位）----
+
+func TestRule_R3_4(t *testing.T) {
+	cases := []struct {
+		content string
+		want    int
+	}{
+		{"每次5毫克。\n", 1},          // 毫克→mg
+		{"长约3厘米。\n", 1},          // 厘米→cm
+		{"重约2磅。\n", 1},           // 英制：磅
+		{"长约2英寸。\n", 1},          // 英制：英寸
+		{"每次5 mg。\n", 0},         // 合规
+		{"长约3 cm。\n", 0},         // 合规
+		{"5～8天。\n", 0},           // 时间单位中文合规（yueshu.md 例外）
+		{"剂量为5 mg/(kg·d)。\n", 0}, // 合规
+	}
+	for _, c := range cases {
+		fr := runContent(t, c.content, DefaultSpec(), zhDraft())
+		if got := len(violationsOf(fr, "R3.4")); got != c.want {
+			t.Errorf("%q 期望 %d 条 R3.4 违规，got %d：%v", c.content, c.want, got, violationsOf(fr, "R3.4"))
+		}
+	}
+}

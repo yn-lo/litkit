@@ -25,7 +25,7 @@ import (
 //   - 1 有 A 类违规（exitHint=fix_and_rerun），AI 应自动修复后重跑
 func newVerifyCmd(cfg *config.Config, store *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "verify <file.md> [file2.md ...] --type review|empirical --lang zh|en",
+		Use:   "verify <file.md> [file2.md ...] --type review|empirical|book --lang zh|en",
 		Short: "验证文稿合规性（A/S 类规则自动检查）",
 		Long: `litkit verify —— 事后合规验证
 
@@ -62,8 +62,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			if lang != "zh" && lang != "en" {
 				return &paramError{msg: fmt.Sprintf("verify: 无效 lang %q（可选 zh|en）", lang)}
 			}
-			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
-				return &paramError{msg: fmt.Sprintf("verify: 无效 type %q（可选 review|empirical）", paperType)}
+			if paperType != "" && !lint.IsValidPaperType(paperType) {
+				return &paramError{msg: fmt.Sprintf("verify: 无效 type %q（可选 %s）", paperType, lint.PaperTypesLabel())}
 			}
 
 			// 加载阈值配置
@@ -110,7 +110,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	}
 	cmd.Flags().String("lang", "zh", "写作语言 zh|en")
 	cmd.Flags().String("mode", "draft", "验证模式 chapter|draft|final（递增启用规则）")
-	cmd.Flags().String("type", "", "论文类型 review|empirical（空=从已有 spec 自动检测）")
+	cmd.Flags().String("type", "", "论文类型 review|empirical|book（空=从已有 spec 自动检测）")
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
 	cmd.Flags().String("check", "", "仅运行指定检查类别（逗号分隔，如 citation,word_counts）")

@@ -68,7 +68,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --skip-check boast_wor
 
 ```bash
 ls .litkit/                                    # 查看已注册类型
-litkit init --type review|empirical --lang zh|en  # 追加类型
+litkit init --type review|empirical|book --lang zh|en  # 追加类型
 ```
 
 ## Critical Rules

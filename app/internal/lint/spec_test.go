@@ -121,3 +121,35 @@ func TestInitPaperType_createsYaml(t *testing.T) {
 		t.Errorf("无 force 不应重复创建，got %v", created2)
 	}
 }
+
+// ---- book 类型 ----
+
+func TestSpecForType_book(t *testing.T) {
+	spec := SpecForType(PaperTypeBook, LangZH)
+	if spec.PaperType != PaperTypeBook {
+		t.Errorf("paper_type 应为 book，got %s", spec.PaperType)
+	}
+	if spec.Heading.MaxLevel != 7 {
+		t.Errorf("book 标题最大层级应为 7（yueshu.md 七级标题体系），got %d", spec.Heading.MaxLevel)
+	}
+	if len(spec.SectionList()) != 0 {
+		t.Errorf("book 章节清单应为空（按章成册，R1.5 不启用），got %v", spec.SectionList())
+	}
+	if spec.WordCount.Total[0] >= spec.WordCount.Total[1] {
+		t.Errorf("total 区间非法：%v", spec.WordCount.Total)
+	}
+}
+
+func TestInitPaperType_book(t *testing.T) {
+	dir := t.TempDir()
+	created, err := InitPaperType(dir, PaperTypeBook, LangZH, false)
+	if err != nil {
+		t.Fatalf("InitPaperType(book): %v", err)
+	}
+	if len(created) != 1 {
+		t.Errorf("应创建 1 个文件，got %d: %v", len(created), created)
+	}
+	if _, err := os.Stat(SpecPath(dir, PaperTypeBook, LangZH)); err != nil {
+		t.Errorf("应生成 .litkit/book-zh/manuscript-spec.yaml：%v", err)
+	}
+}

@@ -44,7 +44,7 @@ const (
 // --type + --lang 必填（终端下可交互输入）。
 func newInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init --type review|empirical --lang zh|en [--journal NAME]",
+		Use:   "init --type review|empirical|book --lang zh|en [--journal NAME]",
 		Short: "初始化项目（.env + .litkit/ 目录）并注册论文类型",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -69,8 +69,8 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 			}
 
 			// 枚举校验
-			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
-				return &paramError{msg: fmt.Sprintf("init: 无效 --type %q（可选 review|empirical）", paperType)}
+			if paperType != "" && !lint.IsValidPaperType(paperType) {
+				return &paramError{msg: fmt.Sprintf("init: 无效 --type %q（可选 %s）", paperType, lint.PaperTypesLabel())}
 			}
 			if lang != "" && lang != lint.LangZH && lang != lint.LangEN {
 				return &paramError{msg: fmt.Sprintf("init: 无效 --lang %q（可选 zh|en）", lang)}
@@ -88,7 +88,7 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
-	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型：review（综述）| empirical（四段式实证）")
+	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型：review（综述）| empirical（四段式实证）| book（书籍）")
 	cmd.Flags().String("lang", lint.LangZH, "撰写语言：zh | en")
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec，影响引用格式默认值）")
 	return cmd
@@ -232,11 +232,14 @@ func runInitWizard(typeVal, langVal, journalVal string, changedType, changedLang
 		fmt.Println("论文类型？")
 		fmt.Println("  1) empirical（四段式实证，默认）")
 		fmt.Println("  2) review（综述）")
-		fmt.Print("选择 [1/2]: ")
+		fmt.Println("  3) book（书籍，中文编校细则）")
+		fmt.Print("选择 [1/2/3]: ")
 		if scanner.Scan() {
 			switch strings.TrimSpace(scanner.Text()) {
 			case "2", "review":
 				typeVal = lint.PaperTypeReview
+			case "3", "book":
+				typeVal = lint.PaperTypeBook
 			default:
 				typeVal = lint.PaperTypeEmpirical
 			}

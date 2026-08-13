@@ -26,7 +26,7 @@ func newLintCmd(cfg *config.Config) *cobra.Command {
 // newLintInitCmd 构造 `litkit lint init [project_dir]`。
 func newLintInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init [project_dir] --type review|empirical --lang zh|en",
+		Use:   "init [project_dir] --type review|empirical|book --lang zh|en",
 		Short: "初始化论文类型目录（.litkit/<type>/ 的 manuscript-spec.yaml）",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,8 +40,8 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 			if lang != lint.LangZH && lang != lint.LangEN {
 				return &paramError{msg: fmt.Sprintf("lint init: 无效 --lang %q（可选 zh|en）", lang)}
 			}
-			if paperType != "" && paperType != lint.PaperTypeReview && paperType != lint.PaperTypeEmpirical {
-				return &paramError{msg: fmt.Sprintf("lint init: 无效 --type %q（可选 review|empirical）", paperType)}
+			if paperType != "" && !lint.IsValidPaperType(paperType) {
+				return &paramError{msg: fmt.Sprintf("lint init: 无效 --type %q（可选 %s）", paperType, lint.PaperTypesLabel())}
 			}
 			dir := cfg.WorkDir
 			if len(args) > 0 {
@@ -78,7 +78,7 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 	}
 	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
 	cmd.Flags().String("lang", lint.LangZH, "撰写语言 zh|en")
-	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型 review|empirical")
+	cmd.Flags().String("type", lint.PaperTypeEmpirical, "论文类型 review|empirical|book")
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec）")
 	return cmd
 }

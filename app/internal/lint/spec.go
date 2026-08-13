@@ -15,6 +15,7 @@ import (
 const (
 	PaperTypeReview    = "review"    // 综述
 	PaperTypeEmpirical = "empirical" // 四段式实证
+	PaperTypeBook      = "book"      // 书籍（医学书稿编校细则，yueshu.md）
 )
 
 // 撰写语言常量（C1 中文优先，zh 为默认）。
@@ -28,7 +29,7 @@ const (
 // ManuscriptSpec 撰写规范配置（.litkit/<type>/manuscript-spec.yaml）。
 // 用户可手动修改；AI 直接读取此文件，无需额外步骤。
 type ManuscriptSpec struct {
-	PaperType  string        `yaml:"paper_type"` // review | empirical
+	PaperType  string        `yaml:"paper_type"` // review | empirical | book
 	Lang       string        `yaml:"lang"`       // zh | en
 	Journal    string        `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
 	Sections   []string      `yaml:"sections"`   // 当前论文类型的章节清单
@@ -36,6 +37,9 @@ type ManuscriptSpec struct {
 	Citation   CitationSpec  `yaml:"citation"`
 	Heading    HeadingLimits `yaml:"heading"`
 	BoastWords []string      `yaml:"boast_words"` // 自我夸大/AI痕迹禁用词表（空=使用默认词表）
+	// BookTopLevel 书籍文件顶层标题级别（仅 book 生效）：auto|book|chapter|section。
+	// auto（默认）自动兼容整本书/单章/单节文件；book 强制首标题为书名。
+	BookTopLevel string `yaml:"book_top_level"`
 }
 
 // WordCounts 字数阈值 [min, max]。
@@ -105,9 +109,9 @@ func LoadSpec(path string) (*ManuscriptSpec, error) {
 // Validate 校验规范字段合法性（信任边界输入校验）。
 func (s *ManuscriptSpec) Validate() error {
 	switch s.PaperType {
-	case PaperTypeReview, PaperTypeEmpirical:
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook:
 	default:
-		return fmt.Errorf("paper_type 必须为 review|empirical，got %q", s.PaperType)
+		return fmt.Errorf("paper_type 必须为 review|empirical|book，got %q", s.PaperType)
 	}
 	switch s.Lang {
 	case LangZH, LangEN:
@@ -132,7 +136,19 @@ func (s *ManuscriptSpec) Validate() error {
 	if s.Heading.MaxLength <= 0 {
 		return fmt.Errorf("heading.max_length 必须 > 0")
 	}
+	if !IsValidBookTopLevel(s.BookTopLevel) {
+		return fmt.Errorf("book_top_level 必须为 auto|book|chapter|section（空=auto），got %q", s.BookTopLevel)
+	}
 	return nil
+}
+
+// IsValidBookTopLevel 判断书籍文件顶层标题级别是否合法（book_top_level）。
+func IsValidBookTopLevel(l string) bool {
+	switch l {
+	case "", "auto", "book", "chapter", "section":
+		return true
+	}
+	return false
 }
 
 func validateRange(name string, r []int) error {
@@ -170,4 +186,18 @@ func (s *ManuscriptSpec) StyleLabel() string {
 // TypeLangDir 返回 .litkit 下的论文类型目录名（如 "empirical-zh"）。
 func TypeLangDir(paperType, lang string) string {
 	return paperType + "-" + lang
+}
+
+// IsValidPaperType 判断是否为已注册论文类型。
+func IsValidPaperType(t string) bool {
+	switch t {
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook:
+		return true
+	}
+	return false
+}
+
+// PaperTypesLabel 返回论文类型枚举的展示标签（用于帮助文本与参数错误提示）。
+func PaperTypesLabel() string {
+	return "review|empirical|book"
 }

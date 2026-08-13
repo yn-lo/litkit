@@ -44,13 +44,13 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 输出：`{ total, sourceResults, errors, papers[] }`
 
 ```
-litkit init [--force] [--type review|empirical] [--lang zh|en] [--journal NAME] [--refresh]
+litkit init [--force] [--type review|empirical|book] [--lang zh|en] [--journal NAME] [--refresh]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--force` | 覆盖已存在的 `.env` / `AGENTS.md` | 关 |
-| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证） | empirical |
+| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `book`（书籍，中文编校细则） | empirical |
 | `--lang` | 撰写语言 | zh |
 | `--journal` | 目标期刊名称（写入 spec，影响引用格式默认值与 checklist） | 空 |
 | `--refresh` | 按现有 manuscript-spec.yaml 重新生成 AGENTS.md 撰写段 | 关 |
@@ -112,11 +112,11 @@ litkit lib list [--source S] [--limit N] [--offset N]
 litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
-litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical] [--journal NAME]
+litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]
 ```
 
 ```
-litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical] [--rule R2.1,R7.1] [--skip R4.2]
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book] [--rule R2.1,R7.1] [--skip R4.2]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -124,12 +124,12 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
 | `--lang` | 写作语言模式 | zh |
 | `--mode` | 验证深度：`chapter`（结构）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
-| `--type` | 论文类型：`review` \| `empirical`（空=从 spec 自动取） | 空 |
+| `--type` | 论文类型：`review` \| `empirical` \| `book`（空=从 spec 自动取） | 空 |
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
-> 19 条规则（16 A 类 + 3 S 类）；M 类（R2.4/R4.3）仅输出人工核对提示，不判 fail。
+> 21 条规则（18 A 类 + 3 S 类）；M 类（R2.4/R4.3）仅输出人工核对提示，不判 fail。
 > 模式递增：chapter → draft → final，高模式包含低模式全部规则。
 > Markdown 分段：排除代码块/参考文献/表格后检查 Body。
 

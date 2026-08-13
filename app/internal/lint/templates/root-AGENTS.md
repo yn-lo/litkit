@@ -16,7 +16,7 @@
 ## 论文类型
 
 每种类型在 `.litkit/<type-lang>/` 下有独立阈值配置（`manuscript-spec.yaml`）。
-查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical --lang zh|en`
+查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical|book --lang zh|en`
 
 ## 检索策略
 
