@@ -4,12 +4,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"litkit/internal/core"
 	"litkit/internal/model"
 	"litkit/internal/storage"
 )
@@ -34,9 +38,10 @@ var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKI
 func newLibraryCmd(st *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lib",
-		Short: "本地文献库管理（list | search | rm | stats | path）",
+		Short: "本地文献库管理（add | list | search | rm | stats | path）",
 	}
 	cmd.AddCommand(
+		newLibAddCmd(st),
 		newLibListCmd(st),
 		newLibSearchCmd(st),
 		newLibRmCmd(st),
@@ -44,6 +49,80 @@ func newLibraryCmd(st *storage.Store) *cobra.Command {
 		newLibPathCmd(st),
 	)
 	return cmd
+}
+
+// libAddResult 单篇手动录入结果。
+type libAddResult struct {
+	CiteKey  string `json:"citeKey"`
+	Title    string `json:"title"`
+	Inserted bool   `json:"inserted"` // true=首次入库；false=更新已有文献（citeKey 不变）
+}
+
+func newLibAddCmd(st *storage.Store) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add <metadata.json>",
+		Short: "手动录入文献元数据（标题+摘要必填，source=manual）",
+		Long: `litkit lib add —— 手动录入文献
+
+读取元数据 JSON 文件（单个对象或对象数组），校验后入库并分配 citeKey。
+用于 AI 手动添加检索源覆盖不到（或无法在线获取）的文献。
+
+必填字段：title、abstract（摘要工作流：入库文献必须携带摘要，AI 需手动撰写）。
+可选字段：authors（字符串数组 ["张三"] 或对象数组 [{"family","given"}]）、
+year、venue、doi、pmid、arxivId、url、docType、volume、number、pages、publisher、city。
+
+同一 DOI（无 DOI 则按标题）重复录入时更新字段、返回原 citeKey（inserted=false）。
+入库文献 source 标记为 manual，可用 lib list --source manual 或 lib stats 区分。`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if st == nil {
+				return errNoStore
+			}
+			inputs, err := readManualPapers(args[0])
+			if err != nil {
+				return err
+			}
+			results := make([]libAddResult, 0, len(inputs))
+			for _, in := range inputs {
+				p, err := core.AddManualPaper(in)
+				if err != nil {
+					return &paramError{msg: err.Error()}
+				}
+				citeKey, inserted, err := st.UpsertPaper(p)
+				if err != nil {
+					return err
+				}
+				results = append(results, libAddResult{CiteKey: citeKey, Title: p.Title, Inserted: inserted})
+			}
+			return printJSON(struct {
+				Added  int            `json:"added"`
+				Papers []libAddResult `json:"papers"`
+			}{Added: len(results), Papers: results})
+		},
+	}
+	return cmd
+}
+
+// readManualPapers 读取元数据 JSON 文件（单对象或数组；容忍 UTF-8 BOM）。
+func readManualPapers(path string) ([]core.ManualPaperInput, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("lib add: 读取 %s 失败: %w", path, err)
+	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}) // 去除 UTF-8 BOM
+	trimmed := strings.TrimSpace(string(data))
+	if strings.HasPrefix(trimmed, "[") {
+		var inputs []core.ManualPaperInput
+		if err := json.Unmarshal(data, &inputs); err != nil {
+			return nil, fmt.Errorf("lib add: 解析 %s 失败: %w", path, err)
+		}
+		return inputs, nil
+	}
+	var in core.ManualPaperInput
+	if err := json.Unmarshal(data, &in); err != nil {
+		return nil, fmt.Errorf("lib add: 解析 %s 失败: %w", path, err)
+	}
+	return []core.ManualPaperInput{in}, nil
 }
 
 func newLibListCmd(st *storage.Store) *cobra.Command {

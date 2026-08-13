@@ -108,10 +108,26 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
+litkit lib add <metadata.json>
 litkit lib list [--source S] [--limit N] [--offset N]
 litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
+```
+
+```
+litkit lib add <metadata.json>
+```
+
+> 手动录入文献元数据（AI 手动添加检索源覆盖不到的文献）。`metadata.json` 为单个对象或对象数组。
+> **必填**：`title`、`abstract`（摘要工作流：入库文献必须携带摘要）。
+> **可选**：`authors`（字符串数组 `["张三"]` 或对象数组 `[{"family","given"}]`）、
+> `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`。
+> 同一 DOI（无 DOI 按标题）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
+> 入库 `source=manual`，可用 `lib list --source manual` / `lib stats` 区分。
+> 输出：`{ added, papers: [{ citeKey, title, inserted }] }`。
+
+```
 litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]
 litkit rules
 ```
