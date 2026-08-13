@@ -113,7 +113,23 @@ litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
 litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]
+litkit rules
 ```
+
+```
+litkit rules
+```
+
+输出：`{ rules: [{ id, name, category, langs, types, method, from }] }`
+
+| 字段 | 含义 |
+|---|---|
+| `id` | 规则 ID（如 `R3.4`，用于 `--skip` 与 spec `skip_rules`） |
+| `category` | 检查类别（`--check`/`--skip-check` 用） |
+| `types` | 适用论文类型（空=`[]` 表示全部类型） |
+| `from` | 启用模式：`chapter` \| `draft` \| `final`（递增） |
+
+> 纯查询命令，不依赖 `LITKIT_WORK_DIR`。
 
 ```
 litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book] [--rule R2.1,R7.1] [--skip R4.2]
@@ -130,6 +146,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
 > 21 条规则（18 A 类 + 3 S 类）；M 类（R2.4/R4.3）仅输出人工核对提示，不判 fail。
+> spec 的 `skip_rules` 字段可永久跳过指定规则（等效每次 `--skip`）。
 > 模式递增：chapter → draft → final，高模式包含低模式全部规则。
 > Markdown 分段：排除代码块/参考文献/表格后检查 Body。
 

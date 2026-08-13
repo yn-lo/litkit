@@ -27,6 +27,7 @@ heading:
   max_length: 20        # 标题最大字数（末尾无标点）
   require_numbering: true # 标题必须带中文编号（第一篇/第一章/一、/（一）/1./（1））
 book_top_level: auto    # 文件顶层标题级别：auto（默认，整本/单章/单节文件均兼容）| book（整本书单文件，首标题须为书名）| chapter（一章一文件）| section（一节一文件）
+skip_rules: []          # 永久跳过的规则 ID（等效每次 verify --skip，如 [R3.4, R8.1]）；空=全部启用
 boast_words:
   - 首次证实
   - 颠覆性

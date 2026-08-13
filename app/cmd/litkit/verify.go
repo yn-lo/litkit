@@ -87,6 +87,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				OnlyCategories: onlyCats,
 				SkipCategories: skipCats,
 			}
+			// spec 级 skip_rules 永久跳过（合并进 --skip，等效每次携带）
+			opts.Skip = append(opts.Skip, spec.SkipRules...)
 
 			report, err := lint.RunFilesWithStore(args, spec, opts, store)
 			if err != nil {

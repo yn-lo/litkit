@@ -153,3 +153,60 @@ func TestInitPaperType_book(t *testing.T) {
 		t.Errorf("应生成 .litkit/book-zh/manuscript-spec.yaml：%v", err)
 	}
 }
+
+// ---- skip_rules（spec 级永久跳过规则）----
+
+func TestLoadSpec_skipRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.yaml")
+	content := `paper_type: book
+lang: zh
+skip_rules:
+  - R3.4
+  - R8.1
+word_counts:
+  total: [500, 20000]
+  abstract: [200, 500]
+  paragraph: [50, 2000]
+citation:
+  count: [10, 200]
+heading:
+  max_level: 7
+  max_length: 20
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	spec, err := LoadSpec(path)
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if len(spec.SkipRules) != 2 || spec.SkipRules[0] != "R3.4" || spec.SkipRules[1] != "R8.1" {
+		t.Errorf("应解析 skip_rules 为 [R3.4 R8.1]，got %v", spec.SkipRules)
+	}
+}
+
+func TestLoadSpec_invalidSkipRule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	content := `paper_type: book
+lang: zh
+skip_rules:
+  - R9.9
+word_counts:
+  total: [500, 20000]
+  abstract: [200, 500]
+  paragraph: [50, 2000]
+citation:
+  count: [10, 200]
+heading:
+  max_level: 7
+  max_length: 20
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadSpec(path); err == nil {
+		t.Error("未知规则 ID 应报错")
+	}
+}

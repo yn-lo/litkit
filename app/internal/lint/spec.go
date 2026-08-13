@@ -40,6 +40,8 @@ type ManuscriptSpec struct {
 	// BookTopLevel 书籍文件顶层标题级别（仅 book 生效）：auto|book|chapter|section。
 	// auto（默认）自动兼容整本书/单章/单节文件；book 强制首标题为书名。
 	BookTopLevel string `yaml:"book_top_level"`
+	// SkipRules 永久跳过的规则 ID（等效每次 verify --skip），空=全部启用。
+	SkipRules []string `yaml:"skip_rules"`
 }
 
 // WordCounts 字数阈值 [min, max]。
@@ -139,7 +141,23 @@ func (s *ManuscriptSpec) Validate() error {
 	if !IsValidBookTopLevel(s.BookTopLevel) {
 		return fmt.Errorf("book_top_level 必须为 auto|book|chapter|section（空=auto），got %q", s.BookTopLevel)
 	}
+	// skip_rules 中的规则 ID 必须已注册
+	for _, id := range s.SkipRules {
+		if !isRegisteredRule(id) {
+			return fmt.Errorf("skip_rules 含未知规则 %q（运行 litkit rules 查看全部规则 ID）", id)
+		}
+	}
 	return nil
+}
+
+// isRegisteredRule 判断规则 ID 是否在规则注册表中。
+func isRegisteredRule(id string) bool {
+	for _, r := range AllRules() {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // IsValidBookTopLevel 判断书籍文件顶层标题级别是否合法（book_top_level）。
