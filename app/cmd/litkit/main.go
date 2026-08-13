@@ -68,6 +68,7 @@ func newRootCmd(d *deps) *cobra.Command {
 		newExportCmd(),
 		newLibraryCmd(d.store),
 		newRulesCmd(),
+		newFixCmd(),
 		newLintCmd(d.cfg),
 		newVerifyCmd(d.cfg, d.store),
 	)

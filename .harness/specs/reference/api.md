@@ -132,6 +132,21 @@ litkit rules
 > 纯查询命令，不依赖 `LITKIT_WORK_DIR`。
 
 ```
+litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
+```
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `<file.md> ...` | 待修正 Markdown 文件（支持多文件，原地覆盖） | 必填 |
+| `--rule` | 仅修正指定规则（逗号分隔） | 全部可修规则 |
+| `--skip` | 跳过指定规则（逗号分隔） | 无 |
+
+> 仅修正"字符级确定性"规则：全半角（R3.1）、直引号（R3.2）、P 值格式（R2.1）、
+> 加粗标记（R1.4）、标题冒号（R7.1）、标题末尾标点（R1.2）、引用位置（R6.1）、数字范围（R3.3）。
+> 语义/结构类规则不可自动修（`litkit rules` 可查全部规则，`fix` 字段非空才可修）。
+> 输出：`{ files: { "<path>": { applied: { "R3.1": 1, ... } } } }`（applied = 规则 ID → 修正行数）。
+
+```
 litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book] [--rule R2.1,R7.1] [--skip R4.2]
 ```
 

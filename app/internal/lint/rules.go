@@ -96,6 +96,8 @@ type Rule struct {
 	Method   Method
 	From     Mode // 从该模式起启用
 	Check    func(src *Source, spec *ManuscriptSpec) []Violation
+	// Fix 自动修正：对单行应用确定性替换，返回修正后行与是否修改。nil=不可修。
+	Fix func(line string) (string, bool)
 }
 
 // 预编译正则（mnd：集中管理，避免规则函数内重复编译）。
@@ -1226,24 +1228,24 @@ func AllRules() []Rule {
 		{ID: "R0.1", Name: "全文中文", Category: CatLanguage, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR01},
 		{ID: "R0.2", Name: "标题中文", Category: CatLanguage, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR02},
 		{ID: "R1.1", Name: "章节层级", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR11},
-		{ID: "R1.2", Name: "标题长度", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12},
+		{ID: "R1.2", Name: "标题长度", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR12, Fix: fixR12},
 		{ID: ruleIDHeadingOrder, Name: "标题规范", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
-		{ID: "R1.4", Name: "正文禁止加粗", Category: CatStructure, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14},
+		{ID: "R1.4", Name: "正文禁止加粗", Category: CatStructure, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14, Fix: fixR14},
 		{ID: "R1.5", Name: "章节完整性", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR15},
 		{ID: "R1.6", Name: "空章节", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR16},
 		{ID: ruleR17, Name: "空/重复标题", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR17},
 		{ID: "R1.8", Name: "图表交叉引用", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR18},
-		{ID: ruleR21, Name: "P值格式", Category: CatStatistics, Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21},
-		{ID: "R3.1", Name: "全半角", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31},
-		{ID: "R3.2", Name: "中文引号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32},
-		{ID: "R3.3", Name: "数字范围", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR33},
+		{ID: ruleR21, Name: "P值格式", Category: CatStatistics, Langs: []string{"zh", "en"}, Types: []string{PaperTypeEmpirical}, Method: MethodA, From: ModeDraft, Check: checkR21, Fix: fixR21},
+		{ID: "R3.1", Name: "全半角", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR31, Fix: fixR31},
+		{ID: "R3.2", Name: "中文引号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32, Fix: fixR32},
+		{ID: "R3.3", Name: "数字范围", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR33, Fix: fixR33},
 		{ID: "R3.4", Name: "计量单位", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR34},
 		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
 		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
-		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61},
-		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71},
+		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61, Fix: fixR61},
+		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71, Fix: fixR71},
 		{ID: "R7.2", Name: "自我夸大", Category: CatBoastWords, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
 		{ID: "R8.1", Name: "全文字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR81},
 		{ID: "R8.2", Name: "摘要字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},

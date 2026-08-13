@@ -19,6 +19,7 @@ type ruleInfo struct {
 	Types    []string `json:"types"`    // 适用论文类型（空=全部）
 	Method   string   `json:"method"`   // A=全自动 | S=脚本初筛+人工
 	From     string   `json:"from"`     // 启用模式：chapter|draft|final
+	Fixable  bool     `json:"fixable"`  // 是否可自动修正（litkit fix）
 }
 
 // buildRulesOutput 投影规则注册表为可序列化视图。
@@ -34,6 +35,7 @@ func buildRulesOutput() []ruleInfo {
 			Types:    r.Types,
 			Method:   string(r.Method),
 			From:     string(r.From),
+			Fixable:  r.Fix != nil,
 		}
 	}
 	return out

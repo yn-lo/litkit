@@ -24,6 +24,21 @@ func TestBuildRulesOutput(t *testing.T) {
 	}
 }
 
+// TestBuildRulesOutput_fixable 可修标记：R3.1 可修，R7.2 不可修。
+func TestBuildRulesOutput_fixable(t *testing.T) {
+	out := buildRulesOutput()
+	flags := map[string]bool{}
+	for _, r := range out {
+		flags[r.ID] = r.Fixable
+	}
+	if !flags["R3.1"] || !flags["R3.2"] || !flags["R3.3"] {
+		t.Error("R3.x 标点/数字规则应标记为可修")
+	}
+	if flags["R7.2"] || flags["R1.5"] || flags["R8.1"] {
+		t.Error("语义/结构/字数规则不应标记为可修")
+	}
+}
+
 // TestRulesCmd 命令应可执行且不依赖工作目录。
 func TestRulesCmd(t *testing.T) {
 	cmd := newRulesCmd()
