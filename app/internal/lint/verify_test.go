@@ -292,6 +292,37 @@ func TestRule_R7_2_customBoastWords(t *testing.T) {
 	}
 }
 
+// TestRule_R7_2_aiTraitWords 奠定/破局 为 AI 痕迹词（zh 词表）；英文模板以英文词覆盖（lay/laid the foundation、breakthrough）。
+func TestRule_R7_2_aiTraitWords(t *testing.T) {
+	// zh 稿：命中中文痕迹词
+	fr := runContent(t, "本研究为该领域奠定了坚实基础。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R7.2"); len(got) != 1 {
+		t.Errorf("zh 稿含'奠定'应触发 R7.2，got %v", got)
+	}
+	fr = runContent(t, "该方法实现了行业的破局。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R7.2"); len(got) != 1 {
+		t.Errorf("zh 稿含'破局'应触发 R7.2，got %v", got)
+	}
+	// en 稿：英文痕迹词命中
+	enSpec := SpecForType(PaperTypeEmpirical, LangEN)
+	enOpts := Options{Lang: "en", Mode: ModeDraft, PaperType: PaperTypeEmpirical}
+	for _, content := range []string{
+		"This study lays the foundation for the field.\n",
+		"This study laid the foundation for the field.\n",
+		"This method is a breakthrough in the field.\n",
+	} {
+		fr := runContent(t, content, enSpec, enOpts)
+		if got := violationsOf(fr, "R7.2"); len(got) != 1 {
+			t.Errorf("en 稿 %q 应触发 R7.2，got %v", content, got)
+		}
+	}
+	// 客观表述不触发
+	fr = runContent(t, "本研究验证了该假设。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R7.2"); len(got) != 0 {
+		t.Errorf("客观表述不应触发 R7.2，got %v", got)
+	}
+}
+
 func TestRule_R9_1(t *testing.T) {
 	fr := runContent(t, "【注意】此处待修改。\n", DefaultSpec(), zhChapter())
 	got := violationsOf(fr, "R9.1")
