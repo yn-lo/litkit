@@ -355,11 +355,21 @@ func TestRule_R5_3(t *testing.T) {
 	if got := violationsOf(fr, "R5.3"); len(got) == 0 {
 		t.Error("引用总数不足应违规")
 	}
-	// 单行 >3
+	// 连续引用聚集：4 个连续引用（中间仅空白）违规
 	fr = runContent(t, "[@a][@b][@c][@d]\n", spec, zhFinal())
 	got := violationsOf(fr, "R5.3")
 	if len(got) != 1 || got[0].Line != 1 {
-		t.Errorf("单行超 3 引用应在第 1 行违规，got %v", got)
+		t.Errorf("连续 4 个引用应在第 1 行违规，got %v", got)
+	}
+	// 连续 3 个引用允许（聚集上限为 3）
+	fr = runContent(t, "[@a][@b][@c]\n", spec, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 0 {
+		t.Errorf("连续 3 个引用不应违规，got %v", got)
+	}
+	// 同行 4 个引用但被文字隔开（分散）：不按聚集论处
+	fr = runContent(t, "A[@a]，B[@b]，C[@c]，D[@d]。\n", spec, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 0 {
+		t.Errorf("分散引用不应按聚集违规，got %v", got)
 	}
 	// 合规
 	fr = runContent(t, "[@a][@b]\n\n[@c]\n", spec, zhFinal())

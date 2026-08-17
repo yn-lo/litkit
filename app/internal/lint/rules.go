@@ -50,11 +50,10 @@ const ruleIDHeadingOrder = "R1.3"
 
 // P 值格式阈值（R2.1）与引用密度阈值（R5.3）。
 const (
-	pThreshold001  = 0.001 // P<0.001 不给出具体数值
-	pThreshold01   = 0.01  // 0.001≤P<0.01 保留 3 位
-	pDecimalsMid   = 3     // 中间区间小数位
-	pDecimalsHigh  = 2     // P≥0.01 小数位
-	maxCitePerLine = 3     // 单行最大引用数
+	pThreshold001 = 0.001 // P<0.001 不给出具体数值
+	pThreshold01  = 0.01  // 0.001≤P<0.01 保留 3 位
+	pDecimalsMid  = 3     // 中间区间小数位
+	pDecimalsHigh = 2     // P≥0.01 小数位
 
 	// R0.1 英文占比阈值
 	enWordRatioLimit = 0.40
@@ -64,6 +63,10 @@ const (
 	ruleR17        = "R1.7"
 	ruleR21        = "R2.1"
 	ruleCiteExists = "R5.6" // 引用存在性校验（[@citeKey] 须在本地库中）
+
+	// maxCiteRun 连续引用聚集上限：超过（N+1 个连续，中间仅空白）视为引用连串违规（R5.3）。
+	// 判定基于"聚集程度"而非物理行——行内分散的多个引用不违规（用户修正：句子级密度 → 聚集检查）。
+	maxCiteRun = 3
 )
 
 // modeRank 用于比较模式递增。
@@ -113,6 +116,7 @@ var (
 	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                   // [数字]
 	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                      // 标点后紧跟引用（违规）
 	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                               // 引用占位符 [@citeKey]
+	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){4,}`)                   // 连续引用连串（4+ 个，中间仅空白）
 	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)          // 图表引用/题注
 	redundantRes    = []*regexp.Regexp{
 		regexp.MustCompile(`进行`),
@@ -1147,22 +1151,25 @@ func checkR42(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR53 引用密度：全文 [@...] 去重篇数不在区间违规；单行 >3 处违规（按出现次数）。
+// checkR53 引用密度：引用聚集程度 + 全文引用篇数区间。
+//
+// 聚集检查：连续 N+1 个引用（中间仅空白）连串出现违规——引用应分散到论述对应处，
+// 而非堆叠。基于"聚集"而非物理行：行内被文字隔开的多个引用（一个论点一个引用）不违规。
 func checkR53(src *Source, spec *ManuscriptSpec) []Violation {
 	var vs []Violation
 	seen := map[string]bool{} // citeKey 去重，总数按去重篇数计
 	total := 0
 	for i, ln := range src.Body {
-		matches := citeRe.FindAllString(ln, -1)
-		if c := len(matches); c > maxCitePerLine {
+		if m := citeRunRe.FindString(ln); m != "" {
+			n := len(citeRe.FindAllString(m, -1))
 			vs = append(vs, Violation{
 				RuleID:     "R5.3",
 				Line:       src.bodyIdx[i],
-				Problem:    fmt.Sprintf("单行 %d 个引用超过 3", c),
-				Suggestion: "拆分引用到多处",
+				Problem:    fmt.Sprintf("连续 %d 个引用聚集出现（超过 %d）", n, maxCiteRun),
+				Suggestion: "引用应分散到对应论述处，避免连续堆叠",
 			})
 		}
-		for _, m := range matches {
+		for _, m := range citeRe.FindAllString(ln, -1) {
 			key := m[2 : len(m)-1] // 去掉 [@ 与 ]
 			if !seen[key] {
 				seen[key] = true
