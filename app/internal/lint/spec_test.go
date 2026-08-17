@@ -210,3 +210,59 @@ heading:
 		t.Error("未知规则 ID 应报错")
 	}
 }
+
+func TestLoadSpec_citationRunLimit(t *testing.T) {
+	// yaml 显式配 run_limit: 2 → 解析为 2
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.yaml")
+	content := `paper_type: empirical
+lang: zh
+citation:
+  count: [20, 40]
+  run_limit: 2
+heading:
+  max_level: 4
+  max_length: 15
+word_counts:
+  total: [3500, 5000]
+  abstract: [200, 500]
+  paragraph: [100, 400]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	spec, err := LoadSpec(path)
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if spec.Citation.RunLimit != 2 {
+		t.Errorf("citation.run_limit 应解析为 2，got %d", spec.Citation.RunLimit)
+	}
+	// 未配 run_limit 的 yaml → 0（规则层回退默认 3）
+	noLimit := `paper_type: empirical
+lang: zh
+citation:
+  count: [20, 40]
+heading:
+  max_level: 4
+  max_length: 15
+word_counts:
+  total: [3500, 5000]
+  abstract: [200, 500]
+  paragraph: [100, 400]
+`
+	if err := os.WriteFile(path, []byte(noLimit), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	spec, err = LoadSpec(path)
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if spec.Citation.RunLimit != 0 {
+		t.Errorf("未配置 run_limit 应为 0，got %d", spec.Citation.RunLimit)
+	}
+	// 内置模板显式配 3（行为与缺省默认一致）
+	if def := DefaultSpec(); def.Citation.RunLimit != 3 {
+		t.Errorf("内置模板 run_limit 应为 3，got %d", def.Citation.RunLimit)
+	}
+}

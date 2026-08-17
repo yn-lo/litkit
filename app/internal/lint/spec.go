@@ -55,6 +55,8 @@ type WordCounts struct {
 type CitationSpec struct {
 	Count []int  `yaml:"count"`
 	Style string `yaml:"style"` // gbt7714 | apa | ieee
+	// RunLimit 连续引用聚集上限（R5.3）：连续 RunLimit+1 个引用连串违规；0/缺省=3。
+	RunLimit int `yaml:"run_limit"`
 }
 
 // HeadingLimits 标题层级、长度与编号要求。
@@ -131,6 +133,9 @@ func (s *ManuscriptSpec) Validate() error {
 	}
 	if err := validateRange("citation.count", s.Citation.Count); err != nil {
 		return err
+	}
+	if s.Citation.RunLimit < 0 {
+		return fmt.Errorf("citation.run_limit 必须 >= 0（0=默认 3），got %d", s.Citation.RunLimit)
 	}
 	if s.Heading.MaxLevel <= 0 {
 		return fmt.Errorf("heading.max_level 必须 > 0")

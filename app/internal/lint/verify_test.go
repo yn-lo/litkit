@@ -384,6 +384,36 @@ func TestRule_R5_3(t *testing.T) {
 	}
 }
 
+func TestRule_R5_3_runLimit(t *testing.T) {
+	// run_limit=2：连续 3 个引用即违规
+	spec := DefaultSpec()
+	spec.Citation.Count = []int{2, 10}
+	spec.Citation.RunLimit = 2
+	fr := runContent(t, "[@a][@b][@c]\n", spec, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 1 {
+		t.Errorf("run_limit=2 时连续 3 个引用应违规，got %v", got)
+	}
+	// run_limit=0（缺省）→ 默认 3：连续 3 个不违规，连续 4 个违规
+	def := DefaultSpec()
+	def.Citation.Count = []int{2, 10}
+	fr = runContent(t, "[@a][@b][@c]\n", def, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 0 {
+		t.Errorf("默认 run_limit 下连续 3 个引用不应违规，got %v", got)
+	}
+	fr = runContent(t, "[@a][@b][@c][@d]\n", def, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 1 {
+		t.Errorf("默认 run_limit 下连续 4 个引用应违规，got %v", got)
+	}
+	// 多段连串：第二段超限也要报（FindAllString 遍历所有连串）
+	spec2 := DefaultSpec()
+	spec2.Citation.Count = []int{2, 10}
+	spec2.Citation.RunLimit = 2
+	fr = runContent(t, "[@a][@b]文字[@c][@d][@e]\n", spec2, zhFinal())
+	if got := violationsOf(fr, "R5.3"); len(got) != 1 {
+		t.Errorf("第二段连串超限应违规，got %v", got)
+	}
+}
+
 func TestRule_R8_1(t *testing.T) {
 	fr := runContent(t, "短文。\n", DefaultSpec(), zhFinal())
 	if got := violationsOf(fr, "R8.1"); len(got) != 1 {

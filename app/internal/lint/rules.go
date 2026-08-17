@@ -116,7 +116,7 @@ var (
 	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                   // [数字]
 	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                      // 标点后紧跟引用（违规）
 	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                               // 引用占位符 [@citeKey]
-	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){4,}`)                   // 连续引用连串（4+ 个，中间仅空白）
+	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){2,}`)                   // 连续引用连串（2+ 个，中间仅空白）
 	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)          // 图表引用/题注
 	redundantRes    = []*regexp.Regexp{
 		regexp.MustCompile(`进行`),
@@ -1157,17 +1157,24 @@ func checkR42(src *Source, _ *ManuscriptSpec) []Violation {
 // 而非堆叠。基于"聚集"而非物理行：行内被文字隔开的多个引用（一个论点一个引用）不违规。
 func checkR53(src *Source, spec *ManuscriptSpec) []Violation {
 	var vs []Violation
+	limit := spec.Citation.RunLimit
+	if limit <= 0 {
+		limit = maxCiteRun
+	}
 	seen := map[string]bool{} // citeKey 去重，总数按去重篇数计
 	total := 0
 	for i, ln := range src.Body {
-		if m := citeRunRe.FindString(ln); m != "" {
+		for _, m := range citeRunRe.FindAllString(ln, -1) {
 			n := len(citeRe.FindAllString(m, -1))
-			vs = append(vs, Violation{
-				RuleID:     "R5.3",
-				Line:       src.bodyIdx[i],
-				Problem:    fmt.Sprintf("连续 %d 个引用聚集出现（超过 %d）", n, maxCiteRun),
-				Suggestion: "引用应分散到对应论述处，避免连续堆叠",
-			})
+			if n > limit {
+				vs = append(vs, Violation{
+					RuleID:     "R5.3",
+					Line:       src.bodyIdx[i],
+					Problem:    fmt.Sprintf("连续 %d 个引用聚集出现（超过 %d）", n, limit),
+					Suggestion: "引用应分散到对应论述处，避免连续堆叠",
+				})
+				break // 一行报一次
+			}
 		}
 		for _, m := range citeRe.FindAllString(ln, -1) {
 			key := m[2 : len(m)-1] // 去掉 [@ 与 ]

@@ -22,6 +22,7 @@ word_counts:
 citation:
   count: [10, 200]      # 单章引用篇数 [最小, 最大]
   style: gbt7714        # 引用格式：gbt7714 | apa | ieee
+  run_limit: 3          # 连续引用聚集上限（R5.3）：连续 run_limit+1 个引用连串违规；0=默认 3
 heading:
   max_level: 7          # 标题最大层级（yueshu.md 七级标题体系）
   max_length: 20        # 标题最大字数（末尾无标点）
