@@ -97,7 +97,7 @@ owner: litkit-core
 > 已落地：app/.goreleaser.yml（linux/darwin/windows × amd64/arm64，版本经 ldflags 注入
 > internal/buildinfo，snapshot 构建验证通过）；CI 部署 .github/workflows/ci.yml（替换
 > registration/link 两个占位为 .harness/constraints/sync 检查器，docs job 补 setup-go）；
-> sync 检查器（CLI/api.md 清单一致 + CLAUDE.md/.harness 断链检查，已并入本地 gate 第 8 项）；
+> sync 检查器（CLI/api.md 清单一致 + AGENTS.md/.harness 断链检查，已并入本地 gate 第 8 项）；
 > README / LICENSE（Apache-2.0）/ CONTRIBUTING。
 
 **产出**：可安装、CI 全绿、文档一致。

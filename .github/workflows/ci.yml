@@ -118,7 +118,7 @@ jobs:
           done < <(find .harness/specs -name "*.md" -mtime +$STALE_DAYS)
           exit $stale
 
-      - name: Broken link check (CLAUDE.md + .harness, NFR-MAINT-04)
+      - name: Broken link check (AGENTS.md + .harness, NFR-MAINT-04)
         run: |
           cd .harness/constraints/sync
           go run .

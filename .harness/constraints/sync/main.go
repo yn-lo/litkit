@@ -1,7 +1,7 @@
 // sync 检查接口一致性门禁（CI docs job 调用，P0/P2）：
 //
 //  1. registration sync：CLI 子命令与 api.md §1 清单一致。
-//  2. link check：CLAUDE.md 与 .harness/ 下 Markdown 相对链接指向存在
+//  2. link check：AGENTS.md 与 .harness/ 下 Markdown 相对链接指向存在
 //     （NFR-MAINT-04）。
 //
 // 运行：cd .harness/constraints/sync && go run . [repo_root]
@@ -134,10 +134,10 @@ func apiSectionCommands(root string) []string {
 
 // ---- 2. link check ----
 
-// checkLinks 扫描 CLAUDE.md 与 .harness/ 下 Markdown，验证相对链接目标存在。
+// checkLinks 扫描 AGENTS.md 与 .harness/ 下 Markdown，验证相对链接目标存在。
 func checkLinks(root string) error {
 	var errs []string
-	targets := []string{filepath.Join(root, "CLAUDE.md")}
+	targets := []string{filepath.Join(root, "AGENTS.md")}
 	filepath.WalkDir(filepath.Join(root, ".harness"), func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil

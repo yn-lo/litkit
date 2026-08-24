@@ -1,4 +1,4 @@
-# CLAUDE.md — litkit
+# AGENTS.md — litkit
 
 > 本项目的知识地图（指向"去哪找"）和重点开发规范。
 
@@ -29,14 +29,6 @@ Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁�
 .harness/constraints/gate.ps1        # Windows PowerShell
 bash .harness/constraints/gate.sh     # Linux/macOS
 
-# 快速预检（门禁真子集，在 app/ 执行）
-cd app && gofmt -l . && go test ./...
-
-# 触网测试（手动，不进 CI，在 app/ 执行）
-cd app && go test -tags integration ./tests/integration/
-
-# 发布（在 app/ 执行）
-cd app && goreleaser build --snapshot
 ```
 
 ## 硬性规则
@@ -49,6 +41,7 @@ cd app && goreleaser build --snapshot
 - **不可逆操作**：禁止 force push 主分支
 - **输出**：代码中严禁使用 emoji 提示
 - **测试目录**：如果要进行真实环境的测试，默认将.exe文件放在本项目workspace目录
+- 关键需求/节点使用TDD开发
 
 # Ponytail, lazy senior dev mode
 
@@ -84,5 +77,3 @@ Lazy = efficient, not careless. Best code is the code never written.
 Understanding the problem · trust-boundary input validation · data-loss-preventing error handling · security · accessibility · hardware calibration (clock drift, sensor offset) · anything explicitly requested.
 
 Non-trivial logic leaves ONE runnable check behind — smallest thing that fails if logic breaks (assert demo / one tiny test; no frameworks). Trivial one-liners need no test.
-
-## 关键需求/节点使用TDD开发
