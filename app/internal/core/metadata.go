@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"litkit/internal/model"
 	"litkit/internal/sources"
@@ -121,7 +122,58 @@ func (f *MetadataFetcher) fetchTitle(ctx context.Context, title string) (*model.
 	if len(resp.Message.Items) == 0 {
 		return nil, nil
 	}
-	return crossrefMessageToPaper(resp.Message.Items[0]), nil
+	first := resp.Message.Items[0]
+	// 标题相似度校验：CrossRef 检索首条可能与查询标题不符（张冠李戴），
+	// 低于阈值视为未命中（返回 nil），由调用方归入 Unresolved。
+	if titleSimilar(title, firstOrEmpty(first.Title)) < titleMatchThreshold {
+		return nil, nil
+	}
+	return crossrefMessageToPaper(first), nil
+}
+
+// titleMatchThreshold 标题反查相似度阈值：CrossRef 检索首条低于此值视为匹配错误（防张冠李戴）。
+const titleMatchThreshold = 0.5
+
+// titleStopwords 标题归一化时剔除的英文停用词（参考 dedup-engine 的标题归一化规则）。
+var titleStopwords = map[string]bool{
+	"a": true, "an": true, "the": true, "in": true, "of": true, "for": true,
+	"on": true, "to": true, "and": true, "with": true, "by": true, "et": true, "al": true,
+}
+
+// titleTokens 将标题归一化为 token 集合：小写、非字母数字替换为空格、去停用词。
+func titleTokens(s string) map[string]bool {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+	tokens := make(map[string]bool)
+	for _, w := range strings.Fields(b.String()) {
+		if !titleStopwords[w] {
+			tokens[w] = true
+		}
+	}
+	return tokens
+}
+
+// titleSimilar 计算两个标题的 Jaccard 相似度（token 集合交集 / 并集）。
+// 任一标题归一化后为空返回 0。
+func titleSimilar(a, b string) float64 {
+	ta, tb := titleTokens(a), titleTokens(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return 0
+	}
+	inter := 0
+	for w := range ta {
+		if tb[w] {
+			inter++
+		}
+	}
+	union := len(ta) + len(tb) - inter
+	return float64(inter) / float64(union)
 }
 
 func (f *MetadataFetcher) fetchPMID(ctx context.Context, pmid string) (*model.Paper, error) {

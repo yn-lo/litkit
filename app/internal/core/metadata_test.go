@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,13 +75,13 @@ const arxivEntrySample = `<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>`
 
-// CrossRef works 检索响应片段（两条候选，应取第一条）。
+// CrossRef works 检索响应片段（两条候选，应取第一条；标题与查询 "graph neural networks" 相似）。
 const crossrefSearchSample = `{
   "status": "ok",
   "message": {
     "items": [
       {
-        "title": ["Found via Title Search"],
+        "title": ["Graph Neural Networks: A Review"],
         "author": [{"given": "Ann", "family": "Author"}],
         "issued": {"date-parts": [[2019]]},
         "container-title": ["Some Journal"],
@@ -91,6 +92,19 @@ const crossrefSearchSample = `{
       {
         "title": ["Second Result"],
         "DOI": "10.2000/second"
+      }
+    ]
+  }
+}`
+
+// CrossRef works 检索响应片段（首条标题与查询明显不符，应判未命中）。
+const crossrefSearchMismatchSample = `{
+  "status": "ok",
+  "message": {
+    "items": [
+      {
+        "title": ["Found via Title Search"],
+        "DOI": "10.2000/first"
       }
     ]
   }
@@ -312,8 +326,8 @@ func TestMetadataFetch_Title(t *testing.T) {
 	if p == nil {
 		t.Fatal("应命中返回论文")
 	}
-	// 应取 items[0]
-	if p.Title != "Found via Title Search" {
+	// 应取 items[0]（标题与查询相似，通过校验）
+	if p.Title != "Graph Neural Networks: A Review" {
 		t.Errorf("Title（应取第一条）：got %q", p.Title)
 	}
 	if p.DOI != "10.2000/first" {
@@ -321,6 +335,48 @@ func TestMetadataFetch_Title(t *testing.T) {
 	}
 	if p.Year != 2019 {
 		t.Errorf("Year：got %d", p.Year)
+	}
+}
+
+func TestMetadataFetch_Title_Mismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(crossrefSearchMismatchSample))
+	}))
+	defer srv.Close()
+
+	f := newMetadataFetcher()
+	f.crossrefBase = srv.URL
+
+	// 首条标题与查询明显不符：应视为未命中（nil），由调用方归入 Unresolved。
+	p, err := f.Fetch(context.Background(), "title", "graph neural networks")
+	if err != nil {
+		t.Fatalf("标题不匹配不应报错：%v", err)
+	}
+	if p != nil {
+		t.Fatalf("标题不匹配应返回 nil，got %+v", p)
+	}
+}
+
+func TestTitleSimilar(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b string
+		want float64
+	}{
+		{"完全匹配", "Attention Is All You Need", "Attention Is All You Need", 1},
+		{"大小写标点差异", "Graph Neural Networks: A Review", "graph neural networks a review", 1},
+		{"查询为结果子集", "graph neural networks", "Graph Neural Networks for Node Classification", 0.6},
+		{"完全不相关", "graph neural networks", "Found via Title Search", 0},
+		{"空标题", "", "Graph Neural Networks", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := titleSimilar(c.a, c.b)
+			if math.Abs(got-c.want) > 1e-9 {
+				t.Errorf("titleSimilar(%q, %q) = %v，期望 %v", c.a, c.b, got, c.want)
+			}
+		})
 	}
 }
 
