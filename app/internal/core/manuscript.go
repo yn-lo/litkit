@@ -338,6 +338,21 @@ func WriteManuscriptOutputs(outDir, base, ts string, res *ManuscriptResult, styl
 	return files, nil
 }
 
+// WritePreviewOutput 额外写出 preview 版本 md（{base}_{ts}.preview.md）。
+// 供 --preview 时与正常 formatted.md 并存输出，便于人工核查引用指向。
+// 复用 formattedContent（正文自描述标记 + 文末 preview 样式引用列表）。
+func WritePreviewOutput(outDir, base, ts string, res *ManuscriptResult) (string, error) {
+	text, err := formattedContent(res, StylePreview)
+	if err != nil {
+		return "", err
+	}
+	name := base + "_" + ts + ".preview.md"
+	if err := os.WriteFile(filepath.Join(outDir, name), []byte(text), manuscriptFilePerm); err != nil {
+		return "", fmt.Errorf("manuscript: 写入 preview 失败: %w", err)
+	}
+	return filepath.Join(outDir, name), nil
+}
+
 // PandocToDocx 调用 pandoc 将 markdown 转为 docx（FR-REF-11）。
 // 可执行文件固定为 pandoc，参数为本地文件路径；调用方负责 LookPath 预检与降级提示。
 func PandocToDocx(src, dst string) error {

@@ -100,11 +100,11 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 |---|---|---|
 | `--lang` | 写作语言模式 | zh |
 | `-s, --style` | zh: gb7714-2025；en: apa / ieee | 按 lang |
-| `--preview` | 预览模式：内联标记自描述（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末仍追加编号引用列表 | 关 |
+| `--preview` | 额外产出 preview 版本 md（与正常版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末仍追加编号引用列表 | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
 | `-o, --output-dir` | 输出目录（默认 WORK_DIR/outputs） | WORK_DIR/outputs |
 
-产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
+产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`；`--preview` 时额外产出 `{base}_{ts}.preview.md`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
@@ -116,16 +116,19 @@ litkit lib stats | path
 ```
 
 ```
-litkit lib add <metadata.json>
+litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
 ```
 
-> 手动录入文献元数据（AI 手动添加检索源覆盖不到的文献）。`metadata.json` 为单个对象或对象数组。
+> 录入文献元数据，两种模式二选一。
+> **模式 1：`<metadata.json>` 手动录入**（单对象或对象数组，AI 手动添加检索源覆盖不到的文献）。
 > **必填**：`title`、`abstract`（摘要工作流：入库文献必须携带摘要）。
 > **可选**：`authors`（字符串数组 `["张三"]` 或对象数组 `[{"family","given"}]`）、
 > `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`。
+> **模式 2：`--doi <DOI>` 反查入库**（CrossRef）。摘要缺失默认 soft（告警并仍入库，stderr 提示）；
+> `--require-abstract` 时缺失则拒绝入库（退出码 2）。
 > 同一 DOI（无 DOI 按标题）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
-> 入库 `source=manual`，可用 `lib list --source manual` / `lib stats` 区分。
-> 输出：`{ added, papers: [{ citeKey, title, inserted }] }`。
+> 手动录入 `source=manual`；DOI 反查 `source=crossref`，可用 `lib list --source` / `lib stats` 区分。
+> 输出：`{ added, papers: [{ citeKey, title, inserted }] }`（`--doi` 单条为 `{ citeKey, title, inserted }`）。
 
 ```
 litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]

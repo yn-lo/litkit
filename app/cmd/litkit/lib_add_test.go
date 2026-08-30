@@ -27,7 +27,7 @@ func TestLibAddCmd_manualPaper(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s)
+	cmd := newLibAddCmd(s, nil)
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 执行失败: %v", err)
@@ -51,7 +51,7 @@ func TestLibAddCmd_rejectsMissingAbstract(t *testing.T) {
 	if err := os.WriteFile(p, []byte(`{"title":"无摘要"}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s)
+	cmd := newLibAddCmd(s, nil)
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err == nil {
 		t.Error("缺摘要应拒绝入库")
@@ -70,7 +70,7 @@ func TestLibAddCmd_arrayBatch(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s)
+	cmd := newLibAddCmd(s, nil)
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 批量执行失败: %v", err)
@@ -78,6 +78,25 @@ func TestLibAddCmd_arrayBatch(t *testing.T) {
 	st, _ := s.Stats()
 	if st.Total != 2 {
 		t.Errorf("应入库 2 篇，total=%d", st.Total)
+	}
+}
+
+func TestAbstractGate(t *testing.T) {
+	cases := []struct {
+		name        string
+		hasAbstract bool
+		hardRequire bool
+		want        absGateResult
+	}{
+		{"有摘要", true, false, absGateOK},
+		{"有摘要且 hard", true, true, absGateOK},
+		{"缺摘要默认 soft 告警", false, false, absGateWarn},
+		{"缺摘要 hard 拒绝", false, true, absGateReject},
+	}
+	for _, c := range cases {
+		if got := abstractGate(c.hasAbstract, c.hardRequire); got != c.want {
+			t.Errorf("abstractGate(%v,%v) = %v，期望 %v", c.hasAbstract, c.hardRequire, got, c.want)
+		}
 	}
 }
 
@@ -89,7 +108,7 @@ func TestLibAddCmd_upsertKeepsCiteKey(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s)
+	cmd := newLibAddCmd(s, nil)
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("首次入库失败: %v", err)
@@ -117,7 +136,7 @@ func TestLibAddCmd_BOMTolerant(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s)
+	cmd := newLibAddCmd(s, nil)
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 解析带 BOM 文件失败: %v", err)

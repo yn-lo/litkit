@@ -199,6 +199,33 @@ func TestWriteManuscriptOutputs_AllStylesGetReferenceList(t *testing.T) {
 	}
 }
 
+func TestWritePreviewOutput(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+	store.papers["a2"] = mustPaper("a2", "No DOI Paper", 2019, []model.Author{{Family: "Smith"}}, "")
+
+	res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。", StylePreview)
+	if err != nil {
+		t.Fatalf("ProcessManuscript err = %v", err)
+	}
+	ts := "20260830_120000"
+	p, err := WritePreviewOutput(t.TempDir(), "manuscript", ts, res)
+	if err != nil {
+		t.Fatalf("WritePreviewOutput err = %v", err)
+	}
+	if base := filepath.Base(p); base != "manuscript_"+ts+".preview.md" {
+		t.Errorf("preview 文件名 = %q，期望 %s", base, "manuscript_"+ts+".preview.md")
+	}
+	b, _ := os.ReadFile(p)
+	content := string(b)
+	if !strings.Contains(content, "[@doi:10.1/one") {
+		t.Errorf("preview md 正文应含自描述标记，got:\n%s", content)
+	}
+	if !strings.Contains(content, "参考文献") {
+		t.Errorf("preview md 文末应含参考文献列表，got:\n%s", content)
+	}
+}
+
 // ---- 编号折叠（相邻引用合并）----
 
 func TestCollapseNumbers(t *testing.T) {

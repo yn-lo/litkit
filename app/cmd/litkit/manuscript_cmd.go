@@ -55,9 +55,6 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			if err != nil {
 				return err
 			}
-			if preview {
-				style = core.StylePreview
-			}
 			src, err := os.ReadFile(args[0])
 			if err != nil {
 				return fmt.Errorf("manuscript: 读取手稿失败: %w", err)
@@ -80,6 +77,21 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			if err != nil {
 				return err
 			}
+
+			// --preview：额外产出 preview 版本 md，与正常 formatted.md 并存。
+			// 正文用自描述标记（[@doi:{DOI} — 标题]），便于人工核查引用指向。
+			if preview {
+				pres, err := core.ProcessManuscript(context.Background(), st, f, string(src), core.StylePreview)
+				if err != nil {
+					return err
+				}
+				p, err := core.WritePreviewOutput(outDir, base, ts, pres)
+				if err != nil {
+					return err
+				}
+				files["formatted.preview.md"] = p
+			}
+
 			return printJSON(manuscriptOutput{
 				CitationMap: res.CitationMap,
 				Papers:      model.SummarizePapers(res.Papers),
@@ -90,7 +102,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 	}
 	cmd.Flags().String("lang", "zh", "写作语言模式 zh|en")
 	cmd.Flags().StringP("style", "s", "", "引用样式（zh: gb7714-2025；en: apa / ieee）")
-	cmd.Flags().Bool("preview", false, "预览模式：内联标记自描述（[@doi:…—标题] 或 [@标题]），不生成引用列表")
+	cmd.Flags().Bool("preview", false, "额外生成 preview 版本 md（与正常版并存）：内联自描述标记 [@doi:{DOI} — 标题]/[@标题]")
 	cmd.Flags().Bool("docx", false, "生成 Word（需 Pandoc）")
 	cmd.Flags().StringP("output-dir", "o", "", "输出目录（默认 WORK_DIR）")
 	return cmd

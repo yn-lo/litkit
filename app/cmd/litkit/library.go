@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,13 +36,13 @@ type libPapersOutputFull struct {
 var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKIT_WORK_DIR（可用 litkit init 初始化）")
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
-func newLibraryCmd(st *storage.Store) *cobra.Command {
+func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lib",
 		Short: "本地文献库管理（add | list | search | rm | stats | path）",
 	}
 	cmd.AddCommand(
-		newLibAddCmd(st),
+		newLibAddCmd(st, f),
 		newLibListCmd(st),
 		newLibSearchCmd(st),
 		newLibRmCmd(st),
@@ -58,25 +59,33 @@ type libAddResult struct {
 	Inserted bool   `json:"inserted"` // true=首次入库；false=更新已有文献（citeKey 不变）
 }
 
-func newLibAddCmd(st *storage.Store) *cobra.Command {
+func newLibAddCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add <metadata.json>",
-		Short: "手动录入文献元数据（标题+摘要必填，source=manual）",
-		Long: `litkit lib add —— 手动录入文献
+		Use:   "add <metadata.json | --doi <DOI>>",
+		Short: "录入文献元数据（JSON 手动 / --doi 反查入库）",
+		Long: `litkit lib add —— 录入文献
 
-读取元数据 JSON 文件（单个对象或对象数组），校验后入库并分配 citeKey。
-用于 AI 手动添加检索源覆盖不到（或无法在线获取）的文献。
+两种模式（二选一）：
+  1. <metadata.json>  手动录入。读取元数据 JSON（单对象或对象数组），校验后入库并分配 citeKey。
+                       必填 title、abstract（AI 需手动撰写）。可选 authors/year/venue/doi/pmid/arxivId/url/docType 等。
+  2. --doi <DOI>       按 DOI 反查 CrossRef 并入库，返回 citeKey。
 
-必填字段：title、abstract（摘要工作流：入库文献必须携带摘要，AI 需手动撰写）。
-可选字段：authors（字符串数组 ["张三"] 或对象数组 [{"family","given"}]）、
-year、venue、doi、pmid、arxivId、url、docType、volume、number、pages、publisher、city。
-
-同一 DOI（无 DOI 则按标题）重复录入时更新字段、返回原 citeKey（inserted=false）。
-入库文献 source 标记为 manual，可用 lib list --source manual 或 lib stats 区分。`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+--require-abstract 仅作用于 --doi 模式：摘要缺失时拒绝入库（默认 soft：告警并仍入库）。`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if st == nil {
 				return errNoStore
+			}
+			doi, _ := cmd.Flags().GetString("doi")
+			hardAbstract, _ := cmd.Flags().GetBool("require-abstract")
+			if doi != "" {
+				if len(args) > 0 {
+					return &paramError{msg: "lib add --doi 不接受位置参数"}
+				}
+				return addPaperByDOI(context.Background(), st, f, doi, hardAbstract)
+			}
+			if len(args) != 1 {
+				return &paramError{msg: "lib add 需要 <metadata.json> 或 --doi <DOI>"}
 			}
 			inputs, err := readManualPapers(args[0])
 			if err != nil {
@@ -100,7 +109,55 @@ year、venue、doi、pmid、arxivId、url、docType、volume、number、pages、
 			}{Added: len(results), Papers: results})
 		},
 	}
+	cmd.Flags().String("doi", "", "按 DOI 反查 CrossRef 并入库（与 <metadata.json> 二选一）")
+	cmd.Flags().Bool("require-abstract", false, "摘要缺失时拒绝入库（仅 --doi 模式；默认 soft：告警并仍入库）")
 	return cmd
+}
+
+// absGateResult 摘要门禁决策结果。
+type absGateResult int
+
+const (
+	absGateOK     absGateResult = iota // 有摘要，直接入库
+	absGateWarn                        // 缺摘要，soft：告警并仍入库
+	absGateReject                      // 缺摘要，hard：拒绝入库
+)
+
+// abstractGate 依据是否有摘要与 hard 开关判定 DOI 入库门禁结果。
+func abstractGate(hasAbstract, hardRequire bool) absGateResult {
+	if !hasAbstract && hardRequire {
+		return absGateReject
+	}
+	if !hasAbstract {
+		return absGateWarn
+	}
+	return absGateOK
+}
+
+// addPaperByDOI 按 DOI 反查 CrossRef 并入库（FR-LIB）。
+// 摘要策略：默认 soft（缺失告警仍入库）；--require-abstract 时缺失拒绝。
+func addPaperByDOI(ctx context.Context, st *storage.Store, f *core.MetadataFetcher, doi string, hardRequireAbstract bool) error {
+	if f == nil {
+		return errNoFetcher
+	}
+	p, err := f.Fetch(ctx, "doi", doi)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return fmt.Errorf("lib add --doi: 未检索到 DOI %q", doi)
+	}
+	switch abstractGate(strings.TrimSpace(p.Abstract) != "", hardRequireAbstract) {
+	case absGateReject:
+		return &paramError{msg: fmt.Sprintf("lib add --doi: 文献 %q 无摘要，--require-abstract 已拒绝入库", p.Title)}
+	case absGateWarn:
+		fmt.Fprintf(os.Stderr, "litkit: 文献 %q 无摘要，仍已入库（摘要工作流不可用；可用 --require-abstract 硬拒）\n", p.Title)
+	}
+	citeKey, inserted, err := st.UpsertPaper(*p)
+	if err != nil {
+		return fmt.Errorf("lib add --doi: 入库失败: %w", err)
+	}
+	return printJSON(libAddResult{CiteKey: citeKey, Title: p.Title, Inserted: inserted})
 }
 
 // readManualPapers 读取元数据 JSON 文件（单对象或数组；容忍 UTF-8 BOM）。
