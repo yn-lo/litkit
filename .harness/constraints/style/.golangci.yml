@@ -23,6 +23,7 @@ linters:
     - gosec          # 安全扫描（密钥硬编码、SQL 注入、弱加密）
     - bodyclose      # HTTP response body 必须关闭
     - goconst        # 重复字符串/数字应提为常量
+    - dupl           # 重复代码块检测（NG 判定：相同结构代码量 ≥ threshold）
     - gocyclo        # 圈复杂度检测
     - mnd            # 魔法数字检测
 
@@ -43,9 +44,13 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 4  # 出现 4 次以上才报（避免噪音）
+    dupl:
+      threshold: 60  # 相同结构代码≥60 token 判重复。先按源码实际重复校准，避免误报/漏报
     gosec:
       excludes:
         - G104  # 已由 errcheck 覆盖（未检查返回值）
+        # G202（SQL 字符串拼接）误报：store.queryRefs 的 where 子句是包内固定字面量（"cite_key = ?" 等），非用户输入，拼接产生的是静态查询模板
+        - G202
     mnd:
       ignored-numbers: [0, 1, 2]  # 基础数字噪音太大（cobra.ExactArgs、索引等）
       checks: [argument, case, condition, return, assign]  # 不检查 operation（算术运算中的数字通常无害）

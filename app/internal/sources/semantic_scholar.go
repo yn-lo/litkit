@@ -181,17 +181,8 @@ func semanticScholarAuthorsToModel(authors []struct {
 }) []model.Author {
 	out := make([]model.Author, 0, len(authors))
 	for _, a := range authors {
-		name := strings.TrimSpace(a.Name)
-		if name == "" {
-			continue
-		}
-		if i := strings.IndexAny(name, " \t"); i > 0 {
-			out = append(out, model.Author{
-				Given:  strings.TrimSpace(name[:i]),
-				Family: strings.TrimSpace(name[i+1:]),
-			})
-		} else {
-			out = append(out, model.Author{Family: name})
+		if name := strings.TrimSpace(a.Name); name != "" {
+			out = append(out, splitAuthorName(name))
 		}
 	}
 	return out

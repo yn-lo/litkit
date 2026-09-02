@@ -291,15 +291,16 @@ func formatAPA(p model.Paper) string {
 	return b.String()
 }
 
-// authorsAPA 渲染作者（APA：Family, G.；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
-func authorsAPA(as []model.Author) string {
+// joinAuthors 拼接已渲染作者列表：最多列前 3 位，>3 名省略为前 3 名 + ", et al."；
+// 2-3 名时末位用 andSep 连接（APA 用 "&"，IEEE 用 "and"）。
+func joinAuthors(as []model.Author, render func(model.Author) string, andSep string) string {
 	if len(as) == 0 {
 		return ""
 	}
 	const maxShow = 3
 	parts := make([]string, 0, len(as))
 	for _, a := range as {
-		parts = append(parts, authorAPA(a))
+		parts = append(parts, render(a))
 	}
 	if len(parts) > maxShow {
 		return strings.Join(parts[:maxShow], ", ") + ", et al."
@@ -307,7 +308,12 @@ func authorsAPA(as []model.Author) string {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	return strings.Join(parts[:len(parts)-1], ", ") + ", & " + parts[len(parts)-1]
+	return strings.Join(parts[:len(parts)-1], ", ") + ", " + andSep + " " + parts[len(parts)-1]
+}
+
+// authorsAPA 渲染作者（APA：Family, G.；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
+func authorsAPA(as []model.Author) string {
+	return joinAuthors(as, authorAPA, "&")
 }
 
 // authorAPA 单作者：Family, G. M.
@@ -367,21 +373,7 @@ func formatIEEE(p model.Paper, number int) string {
 
 // authorsIEEE 渲染作者（IEEE：G. Family；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
 func authorsIEEE(as []model.Author) string {
-	if len(as) == 0 {
-		return ""
-	}
-	const maxShow = 3
-	parts := make([]string, 0, len(as))
-	for _, a := range as {
-		parts = append(parts, authorIEEE(a))
-	}
-	if len(parts) > maxShow {
-		return strings.Join(parts[:maxShow], ", ") + ", et al."
-	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	return strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
+	return joinAuthors(as, authorIEEE, "and")
 }
 
 // authorIEEE 单作者（IEEE：G. Family）。

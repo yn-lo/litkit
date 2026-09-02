@@ -834,20 +834,20 @@ func checkR18(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR14 正文禁止加粗：Body 行含 **...** 违规（表格已在解析阶段排除）。
-func checkR14(src *Source, _ *ManuscriptSpec) []Violation {
+// bodyRuleViolations 遍历正文行，凡 re 命中即追加一条规则违规（单行匹配类规则通用模板）。
+func bodyRuleViolations(src *Source, re *regexp.Regexp, ruleID, problem, suggestion string) []Violation {
 	var vs []Violation
 	for i, ln := range src.Body {
-		if boldRe.MatchString(ln) {
-			vs = append(vs, Violation{
-				RuleID:     "R1.4",
-				Line:       src.bodyIdx[i],
-				Problem:    "正文含加粗",
-				Suggestion: "移除 ** 加粗标记",
-			})
+		if re.MatchString(ln) {
+			vs = append(vs, Violation{RuleID: ruleID, Line: src.bodyIdx[i], Problem: problem, Suggestion: suggestion})
 		}
 	}
 	return vs
+}
+
+// checkR14 正文禁止加粗：Body 行含 **...** 违规（表格已在解析阶段排除）。
+func checkR14(src *Source, _ *ManuscriptSpec) []Violation {
+	return bodyRuleViolations(src, boldRe, "R1.4", "正文含加粗", "移除 ** 加粗标记")
 }
 
 // checkR21 P 值格式：大写/前导零/小数位规范。
@@ -910,34 +910,12 @@ func checkR21(src *Source, _ *ManuscriptSpec) []Violation {
 
 // checkR31 全半角：中文字符后紧跟半角标点违规。
 func checkR31(src *Source, _ *ManuscriptSpec) []Violation {
-	var vs []Violation
-	for i, ln := range src.Body {
-		if halfWidthRe.MatchString(ln) {
-			vs = append(vs, Violation{
-				RuleID:     "R3.1",
-				Line:       src.bodyIdx[i],
-				Problem:    "中文后使用了半角标点",
-				Suggestion: "改用全角标点",
-			})
-		}
-	}
-	return vs
+	return bodyRuleViolations(src, halfWidthRe, "R3.1", "中文后使用了半角标点", "改用全角标点")
 }
 
 // checkR32 中文引号：中文上下文出现直引号违规。
 func checkR32(src *Source, _ *ManuscriptSpec) []Violation {
-	var vs []Violation
-	for i, ln := range src.Body {
-		if straightQuoteRe.MatchString(ln) {
-			vs = append(vs, Violation{
-				RuleID:     "R3.2",
-				Line:       src.bodyIdx[i],
-				Problem:    "中文上下文使用了直引号",
-				Suggestion: "改用中文弯引号",
-			})
-		}
-	}
-	return vs
+	return bodyRuleViolations(src, straightQuoteRe, "R3.2", "中文上下文使用了直引号", "改用中文弯引号")
 }
 
 // checkR33 数字范围规范（yueshu.md 八、数字）：范围用波浪线、百分号只在范围末、
@@ -959,15 +937,9 @@ func checkR33(src *Source, _ *ManuscriptSpec) []Violation {
 // checkR34 计量单位（yueshu.md 五、计量单位）：禁用中文单位词与英制/旧制单位。
 // 时间单位例外（5～8天、6小时单独使用用中文）。
 func checkR34(src *Source, _ *ManuscriptSpec) []Violation {
-	var vs []Violation
-	for i, ln := range src.Body {
-		if cnUnitRe.MatchString(ln) {
-			vs = append(vs, Violation{RuleID: "R3.4", Line: src.bodyIdx[i],
-				Problem:    "使用了中文计量单位词或英制/旧制单位",
-				Suggestion: "改用法定计量单位符号（如 mg、cm、mmHg）；时间单位可用中文（5～8天）"})
-		}
-	}
-	return vs
+	return bodyRuleViolations(src, cnUnitRe, "R3.4",
+		"使用了中文计量单位词或英制/旧制单位",
+		"改用法定计量单位符号（如 mg、cm、mmHg）；时间单位可用中文（5～8天）")
 }
 
 // checkR51 引用占位符：(Author, 2024) 与 [数字] 违规（参考文献段已排除）。
@@ -1004,18 +976,9 @@ func checkR52(src *Source, _ *ManuscriptSpec) []Violation {
 
 // checkR61 引用位置：标点后紧跟 [@xxx] 违规（引用应在标点前）。
 func checkR61(src *Source, _ *ManuscriptSpec) []Violation {
-	var vs []Violation
-	for i, ln := range src.Body {
-		if citePunctRe.MatchString(ln) {
-			vs = append(vs, Violation{
-				RuleID:     "R6.1",
-				Line:       src.bodyIdx[i],
-				Problem:    "标点后紧跟引用标记",
-				Suggestion: "引用标记应置于标点之前，如 ...发展[@Kxq]。",
-			})
-		}
-	}
-	return vs
+	return bodyRuleViolations(src, citePunctRe, "R6.1",
+		"标点后紧跟引用标记",
+		"引用标记应置于标点之前，如 ...发展[@Kxq]。")
 }
 
 // checkR71 标题冒号：标题行含 ： 或 : 违规。

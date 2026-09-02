@@ -480,26 +480,26 @@ func (s *Store) RemoveRefsByManuscript(manuscript string) error {
 	return nil
 }
 
-// GetRefsByManuscript 取某手稿的全部引用标记。
-func (s *Store) GetRefsByManuscript(manuscript string) ([]model.PaperRef, error) {
+// queryRefs 按指定 WHERE 条件查询 paper_refs 并扫描为 []PaperRef。
+// where/op 为包内固定字面量（非用户输入），拼接安全。
+func (s *Store) queryRefs(where, arg, op string) ([]model.PaperRef, error) {
 	rows, err := s.db.Query(`SELECT cite_key, sentence_hash, manuscript, sentence
-		FROM paper_refs WHERE manuscript = ? ORDER BY id`, manuscript)
+		FROM paper_refs WHERE `+where+` ORDER BY id`, arg)
 	if err != nil {
-		return nil, fmt.Errorf("storage get refs by manuscript: %w", err)
+		return nil, fmt.Errorf("storage %s: %w", op, err)
 	}
 	defer func() { _ = rows.Close() }()
 	return scanRefs(rows)
 }
 
+// GetRefsByManuscript 取某手稿的全部引用标记。
+func (s *Store) GetRefsByManuscript(manuscript string) ([]model.PaperRef, error) {
+	return s.queryRefs("manuscript = ?", manuscript, "get refs by manuscript")
+}
+
 // GetRefsByCiteKey 取某篇论文的全部引用标记。
 func (s *Store) GetRefsByCiteKey(citeKey string) ([]model.PaperRef, error) {
-	rows, err := s.db.Query(`SELECT cite_key, sentence_hash, manuscript, sentence
-		FROM paper_refs WHERE cite_key = ? ORDER BY id`, citeKey)
-	if err != nil {
-		return nil, fmt.Errorf("storage get refs by cite key: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanRefs(rows)
+	return s.queryRefs("cite_key = ?", citeKey, "get refs by cite key")
 }
 
 // scanRefs 扫描 paper_refs 查询行为 []model.PaperRef。

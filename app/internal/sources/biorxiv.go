@@ -134,17 +134,8 @@ func parseBiorxivAuthors(s string) []model.Author {
 	parts := strings.Split(s, ";")
 	out := make([]model.Author, 0, len(parts))
 	for _, p := range parts {
-		name := strings.TrimSpace(p)
-		if name == "" {
-			continue
-		}
-		if i := strings.IndexAny(name, " \t"); i > 0 {
-			out = append(out, model.Author{
-				Given:  strings.TrimSpace(name[:i]),
-				Family: strings.TrimSpace(name[i+1:]),
-			})
-		} else {
-			out = append(out, model.Author{Family: name})
+		if name := strings.TrimSpace(p); name != "" {
+			out = append(out, splitAuthorName(name))
 		}
 	}
 	return out

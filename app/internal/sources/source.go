@@ -9,6 +9,7 @@ package sources
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"litkit/internal/model"
 	"litkit/internal/util/httpclient"
@@ -95,4 +96,23 @@ func (b BaseSource) Do(ctx context.Context, req *http.Request) (*http.Response, 
 		return nil, ctx.Err()
 	}
 	return b.http.Do(ctx, req)
+}
+
+// splitAuthorName 将单个姓名串按首空格切分为 given/family。
+//
+// 供各源适配器复用，消除逐源复制的拆分逻辑（此前 arXiv/OpenAlex/bioRxiv/S2 四处雷同）。
+// 中英文混排：首空格前为 given，后为 family；纯中文名（无空格）整体入 Family；
+// 空串返回空 Author（调用方自行决定是否跳过）。
+func splitAuthorName(name string) model.Author {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return model.Author{}
+	}
+	if i := strings.IndexAny(name, " \t"); i > 0 {
+		return model.Author{
+			Given:  strings.TrimSpace(name[:i]),
+			Family: strings.TrimSpace(name[i+1:]),
+		}
+	}
+	return model.Author{Family: name}
 }

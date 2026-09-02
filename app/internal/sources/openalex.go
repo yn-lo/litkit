@@ -177,17 +177,8 @@ func reconstructOpenAlexAbstract(idx map[string][]int) string {
 func openAlexAuthorsToModel(authorships []openAlexAuthorship) []model.Author {
 	out := make([]model.Author, 0, len(authorships))
 	for _, a := range authorships {
-		name := strings.TrimSpace(a.Author.DisplayName)
-		if name == "" {
-			continue
-		}
-		if i := strings.IndexAny(name, " \t"); i > 0 {
-			out = append(out, model.Author{
-				Given:  strings.TrimSpace(name[:i]),
-				Family: strings.TrimSpace(name[i+1:]),
-			})
-		} else {
-			out = append(out, model.Author{Family: name})
+		if name := strings.TrimSpace(a.Author.DisplayName); name != "" {
+			out = append(out, splitAuthorName(name))
 		}
 	}
 	return out
