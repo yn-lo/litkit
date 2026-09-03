@@ -124,6 +124,44 @@ func TestBiorxivSource_Search_filtersByKeyword(t *testing.T) {
 	}
 }
 
+func TestBiorxivSource_Search_keywordMissSurfacesError(t *testing.T) {
+	// 关键词在最近批次未命中时，应显式报错而非静默返回空（report 问题1）。
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(biorxivSample))
+	}))
+	defer srv.Close()
+
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src.BaseURL = srv.URL
+
+	_, err := src.Search(context.Background(), "zzzz-not-a-keyword", SearchOptions{MaxResults: 5})
+	if err == nil {
+		t.Fatal("关键词未命中应显式报错，而非静默返回空")
+	}
+	if !strings.Contains(err.Error(), "无关键词") {
+		t.Fatalf("错误应说明 API 无关键词端点，got %v", err)
+	}
+}
+
+func TestBiorxivSource_Search_emptyQueryNoError(t *testing.T) {
+	// 空查询（拉最近批次）不应报错
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(biorxivSample))
+	}))
+	defer srv.Close()
+
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src.BaseURL = srv.URL
+
+	papers, err := src.Search(context.Background(), "", SearchOptions{MaxResults: 5})
+	if err != nil {
+		t.Fatalf("空查询不应报错：%v", err)
+	}
+	if len(papers) != 2 {
+		t.Fatalf("空查询应返回全部 2 篇，got %d", len(papers))
+	}
+}
+
 func TestBiorxivSource_Search_yearFilter(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(biorxivSample))

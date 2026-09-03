@@ -95,6 +95,14 @@ func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOpt
 	if limit := opts.MaxResults; limit > 0 && len(papers) > limit {
 		papers = papers[:limit]
 	}
+	// bioRxiv/medRxiv API 无关键词端点：只能拉最近一批预印本再做本地过滤。
+	// 空结果会误导调用方以为"真无结果"，故显式报错以暴露"召回不足"的真实原因
+	// （FR-SEARCH 可诊断性；report 问题1：杜绝静默返回 0）。
+	if len(papers) == 0 && strings.TrimSpace(query) != "" {
+		return nil, fmt.Errorf(
+			"biorxiv.%s 关键词检索未命中：%s API 无关键词检索端点，仅对最近 %d 篇预印本做本地关键词过滤后为空，无法区分“真无结果”与“召回不足”；建议改用支持关键词检索的源（openalex/pubmed/semantic_scholar）",
+			b.Server, b.Server, ensureMax(opts.MaxResults, biorxivDefaultResults))
+	}
 	return papers, nil
 }
 

@@ -17,11 +17,11 @@ import (
 
 // ArxivSource arXiv 适配器（FR-SRC-02）。
 //
-// 端点：http://export.arxiv.org/api/query（Atom Feed）。
+// 端点：https://export.arxiv.org/api/query（Atom Feed）。
 // 限速：官方 1 req/3s（保守取 0.33 RPS, burst 1，NFR-PERF-04）。
 type ArxivSource struct {
 	BaseSource
-	// BaseURL 可被测试覆盖；默认 http://export.arxiv.org/api/query
+	// BaseURL 可被测试覆盖；默认 https://export.arxiv.org/api/query
 	BaseURL string
 }
 
@@ -29,7 +29,7 @@ type ArxivSource struct {
 func NewArxivSource(httpClient *httpclient.Client, limiter *ratelimit.Limiter) *ArxivSource {
 	return &ArxivSource{
 		BaseSource: NewBaseSource("arxiv", httpClient, limiter),
-		BaseURL:    "http://export.arxiv.org/api/query",
+		BaseURL:    "https://export.arxiv.org/api/query",
 	}
 }
 

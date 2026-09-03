@@ -108,15 +108,18 @@ func (f *FulltextFetcher) Fetch(ctx context.Context, ref string) (*FetchResult, 
 	}
 
 	// 1) Unpaywall OA 优先（FR-FETCH-02）
-	pdfURL := f.resolveUnpaywall(ctx, p.DOI)
-	via := "unpaywall"
-	if pdfURL == "" {
-		// 2) Sci-Hub 兜底（FR-FETCH-03）：失败静默，不单独报错
-		pdfURL = f.resolveSciHub(ctx, p.DOI)
-		via = "scihub"
-	}
-	if pdfURL == "" {
-		return nil, fmt.Errorf("fetch: 未找到可用 PDF（Unpaywall 无 OA 且 Sci-Hub 未命中）")
+	pdfURL, via := "", ""
+	unpayURL, unpayReason := f.resolveUnpaywallWithReason(ctx, p.DOI)
+	if unpayURL != "" {
+		pdfURL, via = unpayURL, "unpaywall"
+	} else {
+		// 2) Sci-Hub 兜底（FR-FETCH-03）：继续尝试并记录失败原因
+		sciURL, sciReason := f.resolveSciHubWithReason(ctx, p.DOI)
+		if sciURL != "" {
+			pdfURL, via = sciURL, "scihub"
+		} else {
+			return nil, fmt.Errorf("fetch: 未找到可用 PDF：Unpaywall（%s）；Sci-Hub（%s）", unpayReason, sciReason)
+		}
 	}
 
 	pdfPath, err := f.downloadPDF(ctx, pdfURL, p.CiteKey)
@@ -177,42 +180,51 @@ type unpaywallLocation struct {
 
 // resolveUnpaywall 按 DOI 解析最佳 OA PDF URL；无 email / 非 OA / 请求失败返回空串。
 func (f *FulltextFetcher) resolveUnpaywall(ctx context.Context, doi string) string {
-	if f.unpaywallEmail == "" || f.unpaywallBase == "" {
-		return ""
+	u, _ := f.resolveUnpaywallWithReason(ctx, doi)
+	return u
+}
+
+// resolveUnpaywallWithReason 同 resolveUnpaywall，并额外返回失败原因（诊断用，FR-FETCH 可诊断性）。
+func (f *FulltextFetcher) resolveUnpaywallWithReason(ctx context.Context, doi string) (string, string) {
+	if f.unpaywallBase == "" {
+		return "", "Unpaywall 未配置基址"
+	}
+	if f.unpaywallEmail == "" {
+		return "", "未设置 LITKIT_UNPAYWALL_EMAIL（已跳过 Unpaywall）"
 	}
 	u := f.unpaywallBase + "/" + url.PathEscape(doi) + "?email=" + url.QueryEscape(f.unpaywallEmail)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Unpaywall 构造请求失败：%v", err)
 	}
 	req.Header.Set("User-Agent", fetchUserAgent)
 	resp, err := f.client.Do(ctx, req)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Unpaywall 请求失败：%v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", fmt.Sprintf("Unpaywall HTTP %d", resp.StatusCode)
 	}
 	data, err := httpclient.ReadAll(resp)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Unpaywall 读取响应失败：%v", err)
 	}
 	var r unpaywallResponse
 	if err := json.Unmarshal(data, &r); err != nil {
-		return ""
+		return "", fmt.Sprintf("Unpaywall 响应解析失败：%v", err)
 	}
 	if loc := r.BestOALocation; loc != nil {
 		if u := pickPDFURL(loc.URLForPDF, loc.URL); u != "" {
-			return u
+			return u, ""
 		}
 	}
 	for _, loc := range r.OALocations {
 		if u := pickPDFURL(loc.URLForPDF, loc.URL); u != "" {
-			return u
+			return u, ""
 		}
 	}
-	return ""
+	return "", "Unpaywall 无可用 OA PDF 链接"
 }
 
 // pickPDFURL 优先取 url_for_pdf，回退 url。
@@ -227,33 +239,42 @@ func pickPDFURL(pdfURL, pageURL string) string {
 
 // resolveSciHub 按 DOI 请求 Sci-Hub 页面并解析出 PDF 直链；失败返回空串（静默）。
 func (f *FulltextFetcher) resolveSciHub(ctx context.Context, doi string) string {
+	u, _ := f.resolveSciHubWithReason(ctx, doi)
+	return u
+}
+
+// resolveSciHubWithReason 同 resolveSciHub，并额外返回失败原因（诊断用）。
+func (f *FulltextFetcher) resolveSciHubWithReason(ctx context.Context, doi string) (string, string) {
 	if f.sciHubBase == "" {
-		return ""
+		return "", "Sci-Hub 未配置基址"
 	}
 	u := f.sciHubBase + "/" + url.PathEscape(doi)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Sci-Hub 构造请求失败：%v", err)
 	}
 	req.Header.Set("User-Agent", browserUA)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 	req.Header.Set("Referer", f.sciHubBase)
 	resp, err := f.client.Do(ctx, req)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Sci-Hub 请求失败：%v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", fmt.Sprintf("Sci-Hub HTTP %d", resp.StatusCode)
 	}
 	body, err := httpclient.ReadAll(resp)
 	if err != nil {
-		return ""
+		return "", fmt.Sprintf("Sci-Hub 读取响应失败：%v", err)
 	}
 	if strings.Contains(strings.ToLower(string(body)), "article not found") {
-		return ""
+		return "", "Sci-Hub 未收录该文献（article not found）"
 	}
-	return extractPDFURLFromHTML(string(body), f.sciHubBase)
+	if u = extractPDFURLFromHTML(string(body), f.sciHubBase); u == "" {
+		return "", "Sci-Hub 页面未解析出 PDF 直链"
+	}
+	return u, ""
 }
 
 // pdfURLEmbedRe 匹配 <embed type="application/pdf" src="...">。

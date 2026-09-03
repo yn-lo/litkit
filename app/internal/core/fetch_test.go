@@ -265,6 +265,26 @@ func TestFetch_AllSourcesFail(t *testing.T) {
 	}
 }
 
+func TestFetch_AllSourcesFailReportsReason(t *testing.T) {
+	// 缺少 Unpaywall email 与 Sci-Hub 失败原因都应出现在错误信息中（report 问题5）。
+	s := newFetchTestStore(t)
+	env := newFetchTestEnv(t, s)
+	env.fetcher.unpaywallEmail = "" // 未配置 email
+	citeKey := insertPaper(t, s, "10.404/absent")
+
+	_, err := env.fetcher.Fetch(t.Context(), citeKey)
+	if err == nil {
+		t.Fatal("应报错")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "Unpaywall") || !strings.Contains(msg, "LITKIT_UNPAYWALL_EMAIL") {
+		t.Fatalf("错误应指出未配置 Unpaywall email，got %v", msg)
+	}
+	if !strings.Contains(msg, "Sci-Hub") {
+		t.Fatalf("错误应包含 Sci-Hub 失败原因，got %v", msg)
+	}
+}
+
 // ---- 解析单元 ----
 
 func TestResolveUnpaywallPrefersURLForPDF(t *testing.T) {

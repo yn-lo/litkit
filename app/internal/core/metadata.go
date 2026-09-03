@@ -43,7 +43,7 @@ func NewMetadataFetcher(client *httpclient.Client) *MetadataFetcher {
 		client:       client,
 		crossrefBase: "https://api.crossref.org",
 		eutilsBase:   "https://eutils.ncbi.nlm.nih.gov",
-		arxivBase:    "http://export.arxiv.org",
+		arxivBase:    "https://export.arxiv.org",
 	}
 }
 
