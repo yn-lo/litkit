@@ -271,19 +271,26 @@ func formatAPA(p model.Paper) string {
 	b.WriteString("). ")
 	b.WriteString(cleanTitle(p.Title))
 	b.WriteString(".")
+	wrote := false
 	if p.Venue != "" {
 		b.WriteString(" ")
 		b.WriteString(italic(p.Venue))
+		wrote = true
 	}
 	if volIssue := volIssueAPA(p); volIssue != "" {
 		b.WriteString(", ")
 		b.WriteString(volIssue)
+		wrote = true
 	}
 	if p.Pages != "" {
 		b.WriteString(", ")
 		b.WriteString(normalizePages(p.Pages))
+		wrote = true
 	}
-	b.WriteString(".")
+	// 仅在存在期刊/卷期/页码时追加句点，避免无 venue 时出现 "Title.." 双句点
+	if wrote {
+		b.WriteString(".")
+	}
 	if p.DOI != "" {
 		b.WriteString(" https://doi.org/")
 		b.WriteString(p.DOI)
@@ -341,7 +348,13 @@ func formatIEEE(p model.Paper, number int) string {
 		b.WriteString(a)
 		b.WriteString(", ")
 	}
-	b.WriteString("\"" + cleanTitle(p.Title) + ",\"")
+	// 标题末尾逗号仅为"标题—期刊"分隔符；无期刊（venue 空）时不写，
+	// 避免输出 "Title,", 2023 这类残留逗号
+	b.WriteString("\"" + cleanTitle(p.Title))
+	if p.Venue != "" {
+		b.WriteString(",")
+	}
+	b.WriteString("\"")
 	if p.Venue != "" {
 		b.WriteString(" ")
 		b.WriteString(italic(p.Venue))

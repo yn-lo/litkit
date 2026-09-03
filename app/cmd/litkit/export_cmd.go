@@ -87,7 +87,7 @@ func readPapersFile(path string) ([]model.Paper, error) {
 	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
 	var papers []model.Paper
 	if err := json.Unmarshal(data, &papers); err == nil {
-		return papers, nil
+		return dedupPapers(papers), nil
 	}
 	var wrapper struct {
 		Papers []model.Paper `json:"papers"`
@@ -95,5 +95,21 @@ func readPapersFile(path string) ([]model.Paper, error) {
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("export: 解析 %s 失败（期望 []Paper 或 {\"papers\":[...]}）: %w", path, err)
 	}
-	return wrapper.Papers, nil
+	return dedupPapers(wrapper.Papers), nil
+}
+
+// dedupPapers 按 citeKey 去重（保留首次出现），空 citeKey 不参与去重，
+// 避免相同文献在导出中出现重复 BibTeX 键。
+func dedupPapers(ps []model.Paper) []model.Paper {
+	seen := make(map[string]bool, len(ps))
+	out := make([]model.Paper, 0, len(ps))
+	for _, p := range ps {
+		if p.CiteKey == "" || !seen[p.CiteKey] {
+			if p.CiteKey != "" {
+				seen[p.CiteKey] = true
+			}
+			out = append(out, p)
+		}
+	}
+	return out
 }

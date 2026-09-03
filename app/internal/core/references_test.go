@@ -170,6 +170,47 @@ func TestFormatReference_IEEE(t *testing.T) {
 	}
 }
 
+func TestFormatReference_APANoVenue(t *testing.T) {
+	// 无 venue 时不得出现 "Title.." 双句点（report 问题1）
+	got, err := FormatReference(model.Paper{Title: "A Venue-Less Study", Authors: []model.Author{{Family: "Doe", Given: "Jane"}}, Year: 2023}, StyleAPA, 0)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(got, "..") {
+		t.Fatalf("APA 无 venue 出现双句点：%q", got)
+	}
+	if !strings.Contains(got, "A Venue-Less Study.") {
+		t.Fatalf("APA 无 venue 应以单句点结尾：%q", got)
+	}
+	if strings.Contains(got, ".. ") {
+		t.Fatalf("APA 无 venue DOI 分隔处出现双句点：%q", got)
+	}
+}
+
+func TestFormatReference_APAHasVenueStillEndsPeriod(t *testing.T) {
+	got, err := FormatReference(sampleJournal(), StyleAPA, 0)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(got, "..") {
+		t.Fatalf("APA 有 venue 不应出现双句点：%q", got)
+	}
+}
+
+func TestFormatReference_IEEENoVenue(t *testing.T) {
+	// 无 venue 时标题引号内不得残留分隔逗号（report 问题1）
+	got, err := FormatReference(model.Paper{Title: "A Venue-Less Study", Authors: []model.Author{{Family: "Doe", Given: "Jane"}}, Year: 2023}, StyleIEEE, 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(got, "\",\"") || strings.Contains(got, "Study,\"") {
+		t.Fatalf("IEEE 无 venue 标题引号内残留逗号：%q", got)
+	}
+	if !strings.Contains(got, "\"A Venue-Less Study\"") {
+		t.Fatalf("IEEE 无 venue 引号内不应有尾逗号：%q", got)
+	}
+}
+
 func TestFormatReference_UnknownStyle(t *testing.T) {
 	if _, err := FormatReference(sampleJournal(), Style("chicago"), 0); err == nil {
 		t.Fatal("未知样式应返回错误")

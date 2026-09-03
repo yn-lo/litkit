@@ -90,6 +90,11 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			// spec 级 skip_rules 永久跳过（合并进 --skip，等效每次携带）
 			opts.Skip = append(opts.Skip, spec.SkipRules...)
 
+			// 校验 --rule 指定的规则 ID 均存在（避免未知规则静默"全部通过"，report 问题3）
+			if err := validateRuleIDs(ruleFlag); err != nil {
+				return &paramError{msg: "verify: " + err.Error()}
+			}
+
 			report, err := lint.RunFilesWithStore(args, spec, opts, store)
 			if err != nil {
 				return fmt.Errorf("verify: %w", err)
@@ -258,6 +263,20 @@ func loadVerifySpec(workDir, paperType, lang string) *lint.ManuscriptSpec {
 		return lint.DefaultSpec()
 	}
 	return spec
+}
+
+// validateRuleIDs 校验 --rule 中的规则 ID 均存在于已注册规则中。
+func validateRuleIDs(ruleFlag string) error {
+	valid := map[string]bool{}
+	for _, r := range lint.AllRules() {
+		valid[r.ID] = true
+	}
+	for _, id := range splitCSV(ruleFlag) {
+		if !valid[id] {
+			return fmt.Errorf("未知规则 %q（可用规则见 `litkit rules`）", id)
+		}
+	}
+	return nil
 }
 
 // splitCSV 将逗号分隔字符串拆为切片（空串返回 nil）。
