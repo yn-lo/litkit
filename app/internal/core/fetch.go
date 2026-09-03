@@ -178,13 +178,7 @@ type unpaywallLocation struct {
 	URLForPDF string `json:"url_for_pdf"`
 }
 
-// resolveUnpaywall 按 DOI 解析最佳 OA PDF URL；无 email / 非 OA / 请求失败返回空串。
-func (f *FulltextFetcher) resolveUnpaywall(ctx context.Context, doi string) string {
-	u, _ := f.resolveUnpaywallWithReason(ctx, doi)
-	return u
-}
-
-// resolveUnpaywallWithReason 同 resolveUnpaywall，并额外返回失败原因（诊断用，FR-FETCH 可诊断性）。
+// resolveUnpaywallWithReason 按 DOI 解析最佳 OA PDF URL；无 email / 非 OA / 请求失败返回空串，并额外返回失败原因（诊断用，FR-FETCH 可诊断性）。
 func (f *FulltextFetcher) resolveUnpaywallWithReason(ctx context.Context, doi string) (string, string) {
 	if f.unpaywallBase == "" {
 		return "", "Unpaywall 未配置基址"
@@ -237,13 +231,7 @@ func pickPDFURL(pdfURL, pageURL string) string {
 
 // ---- Sci-Hub 兜底（FR-FETCH-03）----
 
-// resolveSciHub 按 DOI 请求 Sci-Hub 页面并解析出 PDF 直链；失败返回空串（静默）。
-func (f *FulltextFetcher) resolveSciHub(ctx context.Context, doi string) string {
-	u, _ := f.resolveSciHubWithReason(ctx, doi)
-	return u
-}
-
-// resolveSciHubWithReason 同 resolveSciHub，并额外返回失败原因（诊断用）。
+// resolveSciHubWithReason 按 DOI 请求 Sci-Hub 页面并解析出 PDF 直链；失败返回空串并额外返回失败原因（诊断用，FR-FETCH 可诊断性）。
 func (f *FulltextFetcher) resolveSciHubWithReason(ctx context.Context, doi string) (string, string) {
 	if f.sciHubBase == "" {
 		return "", "Sci-Hub 未配置基址"

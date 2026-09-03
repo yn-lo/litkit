@@ -291,9 +291,9 @@ func TestResolveUnpaywallPrefersURLForPDF(t *testing.T) {
 	s := newFetchTestStore(t)
 	env := newFetchTestEnv(t, s)
 	doi := "10.1/oa"
-	got := env.fetcher.resolveUnpaywall(t.Context(), doi)
+	got, reason := env.fetcher.resolveUnpaywallWithReason(t.Context(), doi)
 	if !strings.Contains(got, "/pdf/paper.pdf") {
-		t.Fatalf("应优先取 url_for_pdf，got %q", got)
+		t.Fatalf("应优先取 url_for_pdf（reason=%q），got %q", reason, got)
 	}
 }
 
@@ -301,8 +301,8 @@ func TestResolveUnpaywallNoEmail(t *testing.T) {
 	s := newFetchTestStore(t)
 	env := newFetchTestEnv(t, s)
 	env.fetcher.unpaywallEmail = ""
-	if got := env.fetcher.resolveUnpaywall(t.Context(), "10.1/oa"); got != "" {
-		t.Fatalf("无 email 应跳过 Unpaywall，got %q", got)
+	if got, reason := env.fetcher.resolveUnpaywallWithReason(t.Context(), "10.1/oa"); got != "" {
+		t.Fatalf("无 email 应跳过 Unpaywall（reason=%q），got %q", reason, got)
 	}
 }
 
