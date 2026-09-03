@@ -2,6 +2,7 @@ package lint
 
 import (
 	"strings"
+	"time"
 
 	"litkit/internal/storage"
 )
@@ -215,43 +216,44 @@ func CheckCiteKeys(src *Source, store *storage.Store) []Violation {
 	return out
 }
 
-// RunFilesWithStore 对文件执行规则验证 + citeKey 存在性校验（引用防伪）。
+// RunFilesWithStore 对文件执行规则验证 + 引用完整性附加校验。
 //
-// 在纯规则 RunFiles 之上叠加 R5.6 查库校验；store 为 nil 时退化为纯规则验证。
-// 追加违规后按 A/S 方法重算 exitHint（R5.6 属 A 类：命中即 fix_and_rerun）。
-func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store *storage.Store) (Report, error) {
+// 在纯规则 RunFiles 之上叠加 R5.6 查库 + R5.7 撤稿（联网）+ R5.8 时效 + R5.9 自引；
+// store 为 nil 时退化为纯规则验证，resolver 为 nil 时跳过撤稿。
+// 追加违规后按 A/S 方法重算 exitHint（R5.6/R5.7 属 A 类，R5.8/R5.9 属 S 类）。
+func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store *storage.Store, resolver RetractionResolver) (Report, error) {
 	report, err := RunFiles(paths, spec, opts)
 	if err != nil {
 		return report, err
-	}
-	if store == nil {
-		return report, nil
 	}
 	method := map[string]Method{}
 	for _, r := range AllRules() {
 		method[r.ID] = r.Method
 	}
-	hasA, hasS := report.ExitHint == "fix_and_rerun", report.ExitHint == "manual_review"
-	for i := range report.Files {
-		src, perr := ParseSource(report.Files[i].Path)
-		if perr != nil {
-			continue
+	// R5.6/R5.7/R5.8/R5.9（跨文件聚合，须拿到全部源码再统一查库）
+	var srcs []*Source
+	if store != nil {
+		srcs = make([]*Source, 0, len(paths))
+		for i := range report.Files {
+			src, perr := ParseSource(report.Files[i].Path)
+			if perr != nil {
+				return report, perr
+			}
+			srcs = append(srcs, src)
+			report.Files[i].Violations = append(report.Files[i].Violations, CheckCiteKeys(src, store)...)
 		}
-		for _, v := range CheckCiteKeys(src, store) {
-			report.Files[i].Violations = append(report.Files[i].Violations, v)
-			// R5.6 属 A 类（命中即需修复）；其余按规则注册表方法判定
-			if v.RuleID == ruleCiteExists {
-				hasA = true
-				continue
+		// 撤稿/时效/自引均跨文件聚合：同一 citeKey 只在首次出现处报一条
+		if resolver != nil {
+			for _, h := range checkRetractions(srcs, store, resolver) {
+				report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
 			}
-			switch method[v.RuleID] {
-			case MethodA:
-				hasA = true
-			case MethodS:
-				hasS = true
-			}
+		}
+		for _, h := range checkCitationHealth(srcs, store, spec, time.Now().Year()) {
+			report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
 		}
 	}
+	hasA, hasS := recomputeExitHint(method, report,
+		[]string{ruleCiteExists, ruleRetracted}, []string{ruleCurrency, ruleSelfCite})
 	switch {
 	case hasA:
 		report.ExitHint = "fix_and_rerun"
@@ -262,4 +264,33 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	}
 	report.Passed = report.ExitHint == exitPass
 	return report, nil
+}
+
+// recomputeExitHint 遍历报告违规，按方法分类重算 A/S 命中。
+// notInRegistryA / notInRegistryS 为不在注册表中、需强制归类的规则 ID 白名单（如查库/联网类引用校验）。
+// 其余按规则注册表里的 Method 判定；未注册且不在白名单的违规不参与 A/S 归类。
+func recomputeExitHint(method map[string]Method, report Report, notInRegistryA, notInRegistryS []string) (hasA, hasS bool) {
+	isIn := func(id string, ids []string) bool {
+		for _, r := range ids {
+			if r == id {
+				return true
+			}
+		}
+		return false
+	}
+	for i := range report.Files {
+		for _, v := range report.Files[i].Violations {
+			switch {
+			case isIn(v.RuleID, notInRegistryA):
+				hasA = true
+			case isIn(v.RuleID, notInRegistryS):
+				hasS = true
+			case method[v.RuleID] == MethodA:
+				hasA = true
+			case method[v.RuleID] == MethodS:
+				hasS = true
+			}
+		}
+	}
+	return
 }

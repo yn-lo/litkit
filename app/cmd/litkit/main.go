@@ -70,7 +70,7 @@ func newRootCmd(d *deps) *cobra.Command {
 		newRulesCmd(),
 		newFixCmd(),
 		newLintCmd(d.cfg),
-		newVerifyCmd(d.cfg, d.store),
+		newVerifyCmd(d.cfg, d.store, d.fetcher),
 	)
 	return root
 }

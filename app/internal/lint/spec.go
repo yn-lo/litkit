@@ -57,6 +57,33 @@ type CitationSpec struct {
 	Style string `yaml:"style"` // gbt7714 | apa | ieee
 	// RunLimit 连续引用聚集上限（R5.3）：连续 RunLimit+1 个引用连串违规；0/缺省=3。
 	RunLimit int `yaml:"run_limit"`
+	// MaxAgeYears 引用时效判定跨度（R5.8）：文献年份早于当前年-跨度视为跨度过大；0/缺省=10。
+	MaxAgeYears int `yaml:"max_age_years"`
+	// SelfCitationAuthors 作者本人署名（R5.9 自引判定），空=不启用自引检查。
+	SelfCitationAuthors []string `yaml:"self_citation_authors"`
+	// SelfCitationMaxRatio 自引比例上限（R5.9），0/缺省=0.15。
+	SelfCitationMaxRatio float64 `yaml:"self_citation_max_ratio"`
+}
+
+// MaxAge 返回引用时效判定跨度（R5.8）；未配置时用默认 10 年。
+func (c CitationSpec) MaxAge() int {
+	if c.MaxAgeYears <= 0 {
+		return defaultMaxAgeYears
+	}
+	return c.MaxAgeYears
+}
+
+// SelfCiteRatio 返回自引比例上限（R5.9）；未配置时用默认 0.15。
+func (c CitationSpec) SelfCiteRatio() float64 {
+	if c.SelfCitationMaxRatio <= 0 {
+		return defaultSelfCiteRatio
+	}
+	return c.SelfCitationMaxRatio
+}
+
+// HasSelfCite 是否启用自引检查（配置了作者署名时）。
+func (c CitationSpec) HasSelfCite() bool {
+	return len(c.SelfCitationAuthors) > 0
 }
 
 // HeadingLimits 标题层级、长度与编号要求。
@@ -136,6 +163,12 @@ func (s *ManuscriptSpec) Validate() error {
 	}
 	if s.Citation.RunLimit < 0 {
 		return fmt.Errorf("citation.run_limit 必须 >= 0（0=默认 3），got %d", s.Citation.RunLimit)
+	}
+	if s.Citation.MaxAgeYears < 0 {
+		return fmt.Errorf("citation.max_age_years 必须 >= 0（0=默认 10），got %d", s.Citation.MaxAgeYears)
+	}
+	if s.Citation.SelfCitationMaxRatio < 0 {
+		return fmt.Errorf("citation.self_citation_max_ratio 必须 >= 0（0=默认 0.15），got %v", s.Citation.SelfCitationMaxRatio)
 	}
 	if s.Heading.MaxLevel <= 0 {
 		return fmt.Errorf("heading.max_level 必须 > 0")

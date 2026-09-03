@@ -63,6 +63,23 @@ const (
 	ruleR17        = "R1.7"
 	ruleR21        = "R2.1"
 	ruleCiteExists = "R5.6" // 引用存在性校验（[@citeKey] 须在本地库中）
+	ruleRetracted  = "R5.7" // 撤稿状态校验（联网查 Crossref update-to，R5.7）
+	ruleCurrency   = "R5.8" // 引用时效（文献跨度过大）
+	ruleSelfCite   = "R5.9" // 自引比例上限
+
+	// 行文质量微规则 ID（final 模式，借鉴 academic-paper writing_quality_check）
+	ruleR43 = "R4.3" // 破折号滥用
+	ruleR44 = "R4.4" // 段长均匀（AI 痕迹）
+	ruleR46 = "R4.6" // 提纲挈领式开头（AI 痕迹）
+
+	// 破折号滥用阈值（R4.3）：全文双破折号超过该值违规。
+	emDashLimit = 4
+
+	// 段长均匀判定（R4.4）：不少于 minUniformParas 段、相对离差 ≤uniformMaxRelDev、
+	// 且最大最小段差 ≤uniformMaxSpread 字，视为机械化等长段落。
+	minUniformParas  = 3
+	uniformMaxRelDev = 0.30
+	uniformMaxSpread = 60
 
 	// maxCiteRun 连续引用聚集上限：超过（N+1 个连续，中间仅空白）视为引用连串违规（R5.3）。
 	// 判定基于"聚集程度"而非物理行——行内分散的多个引用不违规（用户修正：句子级密度 → 聚集检查）。
@@ -123,6 +140,13 @@ var (
 		regexp.MustCompile(`通过.*使`),
 		regexp.MustCompile(`对.*进行`),
 	}
+
+	// R4.3 破折号滥用：中文双破折号「——」（区别于一字线「—」年份范围，避免与 R3.3 误报）。
+	emDashDoubleRe = regexp.MustCompile("——")
+
+	// R4.6 提纲挈领式开头（AI 套路话术）：中英文常见开场陈词。
+	zhOpenerRe = regexp.MustCompile(`本文将|本文旨在|本文拟|本文主要|针对上述问题|基于以上分析`)
+	enOpenerRe = regexp.MustCompile(`(?i)\bIn this (paper|study|review|letter)s?\b|\bIt is (important|worth) (to )?not(ing|e)\b|\bFirst of all\b`)
 
 	// book 中文编号体系（yueshu.md 二、标题层次）：第一篇/第一章/第一节/一、/（一）/1./（1）
 	bookCNNumRe    = regexp.MustCompile(`^第[一二三四五六七八九十百零]+[篇章节]`)   // 第X篇/第X章/第X节
@@ -1114,6 +1138,121 @@ func checkR42(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// paraCount 一段内容段落的起始行号与字数（R4.4 段长均匀用）。
+type paraCount struct {
+	line  int
+	words int
+}
+
+// paragraphWordCounts 统计内容段落（跳过空行与标题行）的起始行号与字数。
+// 与 R8.3 段长规则同一分段口径：连续非空行为一段。
+func paragraphWordCounts(src *Source) []paraCount {
+	var out []paraCount
+	inPara := false
+	var start, words int
+	flush := func() {
+		if inPara {
+			out = append(out, paraCount{line: start, words: words})
+		}
+		inPara = false
+		words = 0
+	}
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if t == "" || isHeading(t) {
+			flush()
+			continue
+		}
+		if !inPara {
+			inPara = true
+			start = src.bodyIdx[i]
+		}
+		words += wordCount(ln)
+	}
+	flush()
+	return out
+}
+
+// checkR43 破折号滥用：全文双破折号「——」超过 emDashLimit 处违规（AI 插入式说明过多）。
+func checkR43(src *Source, _ *ManuscriptSpec) []Violation {
+	count, line := 0, 0
+	for i, ln := range src.Body {
+		if n := len(emDashDoubleRe.FindAllStringIndex(ln, -1)); n > 0 {
+			count += n
+			if line == 0 {
+				line = src.bodyIdx[i]
+			}
+		}
+	}
+	if count > emDashLimit {
+		return []Violation{{
+			RuleID:     ruleR43,
+			Line:       line,
+			Problem:    fmt.Sprintf("全文双破折号 %d 处（超过 %d），插入式说明过多", count, emDashLimit),
+			Suggestion: "破折号插入说明应克制；多于数处改用分句或圆括号",
+		}}
+	}
+	return nil
+}
+
+// checkR44 段长均匀：内容段字数高度一致（相对离差小且跨度小）→ AI 机械化分段特征。
+func checkR44(src *Source, _ *ManuscriptSpec) []Violation {
+	counts := paragraphWordCounts(src)
+	if len(counts) < minUniformParas {
+		return nil
+	}
+	sum := 0
+	for _, c := range counts {
+		sum += c.words
+	}
+	mean := float64(sum) / float64(len(counts))
+	maxDev, minN, maxN := 0.0, int(^uint(0)>>1), 0
+	for _, c := range counts {
+		dev := float64(c.words) - mean
+		if dev < 0 {
+			dev = -dev
+		}
+		if dev > maxDev {
+			maxDev = dev
+		}
+		if c.words < minN {
+			minN = c.words
+		}
+		if c.words > maxN {
+			maxN = c.words
+		}
+	}
+	if mean > 0 && maxDev/mean <= uniformMaxRelDev && (maxN-minN) <= uniformMaxSpread {
+		return []Violation{{
+			RuleID:     ruleR44,
+			Line:       counts[0].line,
+			Problem:    fmt.Sprintf("全文 %d 个段落长度过于均匀，疑为机械化等长分段（AI 痕迹）", len(counts)),
+			Suggestion: "按内容自然断段，避免各段字数高度一致",
+		}}
+	}
+	return nil
+}
+
+// checkR46 提纲挈领式开头：命中 AI 套路开场陈词（直入论点为佳）。
+func checkR46(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if t == "" || isHeading(t) {
+			continue
+		}
+		if zhOpenerRe.MatchString(t) || enOpenerRe.MatchString(t) {
+			vs = append(vs, Violation{
+				RuleID:     ruleR46,
+				Line:       src.bodyIdx[i],
+				Problem:    "疑似提纲挈领式开头（AI 套路话术）",
+				Suggestion: "直入论点，去掉开场陈词",
+			})
+		}
+	}
+	return vs
+}
+
 // checkR53 引用密度：引用聚集程度 + 全文引用篇数区间。
 //
 // 聚集检查：连续 N+1 个引用（中间仅空白）连串出现违规——引用应分散到论述对应处，
@@ -1218,6 +1357,9 @@ func AllRules() []Rule {
 		{ID: "R3.3", Name: "数字范围", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR33, Fix: fixR33},
 		{ID: "R3.4", Name: "计量单位", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR34},
 		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
+		{ID: ruleR43, Name: "破折号滥用", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR43},
+		{ID: ruleR44, Name: "段长均匀", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR44},
+		{ID: ruleR46, Name: "提纲挈领开头", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR46},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
 		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},

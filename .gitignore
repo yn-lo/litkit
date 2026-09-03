@@ -38,3 +38,4 @@ app/coverage.out
 
 # 测试工作目录（spec 固化：e:\Codes\litkit\workspace）
 workspace/
+docs/

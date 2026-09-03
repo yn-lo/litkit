@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -335,15 +336,76 @@ func TestRule_R9_1(t *testing.T) {
 	}
 }
 
-func TestRule_R4_2(t *testing.T) {
-	fr := runContent(t, "我们对数据进行了分析。\n", DefaultSpec(), zhFinal())
-	got := violationsOf(fr, "R4.2")
-	if len(got) != 1 || got[0].Suggestion != "需人工确认是否冗余" {
-		t.Errorf("冗余句式应违规且提示人工确认，got %v", got)
+// ---- R4.3 破折号滥用 / R4.4 段长均匀 / R4.6 提纲挈领开头（final 模式微规则）----
+
+func TestRule_R4_3(t *testing.T) {
+	// 超过 emDashLimit(4) 处双破折号 → 违规
+	pos := "研究一——评估了机制，二——观察了结局，三——分析了关联，四——比较了分组，五——验证了结论。\n"
+	fr := runContent(t, pos, DefaultSpec(), zhFinal())
+	got := violationsOf(fr, "R4.3")
+	if len(got) != 1 || got[0].Line != 1 {
+		t.Errorf("5 处破折号应在第 1 行违规，got %v", got)
 	}
-	fr = runContent(t, "我们分析了数据。\n", DefaultSpec(), zhFinal())
-	if got := violationsOf(fr, "R4.2"); len(got) != 0 {
-		t.Errorf("简洁句式不应违规，got %v", got)
+	// 少处破折号不违规
+	neg := "本文——仅作为补充说明——展开讨论。\n"
+	if got := violationsOf(runContent(t, neg, DefaultSpec(), zhFinal()), "R4.3"); len(got) != 0 {
+		t.Errorf("少处破折号不应违规，got %v", got)
+	}
+	// 单片破折号「—」用于年份范围不误报
+	rangeOk := "跨度 1988—1998年，合计数据见下。\n"
+	if got := violationsOf(runContent(t, rangeOk, DefaultSpec(), zhFinal()), "R4.3"); len(got) != 0 {
+		t.Errorf("一字线年份范围不应误报 R4.3，got %v", got)
+	}
+}
+
+// uniformParas 构造 len 段字数相近的内容段（各段间用空行分隔，规避 R8.3 不干扰本规则判断）。
+func uniformParas(n int) string {
+	out := ""
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			out += "\n"
+		}
+		out += fmt.Sprintf("这是用于测试段落长度均匀性的第%d段正文内容，字数彼此接近相差微小。\n", i+1)
+	}
+	return out
+}
+
+func TestRule_R4_4(t *testing.T) {
+	// 3 段以上字数高度一致 → 违规
+	fr := runContent(t, uniformParas(3), DefaultSpec(), zhFinal())
+	if got := violationsOf(fr, "R4.4"); len(got) != 1 {
+		t.Errorf("等长段落应报 R4.4，got %v", got)
+	}
+	// 段数不足 3 不判断
+	short := uniformParas(2)
+	if got := violationsOf(runContent(t, short, DefaultSpec(), zhFinal()), "R4.4"); len(got) != 0 {
+		t.Errorf("少于 3 段不应报 R4.4，got %v", got)
+	}
+	// 段长差异明显不违规
+	diff := "短段落短。\n\n" + strings.Repeat("这是一个明显更长且内容更充实的段落正文，用于拉开与短段落的字数差距，避免被判定为等长均匀分段，从而不应触发机械化分布判断。", 3) + "\n"
+	if got := violationsOf(runContent(t, diff, DefaultSpec(), zhFinal()), "R4.4"); len(got) != 0 {
+		t.Errorf("段长差异明显不应违规，got %v", got)
+	}
+}
+
+func TestRule_R4_6(t *testing.T) {
+	// 命中中文套路开场 → 违规
+	fr := runContent(t, "本文将探讨该机制的重要作用。\n", DefaultSpec(), zhFinal())
+	got := violationsOf(fr, "R4.6")
+	if len(got) != 1 || got[0].Line != 1 {
+		t.Errorf("中文开场陈词应在第 1 行违规，got %v", got)
+	}
+	// 命中英文套路开场 → 违规
+	fr = runContent(t, "In this paper, we investigate the effect.\n",
+		SpecForType(PaperTypeEmpirical, LangEN),
+		Options{Lang: "en", Mode: ModeFinal, PaperType: PaperTypeEmpirical})
+	if got := violationsOf(fr, "R4.6"); len(got) != 1 {
+		t.Errorf("英文开场陈词应违规，got %v", got)
+	}
+	// 直入论点不违规
+	fr = runContent(t, "本研究测量了该蛋白的表达水平。\n", DefaultSpec(), zhFinal())
+	if got := violationsOf(fr, "R4.6"); len(got) != 0 {
+		t.Errorf("直入论点不应违规，got %v", got)
 	}
 }
 
@@ -689,7 +751,7 @@ func TestRunFilesWithStore_ExitHintPromotesToFix(t *testing.T) {
 	if err := os.WriteFile(path, []byte("这是正文，引用[@missing]文献。\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, s)
+	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, s, nil)
 	if err != nil {
 		t.Fatalf("RunFilesWithStore: %v", err)
 	}
@@ -707,7 +769,7 @@ func TestRunFilesWithStore_NilStore_NoR56(t *testing.T) {
 	if err := os.WriteFile(path, []byte("这是正文，引用[@missing]文献。\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, nil)
+	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, nil, nil)
 	if err != nil {
 		t.Fatalf("RunFilesWithStore: %v", err)
 	}

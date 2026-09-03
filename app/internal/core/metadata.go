@@ -106,6 +106,50 @@ func (f *MetadataFetcher) fetchDOI(ctx context.Context, doi string) (*model.Pape
 	return crossrefMessageToPaper(resp.Message), nil
 }
 
+// RetractionInfo 撤稿判定结果。
+type RetractionInfo struct {
+	Retracted     bool   `json:"retracted"`
+	RetractionDOI string `json:"retractionDoi,omitempty"` // 撤稿声明 DOI
+	Source        string `json:"source,omitempty"`        // publisher | retraction-watch
+	Label         string `json:"label,omitempty"`         // 声明类型（Retraction）
+}
+
+// retractionTypes 判定为「已撤稿」的 update-to 类型。
+// Crossref Crossmark 更新履行库中，撤稿/撤回的 update type 为 retraction。
+var retractionTypes = map[string]bool{
+	"retraction":      true,
+	"withdrawal":      true,
+	"withdraw":        true,
+	"is-retracted-by": true, // 关系型直接撤稿链接
+}
+
+// CheckRetraction 查询 DOI 是否已被撤稿（R5.7，Crossref update-to 机制）。
+//
+// 未命中（404）/ 未发现撤稿事件返回 (false, nil)；网络或解析错误返回 error。
+// 数据源：Crossref × Retraction Watch 免费公开，无需 API key。
+func (f *MetadataFetcher) CheckRetraction(ctx context.Context, doi string) (RetractionInfo, error) {
+	u := f.crossrefBase + "/works/" + url.PathEscape(doi)
+	data, err := f.get(ctx, "doi", u)
+	if err != nil || data == nil {
+		return RetractionInfo{}, err
+	}
+	var resp crossrefResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return RetractionInfo{}, fmt.Errorf("metadata doi: 解析 CrossRef 响应: %w", err)
+	}
+	for _, up := range resp.Message.UpdateTo {
+		if retractionTypes[strings.ToLower(up.Type)] {
+			return RetractionInfo{
+				Retracted:     true,
+				RetractionDOI: up.DOI,
+				Source:        up.Source,
+				Label:         up.Label,
+			}, nil
+		}
+	}
+	return RetractionInfo{}, nil
+}
+
 func (f *MetadataFetcher) fetchTitle(ctx context.Context, title string) (*model.Paper, error) {
 	q := url.Values{}
 	q.Set("query.bibliographic", title)
@@ -246,6 +290,17 @@ type crossrefMessage struct {
 	Issue          string           `json:"issue"`
 	Page           string           `json:"page"`
 	URL            string           `json:"URL"`
+	// UpdateTo 更新事件（Crossref × Retraction Watch）：含 retraction/correction 等
+	// 出版后状态变更。来源可为 publisher 或 retraction-watch（R5.7 撤稿判定）。
+	UpdateTo []crossrefUpdateTo `json:"update-to"`
+}
+
+// crossrefUpdateTo 一条「已更新为」事件（update-to）。
+type crossrefUpdateTo struct {
+	DOI    string `json:"DOI"`
+	Type   string `json:"type"`   // retraction | correction | ...
+	Source string `json:"source"` // publisher | retraction-watch
+	Label  string `json:"label"`  // Retraction / Correction / ...
 }
 
 type crossrefAuthor struct {

@@ -18,12 +18,30 @@ import (
 	"litkit/internal/storage"
 )
 
-// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证；R5.6 引用防伪查库；FR-LINT-08 引用评分）。
+// retractionResolverAdapter 将 core.MetadataFetcher 适配为 lint.RetractionResolver（R5.7）。
+type retractionResolverAdapter struct{ f *core.MetadataFetcher }
+
+// Resolve 查询 DOI 撤稿状态。
+func (a retractionResolverAdapter) Resolve(ctx context.Context, doi string) (lint.RetractionStatus, error) {
+	info, err := a.f.CheckRetraction(ctx, doi)
+	if err != nil {
+		return lint.RetractionStatus{}, err
+	}
+	return lint.RetractionStatus{
+		Retracted:     info.Retracted,
+		RetractionDOI: info.RetractionDOI,
+		Source:        info.Source,
+		Label:         info.Label,
+	}, nil
+}
+
+// newVerifyCmd 构造 verify 子命令（FR-LINT-05 事后验证；R5.6 引用防伪查库；
+// R5.7 撤稿校验（联网）；R5.8 时效；R5.9 自引；FR-LINT-08 引用评分）。
 //
 // 退出码（verify 专用语义）：
 //   - 0 全部通过（exitHint=pass）或仅 S 类需人工（exitHint=manual_review）
 //   - 1 有 A 类违规（exitHint=fix_and_rerun），AI 应自动修复后重跑
-func newVerifyCmd(cfg *config.Config, store *storage.Store) *cobra.Command {
+func newVerifyCmd(cfg *config.Config, store *storage.Store, fetcher *core.MetadataFetcher) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify <file.md> [file2.md ...] --type review|empirical|book --lang zh|en",
 		Short: "验证文稿合规性（A/S 类规则自动检查）",
@@ -95,7 +113,11 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				return &paramError{msg: "verify: " + err.Error()}
 			}
 
-			report, err := lint.RunFilesWithStore(args, spec, opts, store)
+			var retraction lint.RetractionResolver
+			if fetcher != nil {
+				retraction = retractionResolverAdapter{f: fetcher}
+			}
+			report, err := lint.RunFilesWithStore(args, spec, opts, store, retraction)
 			if err != nil {
 				return fmt.Errorf("verify: %w", err)
 			}
