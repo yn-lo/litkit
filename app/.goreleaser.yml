@@ -32,6 +32,12 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  # 裸二进制直传：不打包归档，直接上传 litkit / litkit.exe 到 Release
+  # （Windows 用户无需解压 zip 即可下载 exe；其余平台保留 tar.gz + 裸二进制两种形态）
+  - id: raw-binary
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
