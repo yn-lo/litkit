@@ -129,7 +129,8 @@ func writeManuscriptArtifacts(outDir, base, ts string, res *core.ManuscriptResul
 		docxPath := filepath.Join(outDir, base+"_"+ts+".docx")
 		if _, err := exec.LookPath("pandoc"); err != nil {
 			// FR-REF-11：Pandoc 缺失仅 docx 不可用，其余产物正常
-			fmt.Fprintf(os.Stderr, "litkit: 未找到 pandoc，跳过 docx 生成（formatted.md 已就绪）\n")
+			fmt.Fprintf(os.Stderr, "litkit: 未找到 pandoc，跳过 docx 生成（formatted.md 已就绪）。\n")
+			fmt.Fprintf(os.Stderr, "litkit: 如需 docx，请安装 pandoc 后重试：https://pandoc.org/installing.html\n")
 		} else if err := core.PandocToDocx(files[core.ManuscriptFormatted], docxPath); err != nil {
 			fmt.Fprintf(os.Stderr, "litkit: pandoc 转换失败，跳过 docx: %v\n", err)
 		} else {

@@ -70,7 +70,11 @@ const (
 	// 行文质量微规则 ID（final 模式，借鉴 academic-paper writing_quality_check）
 	ruleR43 = "R4.3" // 破折号滥用
 	ruleR44 = "R4.4" // 段长均匀（AI 痕迹）
+	ruleR45 = "R4.5" // AI 高频术语黑名单
 	ruleR46 = "R4.6" // 提纲挈领式开头（AI 痕迹）
+	ruleR47 = "R4.7" // 句长突变缺失（节奏呆板）
+	ruleR48 = "R4.8" // 分号过密
+	ruleR49 = "R4.9" // 摘要禁引用
 
 	// 破折号滥用阈值（R4.3）：全文双破折号超过该值违规。
 	emDashLimit = 4
@@ -80,6 +84,13 @@ const (
 	minUniformParas  = 3
 	uniformMaxRelDev = 0.30
 	uniformMaxSpread = 60
+
+	// 句长突变判定（R4.7）：连续 burstinessRun 句字长极差 ≤burstinessWindow 字 → 节奏呆板。
+	burstinessRun    = 5
+	burstinessWindow = 6
+
+	// 分号上限（R4.8）：每 1000 字分号数超过该值违规（宜用句号切分）。
+	semicolonMaxPer1000 = 2
 
 	// maxCiteRun 连续引用聚集上限：超过（N+1 个连续，中间仅空白）视为引用连串违规（R5.3）。
 	// 判定基于"聚集程度"而非物理行——行内分散的多个引用不违规（用户修正：句子级密度 → 聚集检查）。
@@ -145,8 +156,20 @@ var (
 	emDashDoubleRe = regexp.MustCompile("——")
 
 	// R4.6 提纲挈领式开头（AI 套路话术）：中英文常见开场陈词。
-	zhOpenerRe = regexp.MustCompile(`本文将|本文旨在|本文拟|本文主要|针对上述问题|基于以上分析`)
-	enOpenerRe = regexp.MustCompile(`(?i)\bIn this (paper|study|review|letter)s?\b|\bIt is (important|worth) (to )?not(ing|e)\b|\bFirst of all\b`)
+	// 借鉴 academic-paper writing_quality_check "Throat-Clearing Openers"。
+	zhOpenerRe = regexp.MustCompile(`本文将|本文旨在|本文拟|本文主要|针对上述问题|基于以上分析|综上所述|总而言之`)
+	enOpenerRe = regexp.MustCompile(`(?i)\bIn this (paper|study|review|letter)s?\b|\bIt is (important|worth) (to )?not(ing|e)\b|\bFirst of all\b|\bIt should be noted that\b|\bWhen it comes to\b|\bIt is worth mentioning\b|\bIn today's (?:rapidly )?evolving\b`)
+
+	// R4.5 AI 高频术语黑名单：AI 文本高频空洞词（借鉴 writing_quality_check）。
+	// 默认排除 robust/landscape/paradigm/navigate 等带学科义的词（statistics/ecology/哲学/wayfinding 中为规范术语），
+	// 其余明确 AI 腔词全收；用户可经 spec.style_exempt_terms 二次豁免。
+	enFlaggedRe = regexp.MustCompile(`(?i)\b(delve|tapestry|pivotal|crucial|foster|showcase|testament|leverage|realm|embark|underscore|multifaceted|nuanced|comprehensive|intricate|cornerstone|synergy|holistic|streamline|cutting-edge|groundbreaking)\b`)
+	zhFlaggedRe = regexp.MustCompile(`综上所述|不言而喻|众所周知|显而易见|深入探讨|全面深入|有效提升|显著提升|不断完善|日益增长`)
+
+	// R4.7 切句正则（按句末标点粗分句子，用于句长统计）。
+	// ponytail: 粗略切句，小数点/缩写会切错，仅作初筛提示不作精确裁决。
+	cnSentRe = regexp.MustCompile(`[。！？；]`)
+	enSentRe = regexp.MustCompile(`[.!?]`)
 
 	// book 中文编号体系（yueshu.md 二、标题层次）：第一篇/第一章/第一节/一、/（一）/1./（1）
 	bookCNNumRe    = regexp.MustCompile(`^第[一二三四五六七八九十百零]+[篇章节]`)   // 第X篇/第X章/第X节
@@ -1253,6 +1276,159 @@ func checkR46(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// checkR45 AI 高频术语：命中默认空洞词表则提示是否为最精确用词（S 类，需人工确认）。
+// 按 spec.Lang 分中英词表；spec.StyleExemptTerms 提供豁免词（学科术语/固定搭配）。
+func checkR45(src *Source, spec *ManuscriptSpec) []Violation {
+	re := enFlaggedRe
+	if spec.Lang == LangZH {
+		re = zhFlaggedRe
+	}
+	exempt := map[string]bool{}
+	for _, w := range spec.StyleExemptTerms {
+		exempt[strings.ToLower(strings.TrimSpace(w))] = true
+	}
+	var vs []Violation
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if t == "" || isHeading(t) {
+			continue
+		}
+		for _, m := range re.FindAllString(t, -1) {
+			if exempt[strings.ToLower(m)] {
+				continue
+			}
+			vs = append(vs, Violation{
+				RuleID:     ruleR45,
+				Line:       src.bodyIdx[i],
+				Problem:    "疑似 AI 高频空洞词「" + m + "」：是否为最精确用词？",
+				Suggestion: "若是学科术语可经 spec.style_exempt_terms 豁免；否则换用更精确的词",
+			})
+		}
+	}
+	return vs
+}
+
+// checkR47 句长突变缺失：连续 burstinessRun 句字长极差 ≤burstinessWindow → 句子节奏呆板（S 类）。
+// 借鉴 writing_quality_check Burstiness：5+ 连续句子邪容在窄字长区间。
+func checkR47(src *Source, spec *ManuscriptSpec) []Violation {
+	var b strings.Builder
+	for _, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if t == "" || isHeading(t) {
+			continue
+		}
+		b.WriteString(t)
+	}
+	re := enSentRe
+	if spec.Lang == LangZH {
+		re = cnSentRe
+	}
+	var lens []int
+	for _, s := range re.Split(b.String(), -1) {
+		if w := wordCount(strings.TrimSpace(s)); w > 0 {
+			lens = append(lens, w)
+		}
+	}
+	if len(lens) < burstinessRun {
+		return nil
+	}
+	bestRun := 0
+	for i := 0; i < len(lens); i++ {
+		lo, hi, j := lens[i], lens[i], i
+		for j < len(lens) {
+			if lens[j] < lo {
+				lo = lens[j]
+			}
+			if lens[j] > hi {
+				hi = lens[j]
+			}
+			if hi-lo > burstinessWindow {
+				break
+			}
+			j++
+		}
+		if j-i > bestRun {
+			bestRun = j - i
+		}
+		i = j - 1 // 已探明的最远边界，跳过中间起点
+	}
+	if bestRun >= burstinessRun {
+		return []Violation{{
+			RuleID:     ruleR47,
+			Line:       src.bodyIdx[0],
+			Problem:    fmt.Sprintf("正文有最长连续 %d 句字长差 ≤%d 字，句子节奏呆板", bestRun, burstinessWindow),
+			Suggestion: "穿插短句（≤10 字）或合并冗余长句，让句长有自然起伏",
+		}}
+	}
+	return nil
+}
+
+// checkR48 分号过密：每千字分号数超过 semicolonMaxPer1000（S 类）。
+// 借鉴 writing_quality_check：AI 常用分号链并列子句，宜用句号切分。
+func checkR48(src *Source, spec *ManuscriptSpec) []Violation {
+	semi := "；"
+	if spec.Lang != LangZH {
+		semi = ";"
+	}
+	words, semiCount := 0, 0
+	var firstLine int
+	for i, ln := range src.Body {
+		if isHeading(strings.TrimSpace(ln)) {
+			continue
+		}
+		words += wordCount(ln)
+		if n := strings.Count(ln, semi); n > 0 {
+			semiCount += n
+			if firstLine == 0 {
+				firstLine = src.bodyIdx[i]
+			}
+		}
+	}
+	if words > 0 && semiCount*1000 > semicolonMaxPer1000*words {
+		return []Violation{{
+			RuleID:     ruleR48,
+			Line:       firstLine,
+			Problem:    fmt.Sprintf("分号 %d 处（约 %.1f/千字，限 %d/千字）", semiCount, float64(semiCount)*1000/float64(words), semicolonMaxPer1000),
+			Suggestion: "无紧密并列关系时改用句号切分为独立句子",
+		}}
+	}
+	return nil
+}
+
+// checkR49 摘要禁引用：摘要/Abstract 段落内不得含 [@citeKey]（S 类）。
+// 借鉴 abstract_writing_guide：摘要不含引用为各刊通例。
+func checkR49(src *Source, _ *ManuscriptSpec) []Violation {
+	idx := -1
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if isHeading(t) {
+			title := strings.TrimSpace(strings.TrimLeft(t, "#"))
+			if title == "摘要" || strings.EqualFold(title, "abstract") {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	var vs []Violation
+	for j := idx + 1; j < len(src.Body); j++ {
+		if isHeading(strings.TrimSpace(src.Body[j])) {
+			break
+		}
+		if citeRe.MatchString(src.Body[j]) {
+			vs = append(vs, Violation{
+				RuleID:     ruleR49,
+				Line:       src.bodyIdx[j],
+				Problem:    "摘要中含引用",
+				Suggestion: "摘要应无引用，移除引用占位符",
+			})
+		}
+	}
+	return vs
+}
+
 // checkR53 引用密度：引用聚集程度 + 全文引用篇数区间。
 //
 // 聚集检查：连续 N+1 个引用（中间仅空白）连串出现违规——引用应分散到论述对应处，
@@ -1359,7 +1535,11 @@ func AllRules() []Rule {
 		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
 		{ID: ruleR43, Name: "破折号滥用", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR43},
 		{ID: ruleR44, Name: "段长均匀", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR44},
+		{ID: ruleR45, Name: "AI高频术语", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR45},
 		{ID: ruleR46, Name: "提纲挈领开头", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR46},
+		{ID: ruleR47, Name: "句长突变", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR47},
+		{ID: ruleR48, Name: "分号过密", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR48},
+		{ID: ruleR49, Name: "摘要禁引用", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR49},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
 		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},

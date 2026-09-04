@@ -147,7 +147,7 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 		created = append(created, filepath.Join(lint.LitkitDir, "AGENTS.md"))
 	}
 
-	// .litkit/skills/ Agent Skills（用户按自己 AI 工具手动复制到对应 skills 路径）
+	// .agents/skills/ Agent Skills（仓库级标准位置，AI 工具自动扫描发现，无需手动复制）
 	skillFiles, err := lint.InitSkills(dir, force)
 	if err != nil {
 		return nil, err

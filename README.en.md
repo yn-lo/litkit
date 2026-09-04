@@ -27,15 +27,15 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 
 ## Features
 
-| Capability | Description |
-| --- | --- |
-| Cross-source search | 6 sources, concurrent + dedup; `-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N` |
-| Metadata lookup | `metadata doi\|pmid\|arxiv\|title <id>` (query only); `lib add --doi <DOI>` resolve and store |
-| Full-text fetch | Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch) |
-| Citations | `export -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE |
-| Manuscript typesetting | `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o` |
-| Compliance gate | `lint init` scaffolds a harness; `verify --mode draft\|chapter\|final`; `--report citation-refs` LLM citation scoring |
-| Library management | `lib add\|search\|list\|rm\|stats\|path` |
+| Capability             | Description                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Cross-source search    | 6 sources, concurrent + dedup;`-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N`              |
+| Metadata lookup        | `metadata doi\|pmid\|arxiv\|title <id>` (query only); `lib add --doi <DOI>` resolve and store                            |
+| Full-text fetch        | Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch)                                |
+| Citations              | `export -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE                                                        |
+| Manuscript typesetting | `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o`                                                         |
+| Compliance gate        | `lint init` scaffolds a harness; `verify --mode draft\|chapter\|final`; `--report citation-refs` LLM citation scoring |
+| Library management     | `lib add\|search\|list\|rm\|stats\|path`                                                                                     |
 
 ## Sources
 
@@ -51,17 +51,17 @@ All sources provide abstracts (FR-SEARCH-03). Known upstream limitations: Semant
 
 All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`); **no API key is required**:
 
-| Variable | Description |
-| --- | --- |
-| `LITKIT_WORK_DIR` | Working directory (library and config are initialized here) |
-| `LITKIT_LANG` | Default language (zh / en) |
-| `LITKIT_SEMANTIC_SCHOLAR_API_KEY` | Optional; raises Semantic Scholar rate limits |
-| `LITKIT_UNPAYWALL_EMAIL` | Optional; Unpaywall requires an email (OA channel is skipped without it) |
-| `LITKIT_SCI_HUB_URL` | Optional; Sci-Hub mirror URL (default sci-hub.se) |
-| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | Optional; network timeout and retries |
-| `LITKIT_LLM_API_KEY` | Optional; LLM citation-scoring key |
-| `LITKIT_LLM_BASE_URL` | Optional; self-hosted LLM endpoint |
-| `LITKIT_VERIFY_LINT_LLM` | Optional; enable LLM citation scoring (default false, avoids unexpected remote calls) |
+| Variable                                             | Description                                                                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `LITKIT_WORK_DIR`                                  | Working directory (library and config are initialized here)                           |
+| `LITKIT_LANG`                                      | Default language (zh / en)                                                            |
+| `LITKIT_SEMANTIC_SCHOLAR_API_KEY`                  | Optional; raises Semantic Scholar rate limits                                         |
+| `LITKIT_UNPAYWALL_EMAIL`                           | Optional; Unpaywall requires an email (OA channel is skipped without it)              |
+| `LITKIT_SCI_HUB_URL`                               | Optional; Sci-Hub mirror URL (default sci-hub.se)                                     |
+| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | Optional; network timeout and retries                                                 |
+| `LITKIT_LLM_API_KEY`                               | Optional; LLM citation-scoring key                                                    |
+| `LITKIT_LLM_BASE_URL`                              | Optional; self-hosted LLM endpoint                                                    |
+| `LITKIT_VERIFY_LINT_LLM`                           | Optional; enable LLM citation scoring (default false, avoids unexpected remote calls) |
 
 ## Installation
 
@@ -93,13 +93,22 @@ litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
 - **CLI**: every command outputs JSON (`--full` prints full metadata); `litkit --help` is self-describing.
 - Full interface contract (CLI / data model): [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md).
 
-| Doc | Location |
-| --- | --- |
-| Requirements (PRD) | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md) |
-| Architecture & data flow | [`.harness/specs/architecture/`](.harness/specs/architecture/) |
-| Interface spec (CLI / data model) | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
-| Roadmap | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md) |
-| Conventions / gates | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
+| Doc                               | Location                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| Requirements (PRD)                | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md)       |
+| Architecture & data flow          | [`.harness/specs/architecture/`](.harness/specs/architecture/)                   |
+| Interface spec (CLI / data model) | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)             |
+| Roadmap                           | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md)             |
+| Conventions / gates               | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
+
+## Future Plan
+
+> See [roadmap.md](.harness/specs/plans/roadmap.md) for detailed milestones. Directions beyond the released (M1–M6) and in-progress (M7 semantic search, M8 LLM citation scoring) milestones:
+
+- **Chart generation**: emit SVG directly (forest plots / PRISMA flow diagram / included-literature stats) from the local library.
+- **Systematic review `litkit review`**: PRISMA workflow (search → dedup → screening → inclusion list → forest-plot data).
+- **Statistical analysis**: run tests via wrapped R/Rscript (optional dependency); hand off data and read results back into the manuscript.
+- **AI qualitative research**: LLM-assisted qualitative coding and thematic analysis (standalone command family).
 
 ## Development
 
@@ -107,9 +116,6 @@ litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
 # Full gate (gofmt → build → lint → vet → test → vulncheck → arch-check → sync)
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
-
-# Release: tag to trigger GitHub Actions build & release upload
-git tag v0.1.0 && git push origin v0.1.0
 ```
 
 ## Contributing

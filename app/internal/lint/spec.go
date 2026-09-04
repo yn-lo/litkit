@@ -40,6 +40,8 @@ type ManuscriptSpec struct {
 	// BookTopLevel 书籍文件顶层标题级别（仅 book 生效）：auto|book|chapter|section。
 	// auto（默认）自动兼容整本书/单章/单节文件；book 强制首标题为书名。
 	BookTopLevel string `yaml:"book_top_level"`
+	// StyleExemptTerms R4.5 术语黑名单豁免词（学科术语/固定搭配），空=不豁免。
+	StyleExemptTerms []string `yaml:"style_exempt_terms"`
 	// SkipRules 永久跳过的规则 ID（等效每次 verify --skip），空=全部启用。
 	SkipRules []string `yaml:"skip_rules"`
 }

@@ -66,10 +66,10 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("应生成 %s：%v", rel, err)
 		}
 	}
-	// .litkit/skills/ Agent Skills
-	skillPath := filepath.Join(dir, ".litkit", "skills", "litkit", "SKILL.md")
+	// .agents/skills/ Agent Skills（仓库级标准位置）
+	skillPath := filepath.Join(dir, ".agents", "skills", "litkit", "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
-		t.Errorf("应生成 .litkit/skills/litkit/SKILL.md：%v", err)
+		t.Errorf("应生成 .agents/skills/litkit/SKILL.md：%v", err)
 	}
 	skillData, err := os.ReadFile(skillPath)
 	if err != nil {
@@ -81,10 +81,11 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("SKILL.md 应含 %q", want)
 		}
 	}
-	// references 文件
+	// 参考文献文件
 	for _, rel := range []string{
-		".litkit/skills/litkit/references/literature-search.md",
-		".litkit/skills/litkit/references/manuscript-writing.md",
+		".agents/skills/litkit/references/literature-search.md",
+		".agents/skills/litkit/references/manuscript-writing.md",
+		".agents/skills/academic-writing/SKILL.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("应生成 %s：%v", rel, err)

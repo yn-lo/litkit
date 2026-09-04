@@ -2,7 +2,6 @@
 name: litkit
 description: 使用 litkit 工具包完成学术写作全流程：跨源检索文献、规范引用、撰写手稿、合规验证。触发词（中/英）：检索/查文献/参考文献/引用/papers/literature/search/reference/citation/引用管理/manuscript/文稿/学术写作/论文/verify/验证/查重/撤稿/文献时效。当用户需要检索论文、管理文献库、撰写学术论文、验证文稿格式或检查引用合规时使用此技能。
 ---
-
 # litkit
 
 学术写作工具包：检索 → 入库 → 引用 → 撰写 → 验证。
@@ -19,13 +18,13 @@ description: 使用 litkit 工具包完成学术写作全流程：跨源检索�
 
 若用户意图不在 litkit 能力范围内，先路由到对应技能，不要自行调用 litkit CLI：
 
-| 用户想要的 | 去向 |
-| --- | --- |
-| 撰写完整论文/多轮 AI 写作助理 | **academic-paper** 技能（litkit 仅提供检索/引用/合规工具，不替代写作 agent） |
-| 同行评审、审稿意见 | **academic-paper-reviewer** 技能 |
-| 开放式主题调研、问题探索 | **deep-research** 技能（litkit 的 `search` 只做具体文献检索，不做探索式归纳） |
-| 端到端论文流水线编排 | **academic-pipeline** 技能 |
-| dedupe/查重引擎原理 | **dedup-engine**（litkit 不提供查重） |
+| 用户想要的                    | 去向                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| 撰写完整论文/多轮 AI 写作助理 | **academic-paper** 技能（litkit 仅提供检索/引用/合规工具，不替代写作 agent）    |
+| 同行评审、审稿意见            | **academic-paper-reviewer** 技能                                                |
+| 开放式主题调研、问题探索      | **deep-research** 技能（litkit 的 `search` 只做具体文献检索，不做探索式归纳） |
+| 端到端论文流水线编排          | **academic-pipeline** 技能                                                      |
+| dedupe/查重引擎原理           | **dedup-engine**（litkit 不提供查重）                                           |
 
 只有当用户落地在使用 litkit CLI 写作/检索/验证，或明确要求调用 litkit 时才执行本技能。
 
@@ -59,6 +58,7 @@ litkit lib rm <citeKey>      # 删除
 - 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
 - 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`
+- **正文写作方法**（结构、写作质量自省、摘要规范、修辞）见 **academic-writing** 技能
 
 ### 验证文稿
 
@@ -77,6 +77,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --skip-check boast_wor
 **验证模式**（递增）：`chapter`（结构）→ `draft`（+数据/标点/引用）→ `final`（+字数/行文）
 
 **引用健康检查**（final 模式，需本地库 `--type/--lang` 生成 `.litkit`）：
+
 - R5.6 引用防伪：`[@citeKey]` 必须存在于本地库（A 类，退出码 1）
 - R5.7 撤稿：联网查 Crossref，被引文献已撤稿即报（A 类）
 - R5.8 引用时效：文献年份距今超 `max_age_years`（默认 10）提示（S 类）

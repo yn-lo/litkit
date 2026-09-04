@@ -17,25 +17,17 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），CLI
 
 **AI-first**：默认返回 AI 写作所需最小字段集（citeKey / title / firstAuthor / year / abstract），完整元数据按需取回；CLI 输出 JSON 可被 AI shell 直接调用。
 
-## 项目原则
-
-- **AI-first 降噪**：接口设计以降低上下文噪声为第一约束。
-- **CLI 唯一接口**：全部功能经 CLI 命令完成。
-- **摘要工作流**：检索源必须提供摘要，无摘要论文默认过滤；不下载 PDF、不抽取全文。
-- **免费优先**：全部源为公开开放接口，无强制 API key；密钥一律走 `.env`（gitignored），禁止硬编码。
-- **接口同步**：新增 CLI 功能同步接口文档 api.md。
-
 ## 功能
 
-| 能力 | 说明 |
-| --- | --- |
-| 跨源检索 | 6 源并发 + 去重；`-s` 源过滤 / `-n` 每源条数 / `--mode tiab\|full` / `--years N` |
-| 元数据反查 | `metadata doi\|pmid\|arxiv\|title <id>` 反查元数据（查询）；`lib add --doi <DOI>` 反查并入库 |
-| 全文获取 | Unpaywall OA → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络） |
-| 规范引用 | `export -f bibtex\|ris\|text`；样式 GB/T 7714—2025 / APA / IEEE |
-| 手稿排版 | `[@citeKey]` → `[1][2]`；`--preview` / `--docx` / `-o` |
+| 能力         | 说明                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| 跨源检索     | 6 源并发 + 去重；`-s` 源过滤 / `-n` 每源条数 / `--mode tiab\|full` / `--years N`                           |
+| 元数据反查   | `metadata doi\|pmid\|arxiv\|title <id>` 反查元数据（查询）；`lib add --doi <DOI>` 反查并入库                     |
+| 全文获取     | Unpaywall OA → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络）                                               |
+| 规范引用     | `export -f bibtex\|ris\|text`；样式 GB/T 7714—2025 / APA / IEEE                                                  |
+| 手稿排版     | `[@citeKey]` → `[1][2]`；`--preview` / `--docx` / `-o`                                                 |
 | 撰写合规门禁 | `lint init` 生成 harness；`verify --mode draft\|chapter\|final`；`--report citation-refs` 引用相关性 LLM 评分 |
-| 文献库管理 | `lib add\|search\|list\|rm\|stats\|path` |
+| 文献库管理   | `lib add\|search\|list\|rm\|stats\|path`                                                                             |
 
 ## 检索源
 
@@ -51,17 +43,17 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），CLI
 
 全部配置经 `.env` 读取（`LITKIT_ENV_FILE` 可指定路径），**无任何必需密钥**：
 
-| 变量 | 说明 |
-| --- | --- |
-| `LITKIT_WORK_DIR` | 工作目录（初始化文献库与配置） |
-| `LITKIT_LANG` | 默认语言（zh / en） |
-| `LITKIT_SEMANTIC_SCHOLAR_API_KEY` | 可选，提升 Semantic Scholar 限速 |
-| `LITKIT_UNPAYWALL_EMAIL` | 可选，Unpaywall 合规邮箱（不设则跳过 OA 通道） |
-| `LITKIT_SCI_HUB_URL` | 可选，Sci-Hub 镜像地址（默认 sci-hub.se） |
-| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | 可选，网络超时与重试 |
-| `LITKIT_LLM_API_KEY` | 可选，LLM 引用评分 key |
-| `LITKIT_LLM_BASE_URL` | 可选，LLM 自托管 endpoint |
-| `LITKIT_VERIFY_LINT_LLM` | 可选，启用 LLM 引用评分（默认 false，避免意外远程调用） |
+| 变量                                                 | 说明                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| `LITKIT_WORK_DIR`                                  | 工作目录（初始化文献库与配置）                          |
+| `LITKIT_LANG`                                      | 默认语言（zh / en）                                     |
+| `LITKIT_SEMANTIC_SCHOLAR_API_KEY`                  | 可选，提升 Semantic Scholar 限速                        |
+| `LITKIT_UNPAYWALL_EMAIL`                           | 可选，Unpaywall 合规邮箱（不设则跳过 OA 通道）          |
+| `LITKIT_SCI_HUB_URL`                               | 可选，Sci-Hub 镜像地址（默认 sci-hub.se）               |
+| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | 可选，网络超时与重试                                    |
+| `LITKIT_LLM_API_KEY`                               | 可选，LLM 引用评分 key                                  |
+| `LITKIT_LLM_BASE_URL`                              | 可选，LLM 自托管 endpoint                               |
+| `LITKIT_VERIFY_LINT_LLM`                           | 可选，启用 LLM 引用评分（默认 false，避免意外远程调用） |
 
 ## 安装
 
@@ -93,13 +85,22 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 - **CLI**：所有命令输出 JSON（`--full` 输出完整元数据）；`litkit --help` 自描述。
 - 完整接口契约（CLI / 数据模型）见 [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)。
 
-| 文档 | 位置 |
-| --- | --- |
-| 需求基线（PRD） | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md) |
-| 架构与数据流 | [`.harness/specs/architecture/`](.harness/specs/architecture/) |
-| 接口规范（CLI / 数据模型） | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md) |
-| 开发计划 | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md) |
-| 开发约定 / 门禁 | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
+| 文档                       | 位置                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| 需求基线（PRD）            | [`.harness/specs/requirements/PRD.md`](.harness/specs/requirements/PRD.md)       |
+| 架构与数据流               | [`.harness/specs/architecture/`](.harness/specs/architecture/)                   |
+| 接口规范（CLI / 数据模型） | [`.harness/specs/reference/api.md`](.harness/specs/reference/api.md)             |
+| 开发计划                   | [`.harness/specs/plans/roadmap.md`](.harness/specs/plans/roadmap.md)             |
+| 开发约定 / 门禁            | [`.harness/specs/conventions/process.md`](.harness/specs/conventions/process.md) |
+
+## 未来规划
+
+> 详细里程碑见 [roadmap.md](.harness/specs/plans/roadmap.md)。已发布（M1–M6）+ 推进中（M7 语义检索、M8 LLM 引用评分）之外的延伸方向：
+
+- **图表生成**：直接产出 SVG（森林图 / PRISMA 流程图 / 纳入文献统计），数据来自本地库。
+- **系统综述 `litkit review`**：PRISMA 工作流（检索→去重→筛选→纳入清单→森林图数据）。
+- **统计分析**：封装 R/Rscript 执行检验（可选依赖），数据交接、回读结果进稿件。
+- **AI 质性研究分析**：LLM 辅助质性编码与主题分析（独立命令族）。
 
 ## 开发
 
@@ -107,15 +108,8 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 # 全量门禁（gofmt → build → lint → vet → test → vulncheck → arch-check → sync）
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
-
-# 发布：打 tag 触发 GitHub Actions 构建并上传 Release
-git tag v0.1.0 && git push origin v0.1.0
 ```
-
-## 贡献
-
-需求、设计与接口基线见 [`.harness/specs/`](.harness/specs/)；关键需求/节点采用 TDD 开发。提交前请跑通全量门禁（见[开发](#开发)）。所有贡献默认遵循 [Apache-2.0](LICENSE)。
 
 ## License
 
-[Apache-2.0](LICENSE)。Copyright © 2026 [YnLo](https://www.ynlo.top/)。
+[Apache-2.0](LICENSE). Copyright © 2026 [YnLo](https://www.ynlo.top/).
