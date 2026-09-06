@@ -973,6 +973,50 @@ func TestRule_R1_5_AllPresent_Passes(t *testing.T) {
 	}
 }
 
+// ---- R1.9 章节语义顺序（spec.Sections 顺序）----
+
+func TestRule_R1_9_OrderViolation(t *testing.T) {
+	// 编号合法但语义倒挂：讨论出现在结果/主题分析之前，R1.3/R1.5 均放行，唯 R1.9 报
+	fr := reviewRun(t, "# 标题\n# 1 引言\n正文。\n# 2 讨论与展望\n正文。\n# 3 主题分析\n正文。\n")
+	got := violationsOf(fr, "R1.9")
+	if len(got) == 0 {
+		t.Fatalf("语义倒挂（讨论先于主题分析）应报 R1.9，got %+v", fr.Violations)
+	}
+	if !strings.Contains(got[0].Problem, "讨论与展望") || !strings.Contains(got[0].Problem, "主题分析") {
+		t.Errorf("应指明颠倒的两个章节名，got %+v", got)
+	}
+}
+
+// specEmpiricalZH 返回 empirical-zh 默认规范（章节清单 引言/资料与方法/结果/讨论/结论）。
+func specEmpiricalZH(t *testing.T) *ManuscriptSpec {
+	t.Helper()
+	return SpecForType(PaperTypeEmpirical, LangZH)
+}
+
+func TestRule_R1_9_ResultsBeforeMethods(t *testing.T) {
+	// 结果（1.3）出现在资料与方法（1.2）之前：编号递增合法，顺序语义错误
+	fr := runContent(t, "# 标题\n# 1 引言\n正文。\n# 2 结果\n正文。\n# 3 资料与方法\n正文。\n",
+		specEmpiricalZH(t), Options{Lang: "zh", Mode: ModeChapter, PaperType: PaperTypeEmpirical})
+	if got := violationsOf(fr, "R1.9"); len(got) == 0 {
+		t.Fatalf("结果先于资料与方法应报 R1.9，got %+v", fr.Violations)
+	}
+}
+
+func TestRule_R1_9_CorrectOrder_Passes(t *testing.T) {
+	// 合规骨⑤（review 顺序正确）不报 R1.9
+	if got := violationsOf(reviewRun(t, reviewFullContent), "R1.9"); len(got) != 0 {
+		t.Errorf("顺序正确不应报 R1.9，got %+v", got)
+	}
+	// 缺章节只由 R1.5 报告，R1.9 不重复报（缺失节相邻对跳过）
+	fr := reviewRun(t, "# 标题\n# 1 引言\n正文。\n# 2 结论\n正文。\n")
+	if got := violationsOf(fr, "R1.9"); len(got) != 0 {
+		t.Errorf("仅缺章节不应报 R1.9，got %+v", got)
+	}
+	if got := violationsOf(fr, "R1.5"); len(got) != 3 {
+		t.Errorf("缺 3 章节应由 R1.5 报告，got %d", len(got))
+	}
+}
+
 // ---- R1.6 空章节 ----
 
 func TestRule_R1_6_EmptySection(t *testing.T) {

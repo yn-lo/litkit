@@ -725,6 +725,61 @@ func checkR15(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// checkR19 章节语义顺序：标题须按 spec.Sections 的顺序出现（R1.5 只查存在性，不查先后）。
+//
+// 判定模型（与 R1.5 同口径收集标题文字、忽略大小写）：
+//   - 将 spec.Sections 每一节在标题流中首次匹配的下标记为 pos[i]（缺失=-1，缺失由 R1.5 报告）
+//   - 相邻两节均存在时须严格递增（pos[i-1] < pos[i]），否则报顺序违规
+//   - 只报"先后颠倒"，不重复报缺失（R1.5 已覆盖），book 无章节清单自动跳过
+func checkR19(src *Source, spec *ManuscriptSpec) []Violation {
+	if len(spec.Sections) <= 1 {
+		return nil
+	}
+	// 收集标题（去编号文字）与行号
+	type headingHit struct {
+		text string
+		line int
+	}
+	var headings []headingHit
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		if _, _, text := headingLevel(t); text != "" {
+			headings = append(headings, headingHit{text: strings.ToLower(text), line: src.bodyIdx[i]})
+		}
+	}
+	// 每节首次匹配下标与行号
+	pos := make([]int, len(spec.Sections))
+	lines := make([]int, len(spec.Sections))
+	for i, sec := range spec.Sections {
+		secLower := strings.ToLower(sec)
+		pos[i] = -1
+		for j, h := range headings {
+			if strings.Contains(h.text, secLower) {
+				pos[i], lines[i] = j, h.line
+				break
+			}
+		}
+	}
+	var vs []Violation
+	for i := 1; i < len(spec.Sections); i++ {
+		if pos[i-1] < 0 || pos[i] < 0 {
+			continue // 缺失节由 R1.5 报告
+		}
+		if pos[i] <= pos[i-1] {
+			vs = append(vs, Violation{
+				RuleID:     "R1.9",
+				Line:       lines[i],
+				Problem:    fmt.Sprintf("章节顺序异常：%q 出现在 %q 之前", spec.Sections[i], spec.Sections[i-1]),
+				Suggestion: fmt.Sprintf("章节约按 manuscript-spec.yaml 的 sections 顺序排列：%s", strings.Join(spec.Sections, " → ")),
+			})
+		}
+	}
+	return vs
+}
+
 // checkR16 空章节：编号标题到下一个标题之间无任何内容违规。
 //
 // 大标题（首个无编号标题）豁免；判定基于原始 Lines，章节内的表格/图片行算有内容。
@@ -1524,6 +1579,7 @@ func AllRules() []Rule {
 		{ID: ruleIDHeadingOrder, Name: "标题规范", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR13},
 		{ID: "R1.4", Name: "正文禁止加粗", Category: CatStructure, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR14, Fix: fixR14},
 		{ID: "R1.5", Name: "章节完整性", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR15},
+		{ID: "R1.9", Name: "章节顺序", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR19},
 		{ID: "R1.6", Name: "空章节", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR16},
 		{ID: ruleR17, Name: "空/重复标题", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR17},
 		{ID: "R1.8", Name: "图表交叉引用", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR18},

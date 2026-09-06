@@ -1,12 +1,12 @@
 # litkit
 
-面向国内学术写作场景的论文工具包：跨源检索、规范引用、手稿排版与 AI 撰写合规门禁。
+面向护理与临床医学科研写作场景的论文工具包：跨源检索、规范引用、手稿排版与 AI 撰写合规门禁。
 
 [English](README.en.md) | **中文**
 
 ## 概览
 
-litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），CLI 为唯一接口，面向 AI agent 与命令行用户：
+litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**面向护理与临床医学科研工作**——覆盖论文从选题检索、文献管理到数据统计与撰写的全流程，医学生同样适用；聚焦临床/人群研究写作，不面向生化等基础实验学科。CLI 为唯一接口，面向 AI agent 与命令行用户：
 
 - **跨源检索**：arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex 并发检索 + 去重；摘要工作流（不下载 PDF、不抽取全文）。
 - **文献入库**：按 DOI / PMID / arXiv / 标题反查元数据；`lib add --doi` 反查即入库；本地 SQLite 文献库管理。

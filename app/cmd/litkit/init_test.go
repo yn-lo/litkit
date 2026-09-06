@@ -85,7 +85,9 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 	for _, rel := range []string{
 		".agents/skills/litkit/references/literature-search.md",
 		".agents/skills/litkit/references/manuscript-writing.md",
-		".agents/skills/academic-writing/SKILL.md",
+		".agents/skills/academic-style/SKILL.md",
+		".agents/skills/manuscript-format/SKILL.md",
+		".agents/skills/manuscript-format/references/empirical.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("应生成 %s：%v", rel, err)

@@ -58,7 +58,8 @@ litkit lib rm <citeKey>      # 删除
 - 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
 - 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`
-- **正文写作方法**（结构、写作质量自省、摘要规范、修辞）见 **academic-writing** 技能
+- **正文写作方法**（结构、写作质量自省、摘要规范、修辞）见 **academic-style** 技能
+- **叙事格式（八股骨架）**：按论文类型规划章节结构，写作前读 **manuscript-format** 技能（references/ 下按类型取文档）
 
 ### 验证文稿
 

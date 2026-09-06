@@ -30,7 +30,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> [选项]
 | 类别 | 说明 | 对应规则 |
 |---|---|---|
 | `language` | 语言合规 | R0.1, R0.2 |
-| `structure` | 章节结构 | R1.1, R1.4-R1.8 |
+| `structure` | 章节结构 | R1.1, R1.4-R1.9 |
 | `heading` | 标题规范 | R1.2, R1.3, R7.1 |
 | `statistics` | 统计格式 | R2.1 |
 | `punctuation` | 标点符号 | R3.1, R3.2 |

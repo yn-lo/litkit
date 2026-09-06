@@ -16,7 +16,11 @@ import (
 //go:embed templates/skills/litkit/SKILL.md
 //go:embed templates/skills/litkit/references/literature-search.md
 //go:embed templates/skills/litkit/references/manuscript-writing.md
-//go:embed templates/skills/academic-writing/SKILL.md
+//go:embed templates/skills/academic-style/SKILL.md
+//go:embed templates/skills/manuscript-format/SKILL.md
+//go:embed templates/skills/manuscript-format/references/empirical.md
+//go:embed templates/skills/manuscript-format/references/review.md
+//go:embed templates/skills/manuscript-format/references/book.md
 //go:embed templates/empirical-zh/manuscript-spec.yaml
 //go:embed templates/review-zh/manuscript-spec.yaml
 //go:embed templates/empirical-en/manuscript-spec.yaml
@@ -51,7 +55,11 @@ var skillFiles = []tmplFile{
 	{"litkit/SKILL.md", "templates/skills/litkit/SKILL.md"},
 	{"litkit/references/literature-search.md", "templates/skills/litkit/references/literature-search.md"},
 	{"litkit/references/manuscript-writing.md", "templates/skills/litkit/references/manuscript-writing.md"},
-	{"academic-writing/SKILL.md", "templates/skills/academic-writing/SKILL.md"},
+	{"academic-style/SKILL.md", "templates/skills/academic-style/SKILL.md"},
+	{"manuscript-format/SKILL.md", "templates/skills/manuscript-format/SKILL.md"},
+	{"manuscript-format/references/empirical.md", "templates/skills/manuscript-format/references/empirical.md"},
+	{"manuscript-format/references/review.md", "templates/skills/manuscript-format/references/review.md"},
+	{"manuscript-format/references/book.md", "templates/skills/manuscript-format/references/book.md"},
 }
 
 // SpecPath 返回 .litkit/<type-lang>/manuscript-spec.yaml 的绝对路径。

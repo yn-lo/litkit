@@ -6,7 +6,7 @@ An academic writing toolkit for Chinese researchers: cross-source search, standa
 
 ## Overview
 
-litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only interface, designed for AI agents and command-line users:
+litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only interface, **designed for nursing and clinical medical research** — covering the full workflow from literature search and library management to data statistics and writing. Medical students can use it too; wet-lab basic-science disciplines (e.g., biochemistry) are out of scope. Built for AI agents and command-line users:
 
 - **Cross-source search**: concurrent search + dedup across arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex; abstract-only workflow (no PDF download, no full-text extraction).
 - **Library ingestion**: resolve metadata by DOI / PMID / arXiv / title; `lib add --doi` resolves and stores; local SQLite library management.
