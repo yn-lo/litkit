@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -65,33 +63,8 @@ type openAlexPrimaryLocation struct {
 
 // Search 调用 OpenAlex API 并解析 JSON。
 func (o *OpenAlexSource) Search(ctx context.Context, query string, opts SearchOptions) ([]model.Paper, error) {
-	u, err := o.buildURL(query, opts)
-	if err != nil {
-		return nil, fmt.Errorf("openalex search: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("openalex search: %w", err)
-	}
-	req.Header.Set("User-Agent", "litkit/0.1 (mailto:litkit-tool@users.noreply.github.com)")
-
-	resp, err := o.Do(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("openalex search: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openalex search: HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("openalex search: read body: %w", err)
-	}
-	papers, err := parseOpenAlexJSON(data)
-	if err != nil {
-		return nil, fmt.Errorf("openalex search: %w", err)
-	}
-	return papers, nil
+	return o.search(ctx, "openalex", mailUserAgent,
+		func() (string, error) { return o.buildURL(query, opts) }, parseOpenAlexJSON)
 }
 
 func (o *OpenAlexSource) buildURL(query string, opts SearchOptions) (string, error) {

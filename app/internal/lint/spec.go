@@ -59,20 +59,30 @@ type CitationSpec struct {
 	Style string `yaml:"style"` // gbt7714 | apa | ieee
 	// RunLimit 连续引用聚集上限（R5.3）：连续 RunLimit+1 个引用连串违规；0/缺省=3。
 	RunLimit int `yaml:"run_limit"`
-	// MaxAgeYears 引用时效判定跨度（R5.8）：文献年份早于当前年-跨度视为跨度过大；0/缺省=10。
+	// MaxAgeYears 引用时效硬判定跨度（R5.8 第二档）：文献年份早于当前年-跨度视为跨度过大；0/缺省=10。
 	MaxAgeYears int `yaml:"max_age_years"`
+	// WarnAgeYears 引用时效软提示跨度（R5.8 第一档，两档汇总）：文献年份早于当前年-跨度即提示；0/缺省=5。
+	WarnAgeYears int `yaml:"warn_age_years"`
 	// SelfCitationAuthors 作者本人署名（R5.9 自引判定），空=不启用自引检查。
 	SelfCitationAuthors []string `yaml:"self_citation_authors"`
 	// SelfCitationMaxRatio 自引比例上限（R5.9），0/缺省=0.15。
 	SelfCitationMaxRatio float64 `yaml:"self_citation_max_ratio"`
 }
 
-// MaxAge 返回引用时效判定跨度（R5.8）；未配置时用默认 10 年。
+// MaxAge 返回引用时效硬判定跨度（R5.8）；未配置时用默认 10 年。
 func (c CitationSpec) MaxAge() int {
 	if c.MaxAgeYears <= 0 {
 		return defaultMaxAgeYears
 	}
 	return c.MaxAgeYears
+}
+
+// WarnAge 返回引用时效软提示跨度（R5.8）；未配置时用默认 5 年。
+func (c CitationSpec) WarnAge() int {
+	if c.WarnAgeYears <= 0 {
+		return defaultWarnAgeYears
+	}
+	return c.WarnAgeYears
 }
 
 // SelfCiteRatio 返回自引比例上限（R5.9）；未配置时用默认 0.15。

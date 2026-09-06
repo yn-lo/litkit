@@ -55,8 +55,8 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 		Long: `跨源并发检索文献，默认输出精简视图（citeKey/title/firstAuthor/year/abstract），
 面向 AI agent 调用（FR-IFACE-04）。结果按 DOI→title→id 三级去重，年份倒序。
 
-检索词建议使用英文：各源（arXiv/PubMed/OpenAlex/S2/bioRxiv/medRxiv）
-均为英文语料为主，中文检索词命中率极低（FR-SEARCH-11）。
+检索词：英文关键词命中更高（arXiv/PubMed/OpenAlex/S2/bioRxiv/medRxiv 多为英文语料）；
+如需检索中文语料，用 -s crossref,doaj（中文关键词可命中中文标题/中文摘要，FR-SRC-20/21）。
 
 检索等级（FR-SEARCH-12）：
   --mode tiab（默认）  题目+摘要+关键词（源支持时），误检率低

@@ -39,10 +39,11 @@ var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKI
 func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lib",
-		Short: "本地文献库管理（add | list | search | rm | stats | path）",
+		Short: "本地文献库管理（add | get | list | search | rm | stats | path）",
 	}
 	cmd.AddCommand(
 		newLibAddCmd(st, f),
+		newLibGetCmd(st),
 		newLibListCmd(st),
 		newLibSearchCmd(st),
 		newLibRmCmd(st),
@@ -180,6 +181,30 @@ func readManualPapers(path string) ([]core.ManualPaperInput, error) {
 		return nil, fmt.Errorf("lib add: 解析 %s 失败: %w", path, err)
 	}
 	return []core.ManualPaperInput{in}, nil
+}
+
+// libGetOutput lib get 输出：文献条目完整信息 + 未命中的 citeKey 列表。
+type libGetOutput struct {
+	Papers  []model.Paper `json:"papers"`  // 命中的文献条目（含摘要等完整元数据）
+	Missing []string      `json:"missing"` // 库中未命中的 citeKey
+}
+
+func newLibGetCmd(st *storage.Store) *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <cite_key> [cite_key ...]",
+		Short: "按一个或多个 citeKey 查询库内文献条目（含摘要等完整信息）",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if st == nil {
+				return errNoStore
+			}
+			found, miss, err := st.GetByCiteKeys(args)
+			if err != nil {
+				return err
+			}
+			return printJSON(libGetOutput{Papers: found, Missing: miss})
+		},
+	}
 }
 
 func newLibListCmd(st *storage.Store) *cobra.Command {

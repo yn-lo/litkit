@@ -68,6 +68,8 @@ const (
 	pubmedRPS            = 2.0  // PubMed: 3 req/s 无 key，保守取 2
 	pubmedBurst          = 3    // PubMed: 令牌桶 burst
 	openalexRPS          = 2.0  // OpenAlex: polite pool 10 RPS，保守取 2
+	crossrefRPS          = 2.0  // Crossref: 官方 polite pool 高限额，保守取 2
+	doajRPS              = 1.0  // DOAJ: 免费公共 API，保守取 1 RPS
 )
 
 // newHTTPClient 构造标准 HTTP 客户端（按 config 注入超时与重试次数）。
@@ -83,7 +85,8 @@ func newHTTPClient(timeoutMS, retries int) *httpclient.Client {
 // NewDefaultRegistry 按配置创建并填充默认源注册表（FR-SRC-18）。
 //
 // 一期默认源（platform-matrix.md）：arxiv、pubmed、biorxiv、medrxiv、
-// semantic_scholar、openalex。新增源在此登记。
+// semantic_scholar、openalex；二期中文语料源：crossref、doaj（FR-SRC-21）。
+// 新增源在此登记。
 //
 // 限速取合规保守值（platform-matrix.md），避免触发上游 429（NFR-PERF-04）。
 func NewDefaultRegistry(cfg *config.Config) *Registry {
@@ -108,5 +111,9 @@ func NewDefaultRegistry(cfg *config.Config) *Registry {
 	r.Register(NewSemanticScholarSource(cfg.SemanticScholarAPIKey, httpc, ratelimit.New(1.0, 1)))
 	// OpenAlex：polite pool 10 RPS 可用，保守取 2 RPS, burst 2
 	r.Register(NewOpenAlexSource(httpc, ratelimit.New(openalexRPS, 2)))
+	// Crossref：中文语料检索（FR-SRC-21），免 key，polite 取 2 RPS
+	r.Register(NewCrossrefSource(httpc, ratelimit.New(crossrefRPS, 1)))
+	// DOAJ：中文 OA 期刊检索（FR-SRC-21），免 key，取 1 RPS
+	r.Register(NewDoajSource(httpc, ratelimit.New(doajRPS, 1)))
 	return r
 }

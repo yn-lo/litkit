@@ -317,6 +317,50 @@ func (s *Store) GetByCiteKey(citeKey string) (*model.Paper, error) {
 	return &papers[0], nil
 }
 
+// GetByCiteKeys 按一批 3 字母引文标识取论文（FR-LIB：lib get）。
+// 结果按 keys 输入顺序返回；miss 为未命中原键列表；空输入或全未命中返回空切片。
+func (s *Store) GetByCiteKeys(keys []string) (found []model.Paper, miss []string, err error) {
+	unique := make([]string, 0, len(keys)) // 去重并保留顺序
+	seen := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		if !seen[k] {
+			seen[k] = true
+			unique = append(unique, k)
+		}
+	}
+	if len(unique) == 0 {
+		return nil, nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(unique))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(unique))
+	for i, k := range unique {
+		args[i] = k
+	}
+	rows, err := s.db.Query("SELECT "+paperCols+" FROM papers WHERE cite_key IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("storage get by cite keys: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	papers, err := scanPapers(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+	byKey := make(map[string]model.Paper, len(papers))
+	for _, p := range papers {
+		byKey[p.CiteKey] = p
+	}
+	found = make([]model.Paper, 0, len(unique))
+	for _, k := range unique {
+		if p, ok := byKey[k]; ok {
+			found = append(found, p)
+		} else {
+			miss = append(miss, k)
+		}
+	}
+	return found, miss, nil
+}
+
 // GetByDOI 按 DOI 取论文（大小写不敏感）；未命中返回 (nil, nil)。
 func (s *Store) GetByDOI(doi string) (*model.Paper, error) {
 	rows, err := s.db.Query("SELECT "+paperCols+" FROM papers WHERE doi = ? LIMIT 1", strings.ToLower(strings.TrimSpace(doi)))

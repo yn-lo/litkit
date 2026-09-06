@@ -8,7 +8,7 @@
 
 litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**面向护理与临床医学科研工作**——覆盖论文从选题检索、文献管理到数据统计与撰写的全流程，医学生同样适用；聚焦临床/人群研究写作，不面向生化等基础实验学科。CLI 为唯一接口，面向 AI agent 与命令行用户：
 
-- **跨源检索**：arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex 并发检索 + 去重；摘要工作流（不下载 PDF、不抽取全文）。
+- **跨源检索**：arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex / Crossref / DOAJ 并发检索 + 去重；摘要工作流（不下载 PDF、不抽取全文）；`crossref`/`doaj` 支持中文语料检索。
 - **文献入库**：按 DOI / PMID / arXiv / 标题反查元数据；`lib add --doi` 反查即入库；本地 SQLite 文献库管理。
 - **全文获取**：按 citeKey / DOI 取回——Unpaywall OA 优先 → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络）。
 - **规范引用**：导出 BibTeX / RIS / 文本，支持 GB/T 7714—2025 / APA / IEEE。
@@ -21,7 +21,7 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 | 能力         | 说明                                                                                                              |
 | ------------ | ----------------------------------------------------------------------------------------------------------------- |
-| 跨源检索     | 6 源并发 + 去重；`-s` 源过滤 / `-n` 每源条数 / `--mode tiab\|full` / `--years N`                           |
+| 跨源检索     | 8 源并发 + 去重；`-s` 源过滤 / `-n` 每源条数 / `--mode tiab\|full` / `--years N`                           |
 | 元数据反查   | `metadata doi\|pmid\|arxiv\|title <id>` 反查元数据（查询）；`lib add --doi <DOI>` 反查并入库                     |
 | 全文获取     | Unpaywall OA → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络）                                               |
 | 规范引用     | `export -f bibtex\|ris\|text`；样式 GB/T 7714—2025 / APA / IEEE                                                  |
@@ -33,7 +33,8 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 不依赖单一检索源，按角色组合公开开放源：
 
-- **元数据骨干**：OpenAlex、Semantic Scholar、Crossref（反查、补全）
+- **元数据骨干**：OpenAlex、Semantic Scholar、Crossref（反查、补全；亦作中文检索源）
+- **中文语料**：Crossref、DOAJ（中文关键词可命中中文标题/中文摘要）
 - **学科源**：arxiv（预印本）、PubMed（生物医学）、bioRxiv / medRxiv（生命科学预印本）
 - **全文通道**：Unpaywall（OA 解析，需邮箱）→ Sci-Hub（兜底，合规风险自知）
 

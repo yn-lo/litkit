@@ -121,7 +121,7 @@ func TestCheckCitationHealth_Age(t *testing.T) {
 	spec := DefaultSpec()
 	spec.Citation.MaxAgeYears = 10 // 截止 baselineYear-10
 	src := mustParse(t, "引用[@"+keys[0]+"]与[@"+keys[1]+"]。\n")
-	got := checkCitationHealth([]*Source{src}, s, spec, 2026)
+	got, _ := checkCitationHealth([]*Source{src}, s, spec, 2026)
 	if len(got) != 1 {
 		t.Fatalf("应报 1 条 R5.8，got %d: %+v", len(got), got)
 	}
@@ -140,7 +140,7 @@ func TestCheckCitationHealth_SelfCite(t *testing.T) {
 	spec.Citation.MaxAgeYears = 10 // 避免年份干扰 R5.8
 	spec.Citation.SelfCitationAuthors = []string{"Wang"}
 	src := mustParse(t, "引用[@"+keys[0]+"]、[@"+keys[1]+"]、[@"+keys[2]+"]。\n")
-	got := checkCitationHealth([]*Source{src}, s, spec, 2026)
+	got, _ := checkCitationHealth([]*Source{src}, s, spec, 2026)
 	// 自引 1/3≈33% > 默认 15% → 1 条 R5.9
 	found := false
 	for _, h := range got {
@@ -153,6 +153,40 @@ func TestCheckCitationHealth_SelfCite(t *testing.T) {
 	}
 }
 
+func TestCheckCitationHealth_RecencySummary(t *testing.T) {
+	s, keys := makeStoreWith(t, []model.Paper{
+		{Title: "New", Year: 2024, DOI: "10.1/new"},   // 距今 2 年 → within5
+		{Title: "Mid", Year: 2019, DOI: "10.1/mid"},   // 距今 7 年 → (>5,10] 档
+		{Title: "Mid2", Year: 2018, DOI: "10.1/mid2"}, // 距今 8 年 → (>5,10] 档
+		{Title: "Old", Year: 2010, DOI: "10.1/old"},   // 距今 16 年 → >10 档
+		{Title: "NoYear", DOI: "10.1/noyear"},         // 无年份，不计入
+	})
+	spec := DefaultSpec()
+	spec.Citation.MaxAgeYears = 10
+	spec.Citation.WarnAgeYears = 5
+	src := mustParse(t, "引用[@"+keys[0]+"]、[@"+keys[1]+"]、[@"+keys[2]+"]、[@"+keys[3]+"]、[@"+keys[4]+"]。\n")
+	got, rec := checkCitationHealth([]*Source{src}, s, spec, 2026)
+	if rec == nil {
+		t.Fatal("应返回时效统计")
+	}
+	if rec.Total != 4 || rec.Within5 != 1 || rec.Over5 != 3 || rec.Over10 != 1 {
+		t.Errorf("分档计数不符：%+v", rec)
+	}
+	if rec.RecentRatio != 0.25 {
+		t.Errorf("近5年占比应为 0.25，got %.2f", rec.RecentRatio)
+	}
+	// 违规：1 条 >10y 逐篇 + 1 条 5-10y 聚合 = 2 条 R5.8
+	r58 := 0
+	for _, h := range got {
+		if h.v.RuleID == ruleCurrency {
+			r58++
+		}
+	}
+	if r58 != 2 {
+		t.Errorf("应报 2 条 R5.8（1 逐篇 + 1 聚合），got %d: %+v", r58, got)
+	}
+}
+
 func TestCheckCitationHealth_NoSelfCiteConfigured(t *testing.T) {
 	s, keys := makeStoreWith(t, []model.Paper{
 		{Title: "Mine", Year: 2021, Authors: []model.Author{{Family: "Wang"}}},
@@ -161,7 +195,7 @@ func TestCheckCitationHealth_NoSelfCiteConfigured(t *testing.T) {
 	spec := DefaultSpec()
 	spec.Citation.SelfCitationAuthors = []string{} // 未启用
 	src := mustParse(t, "引用[@"+keys[0]+"]、[@"+keys[1]+"]。\n")
-	got := checkCitationHealth([]*Source{src}, s, spec, 2026)
+	got, _ := checkCitationHealth([]*Source{src}, s, spec, 2026)
 	for _, h := range got {
 		if h.v.RuleID == ruleSelfCite {
 			t.Fatalf("未配置自引作者不应报 R5.9，got %+v", got)

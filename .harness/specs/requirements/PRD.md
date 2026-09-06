@@ -101,12 +101,14 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 |---|---|---|---|
 | FR-SRC-07 | Zenodo（机构仓储，含摘要） | P1 | 返回结果 |
 | FR-SRC-08 | IEEE / ACM（需 API key，部分摘要） | P2 | 无 key 不注册；有 key 注册 search；检索时剔除无摘要论文 |
+| FR-SRC-20 | Crossref 检索（中文语料，摘要部分可用） | P1 | 中文关键词命中已注册 DOI 的中文学报/期刊；带中文摘要条目被检索返回 |
+| FR-SRC-21 | DOAJ（中文 OA 期刊，含中文摘要） | P1 | 中文关键词命中中文 OA 期刊，多数带中文标题与中文摘要 |
 
 **明确移除（不实现）**：
 
 | ID | 需求 | 说明 |
 |---|---|---|
-| FR-SRC-09 | CORE / DOAJ / OpenAIRE | 数据被 OpenAlex 完整索引，适配收益低 |
+| FR-SRC-09 | CORE / OpenAIRE | 数据被 OpenAlex 完整索引，适配收益低；DOAJ 单列（FR-SRC-21） |
 | FR-SRC-10 | Unpaywall | OA 反查非检索源，与摘要工作流不匹配 |
 | FR-SRC-11 | Europe PMC / PMC | 与 PubMed 数据重合 |
 | FR-SRC-12 | HAL | 小众机构仓储，与 Zenodo 重合 |

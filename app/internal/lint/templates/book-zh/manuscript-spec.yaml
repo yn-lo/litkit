@@ -23,7 +23,8 @@ citation:
   count: [10, 200]      # 单章引用篇数 [最小, 最大]
   style: gbt7714        # 引用格式：gbt7714 | apa | ieee
   run_limit: 3          # 连续引用聚集上限（R5.3）：连续 run_limit+1 个引用连串违规；0=默认 3
-  max_age_years: 10         # R5.8 引用时效：文献年份距今超过该值提示；0=默认 10
+  max_age_years: 10         # R5.8 引用时效硬档：文献年份距今超过该值提示（逐篇）；0=默认 10
+  warn_age_years: 5         # R5.8 引用时效软档：距今超过该值的篇数作两档汇总提示；0=默认 5
   self_citation_authors: [] # R5.9 自引检查：作者本人署名（如 [Smith]），空=不启用
   self_citation_max_ratio: 0.15  # R5.9 自引比例上限；0=默认 0.15
 heading:

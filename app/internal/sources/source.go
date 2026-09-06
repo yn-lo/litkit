@@ -8,6 +8,8 @@ package sources
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -45,6 +47,8 @@ const (
 // HTTP 请求头常量。
 const (
 	defaultUserAgent = "litkit/0.1 (https://github.com/litkit/litkit)"
+	// mailUserAgent 带 mailto 的 UA：Crossref/OpenAlex 的 polite pool 要求
+	mailUserAgent = "litkit/0.1 (mailto:litkit-tool@users.noreply.github.com)"
 )
 
 // PaperSource 学术源统一抽象（FR-SRC-01）。
@@ -96,6 +100,46 @@ func (b BaseSource) Do(ctx context.Context, req *http.Request) (*http.Response, 
 		return nil, ctx.Err()
 	}
 	return b.http.Do(ctx, req)
+}
+
+// get 执行已构造的 GET 请求并读回 body（校验 2xx）。
+// 非 2xx 返回含状态码错误；ctx 控制取消。
+func (b BaseSource) get(ctx context.Context, req *http.Request) ([]byte, error) {
+	resp, err := b.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
+}
+
+// search 通用「GET JSON → parse」检索骨架，并为各源注入统一的错误前缀。
+//
+// 各 JSON 语料源（openalex/crossref/doaj）复用，消除逐源雷同的 Search 方法体
+// （dupl 检查要求）。name 用作错误前缀；ua 为 User-Agent；build 负责拼 URL；
+// parse 负责解析厂商响应。
+func (b BaseSource) search(ctx context.Context, name, ua string, build func() (string, error), parse func([]byte) ([]model.Paper, error)) ([]model.Paper, error) {
+	u, err := build()
+	if err != nil {
+		return nil, fmt.Errorf("%s search: %w", name, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s search: %w", name, err)
+	}
+	req.Header.Set("User-Agent", ua)
+	data, err := b.get(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("%s search: %w", name, err)
+	}
+	papers, err := parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s search: %w", name, err)
+	}
+	return papers, nil
 }
 
 // splitAuthorName 将单个姓名串按首空格切分为 given/family。

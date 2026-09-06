@@ -1,7 +1,7 @@
 # 平台能力矩阵 — litkit（国内可达性视角）
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-09-06
 status: active
 owner: litkit-core
 ---
@@ -18,13 +18,15 @@ owner: litkit-core
 | PubMed | 支持 | 可用 | NCBI EUtils XML；无 key 3 req/s |
 | bioRxiv / medRxiv | 支持 | 可用 | REST JSON |
 | Semantic Scholar | 支持 | 可用 | 403 自动降级；建议可选 key 提档 |
-| OpenAlex | 支持 | 可用 | 覆盖 CORE / DOAJ / OpenAIRE 等聚合数据 |
+| OpenAlex | 支持 | 可用 | 覆盖 CORE / OpenAIRE 等聚合数据 |
+| Crossref | 支持 | 部分 | 中文关键词可命中注册 DOI 的中文学报/期刊（FR-SRC-20）；免 key |
+| DOAJ | 支持 | 可用 | 中文 OA 期刊，多数带中文摘要（FR-SRC-21）；免费公共 API |
 
 ## 反查源（非检索，供引用回填）
 
 | 平台 | 用途 |
 |---|---|
-| CrossRef | DOI / title 元数据反查（FR-REF-02）；无摘要，不参与检索 |
+| CrossRef | DOI / title 元数据反查（FR-REF-02）；另作检索源见上表（FR-SRC-20） |
 
 ## 二期（可选激活）
 
@@ -37,7 +39,7 @@ owner: litkit-core
 
 | 平台 | 说明 |
 |---|---|
-| CORE / DOAJ / OpenAIRE | 数据被 OpenAlex 完整索引，适配收益低 |
+| CORE / OpenAIRE | 数据被 OpenAlex 完整索引，适配收益低；DOAJ 单列（FR-SRC-21） |
 | Unpaywall | OA 反查非检索源，与摘要工作流不匹配 |
 | Europe PMC / PMC | 与 PubMed 数据重合 |
 | HAL | 小众机构仓储，与 Zenodo 重合 |

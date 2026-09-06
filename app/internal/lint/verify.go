@@ -28,6 +28,19 @@ type Report struct {
 	ExitHint        string                   `json:"exitHint"` // "pass" / "fix_and_rerun" / "manual_review"
 	ManualChecklist []string                 `json:"manualChecklist,omitempty"`
 	CitationRefs    *CitationRelevanceReport `json:"citationRefs,omitempty"` // 引用评分报告（可选）
+	Recency         *RecencySummary          `json:"recency,omitempty"`      // 引用时效分档统计（R5.8）
+}
+
+// RecencySummary 被引文献时效分档统计（R5.8）。
+//
+// 均为"距今超过 N 年"计数，枚举全部成功解析出年份的被引文献（按 citeKey 去重）。
+// Within5 + Over5 = Total；Over5 ⊇ Over10。
+type RecencySummary struct {
+	Total       int     `json:"total"`       // 已解析出年份的被引文献总数
+	Within5     int     `json:"within5"`     // 距今 ≤ warn_age_years（默认 5）篇数
+	Over5       int     `json:"over5"`       // 距今 > warn_age_years（默认 5）篇数
+	Over10      int     `json:"over10"`      // 距今 > max_age_years（默认 10）篇数
+	RecentRatio float64 `json:"recentRatio"` // Within5 / Total（近 5 年文献占比）
 }
 
 // CitationRelevanceReport 引用相关性评分汇总。
@@ -248,9 +261,11 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 				report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
 			}
 		}
-		for _, h := range checkCitationHealth(srcs, store, spec, time.Now().Year()) {
+		health, recency := checkCitationHealth(srcs, store, spec, time.Now().Year())
+		for _, h := range health {
 			report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
 		}
+		report.Recency = recency
 	}
 	hasA, hasS := recomputeExitHint(method, report,
 		[]string{ruleCiteExists, ruleRetracted}, []string{ruleCurrency, ruleSelfCite})

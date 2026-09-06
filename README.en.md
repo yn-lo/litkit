@@ -8,7 +8,7 @@ An academic writing toolkit for Chinese researchers: cross-source search, standa
 
 litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only interface, **designed for nursing and clinical medical research** — covering the full workflow from literature search and library management to data statistics and writing. Medical students can use it too; wet-lab basic-science disciplines (e.g., biochemistry) are out of scope. Built for AI agents and command-line users:
 
-- **Cross-source search**: concurrent search + dedup across arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex; abstract-only workflow (no PDF download, no full-text extraction).
+- **Cross-source search**: concurrent search + dedup across arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex / Crossref / DOAJ; abstract-only workflow (no PDF download, no full-text extraction); `crossref`/`doaj` add Chinese-language retrieval.
 - **Library ingestion**: resolve metadata by DOI / PMID / arXiv / title; `lib add --doi` resolves and stores; local SQLite library management.
 - **Full-text fetch**: by citeKey / DOI — Unpaywall OA first → Sci-Hub fallback; PDF saved to disk + full text cached (zero network on re-fetch).
 - **Standards-compliant citations**: export BibTeX / RIS / text in GB/T 7714—2025 / APA / IEEE styles.
@@ -29,7 +29,7 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 
 | Capability             | Description                                                                                                               |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Cross-source search    | 6 sources, concurrent + dedup;`-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N`              |
+| Cross-source search    | 8 sources, concurrent + dedup;`-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N`              |
 | Metadata lookup        | `metadata doi\|pmid\|arxiv\|title <id>` (query only); `lib add --doi <DOI>` resolve and store                            |
 | Full-text fetch        | Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch)                                |
 | Citations              | `export -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE                                                        |
@@ -41,7 +41,8 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 
 No single search engine — combine public open sources by role:
 
-- **Metadata backbone**: OpenAlex, Semantic Scholar, Crossref (lookup, enrichment)
+- **Metadata backbone**: OpenAlex, Semantic Scholar, Crossref (lookup, enrichment; also a Chinese-language search source)
+- **Chinese-language corpus**: Crossref, DOAJ (Chinese keywords hit Chinese titles/abstracts)
 - **Discipline sources**: arxiv (preprints), PubMed (biomedical), bioRxiv / medRxiv (life-science preprints)
 - **Full-text channels**: Unpaywall (OA resolution, needs an email) → Sci-Hub (fallback, use at your own discretion)
 

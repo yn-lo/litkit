@@ -319,6 +319,50 @@ func TestGetByCiteKey_MissingReturnsNil(t *testing.T) {
 	}
 }
 
+func TestGetByCiteKeys_OrderDedupAndMiss(t *testing.T) {
+	s := newTestStore(t)
+	keys := make([]string, 0, 3)
+	for _, doi := range []string{"10.1/a", "10.1/b", "10.1/c"} {
+		k, _, err := s.UpsertPaper(paper("KeyInv-"+doi, doi))
+		if err != nil {
+			t.Fatalf("UpsertPaper: %v", err)
+		}
+		keys = append(keys, k)
+	}
+	// 乱序 + 含重复 + 含未命中键；去重后按输入顺序返回，缺失进 miss。
+	query := []string{keys[2], "nope", keys[0], keys[2], keys[1]}
+	found, miss, err := s.GetByCiteKeys(query)
+	if err != nil {
+		t.Fatalf("GetByCiteKeys: %v", err)
+	}
+	if len(found) != 3 {
+		t.Fatalf("应返回 3 篇，got %d", len(found))
+	}
+	if found[0].CiteKey != keys[2] || found[1].CiteKey != keys[0] || found[2].CiteKey != keys[1] {
+		t.Errorf("应按输入顺序去重后返回，got %v, %v, %v", found[0].CiteKey, found[1].CiteKey, found[2].CiteKey)
+	}
+	if len(miss) != 1 || miss[0] != "nope" {
+		t.Errorf("未命中应为 [nope]，got %v", miss)
+	}
+	if len(found[0].Abstract) == 0 {
+		t.Error("返回文献应携带摘要")
+	}
+}
+
+func TestGetByCiteKeys_EmptyAndAllMiss(t *testing.T) {
+	s := newTestStore(t)
+	if f, m, err := s.GetByCiteKeys(nil); err != nil || len(f) != 0 || len(m) != 0 {
+		t.Fatalf("空输入应返回空 found/miss，got (%v,%v,%v)", f, m, err)
+	}
+	f, m, err := s.GetByCiteKeys([]string{"aaa", "bbb"})
+	if err != nil {
+		t.Fatalf("GetByCiteKeys: %v", err)
+	}
+	if len(f) != 0 || len(m) != 2 {
+		t.Errorf("全未命中应两个都在 miss，got found=%d miss=%v", len(f), m)
+	}
+}
+
 func TestGetByDOI_CaseInsensitive(t *testing.T) {
 	s := newTestStore(t)
 	if _, _, err := s.UpsertPaper(paper("D", "10.1/DOIMIX")); err != nil {

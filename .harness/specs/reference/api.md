@@ -109,6 +109,7 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
 litkit lib add <metadata.json>
+litkit lib get <cite_key> [cite_key ...]
 litkit lib list [--source S] [--limit N] [--offset N]
 litkit lib search <keyword> [--limit N]
 litkit lib rm <cite_key>          # 别名：forget
@@ -129,6 +130,14 @@ litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
 > 同一 DOI（无 DOI 按标题）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
 > 手动录入 `source=manual`；DOI 反查 `source=crossref`，可用 `lib list --source` / `lib stats` 区分。
 > 输出：`{ added, papers: [{ citeKey, title, inserted }] }`（`--doi` 单条为 `{ citeKey, title, inserted }`）。
+
+```
+litkit lib get <cite_key> [cite_key ...]
+```
+
+> 按一个或多个 3 字母 citeKey 查询库内文献条目，返回**完整元数据（含摘要）**（AI 取引用详情用，FR-LIB）。
+> 未命中的键放入 `missing` 字段，命中的按输入顺序去重后放 `papers`。
+> 输出：`{ papers: [ Paper... ], missing: [ citeKey... ] }`。
 
 ```
 litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]
@@ -198,9 +207,19 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
   ],
   "passed": false,
   "exitHint": "fix_and_rerun",
-  "manualChecklist": ["R2.4: 核对统计量与原文一致", "R4.3: 确认引用与论述对应"]
+  "manualChecklist": ["R2.4: 核对统计量与原文一致", "R4.3: 确认引用与论述对应"],
+  "recency": { "total": 24, "within5": 15, "over5": 9, "over10": 3, "recentRatio": 0.625 }
 }
 ```
+
+`recency`（R5.8 引用时效两档统计，S 类提示，`total>0` 且已解析出年份时才输出）：
+- `total`：已解析出年份的被引文献总数（按 citeKey 去重）
+- `within5`：距今 ≤ `warn_age_years`（默认 5）篇数
+- `over5`：距今 > `warn_age_years`（默认 5）篇数（含 `over10`）
+- `over10`：距今 > `max_age_years`（默认 10）篇数
+- `recentRatio`：`within5 / total`（近 5 年文献占比）
+
+违规：距今 > `max_age_years`（默认 10）的逐篇报 R5.8；距今介于 `warn_age_years` 与 `max_age_years` 之间的按篇数聚合提示一条 R5.8（附近 5 年占比）。两者均属 S 类（仅人工复核，不阻断）。
 
 | exitHint | 含义 |
 |---|---|

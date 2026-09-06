@@ -31,8 +31,11 @@ type RetractionResolver interface {
 	Resolve(ctx context.Context, doi string) (RetractionStatus, error)
 }
 
-// defaultMaxAgeYears 引用时效判定默认跨度（R5.8）。
+// defaultMaxAgeYears 引用时效硬判定默认跨度（R5.8 第二档）。
 const defaultMaxAgeYears = 10
+
+// defaultWarnAgeYears 引用时效软提示默认跨度（R5.8 第一档）。
+const defaultWarnAgeYears = 5
 
 // defaultSelfCiteRatio 自引比例默认上限（R5.9）。
 const defaultSelfCiteRatio = 0.15
@@ -96,13 +99,15 @@ type healthViolation struct {
 }
 
 // checkCitationHealth 对全文（多文件）聚合执行引用健康校验：
-//   - R5.8 时效：被引文献年份早于 baselineYear - maxAge 违规
+//   - R5.8 时效：被引文献年份早于 baselineYear - maxAge 违规（硬档，逐篇报）
+//   - R5.8 时效汇总：返回分档统计（≤5y / >5y / >10y），并在此基础上对"5-10y 档"
+//     存在时代加一条聚合软提示（近 5 年占比）
 //   - R5.9 自引：spec 配置了作者时，自引比例超上限违规
 //
-// 返回跨文件违规列表；各违规归属首次引用所在文件。
-func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptSpec, baselineYear int) []healthViolation {
+// 返回跨文件违规列表与时效分档统计；各违规归属首次引用所在文件。
+func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptSpec, baselineYear int) ([]healthViolation, *RecencySummary) {
 	if store == nil || spec == nil {
-		return nil
+		return nil, nil
 	}
 	origin := map[string]citeOrigin{}
 	for fi, src := range srcs {
@@ -122,41 +127,84 @@ func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptS
 		}
 	}
 	if len(origin) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	var out []healthViolation
-	cutoff := baselineYear - spec.Citation.MaxAge()
-	selfHits := 0
+	maxAge := spec.Citation.MaxAge()
+	warnAge := spec.Citation.WarnAge()
+	rs := &recencyScore{out: []healthViolation{}}
 	for k, o := range origin {
 		p, err := store.GetByCiteKey(k)
 		if err != nil || p == nil {
 			continue
 		}
-		if p.Year > 0 && p.Year < cutoff {
-			out = append(out, healthViolation{o.file, Violation{
-				RuleID:     ruleCurrency,
-				Line:       o.line,
-				Problem:    fmt.Sprintf("引用的文献 %s（%d 年）距今已超过 %d 年", k, p.Year, spec.Citation.MaxAge()),
-				Suggestion: "核查是否有更新的权威文献可替换",
-			}})
-		}
-		if spec.Citation.HasSelfCite() && isSelfCited(p, spec.Citation.SelfCitationAuthors) {
-			selfHits++
-		}
+		rs.add(p, k, o, &spec.Citation, baselineYear, warnAge, maxAge)
+	}
+	out := rs.out
+	summary := &RecencySummary{Total: rs.within + rs.aging + rs.stale, Within5: rs.within, Over5: rs.aging + rs.stale, Over10: rs.stale}
+	if summary.Total > 0 {
+		summary.RecentRatio = float64(summary.Within5) / float64(summary.Total)
+	}
+	// R5.8 软档：存在 5-10y 文献时聚合提示，推动补充近 5 年文献
+	if rs.hasAging {
+		out = append(out, healthViolation{rs.firstAging.file, Violation{
+			RuleID:     ruleCurrency,
+			Line:       rs.firstAging.line,
+			Problem:    fmt.Sprintf("%d 篇被引文献距今超过 %d 年（近 %d 年文献占比 %.0f%%）", summary.Over5, warnAge, warnAge, summary.RecentRatio*percent),
+			Suggestion: fmt.Sprintf("补充近 %d 年内的权威文献，提升文献时效占比", warnAge),
+		}})
 	}
 	if spec.Citation.HasSelfCite() && len(origin) > 0 {
-		ratio := float64(selfHits) / float64(len(origin))
+		ratio := float64(rs.selfHits) / float64(len(origin))
 		if ratio > spec.Citation.SelfCiteRatio() {
 			out = append(out, healthViolation{0, Violation{
 				RuleID:     ruleSelfCite,
 				Line:       1,
-				Problem:    fmt.Sprintf("自引比例 %.0f%%（%d/%d 篇）超过上限 %.0f%%", ratio*percent, selfHits, len(origin), spec.Citation.SelfCiteRatio()*percent),
+				Problem:    fmt.Sprintf("自引比例 %.0f%%（%d/%d 篇）超过上限 %.0f%%", ratio*percent, rs.selfHits, len(origin), spec.Citation.SelfCiteRatio()*percent),
 				Suggestion: "减少自身文献引用，补充独立来源",
 			}})
 		}
 	}
-	return out
+	return out, summary
+}
+
+// recencyScore 聚合 R5.8 时效分档统计与逐篇违规（降低主函数圈复杂度）。
+type recencyScore struct {
+	out        []healthViolation // 逐篇距今 > maxAge 违规（硬档）
+	within     int               // 距今 ≤ warnAge
+	aging      int               // 距今 (warnAge, maxAge]
+	stale      int               // 距今 > maxAge
+	selfHits   int               // 自引命中（R5.9）
+	hasAging   bool              // 是否存在 5-10y 档文献
+	firstAging citeOrigin        // 5-10y 档首篇位置（聚合提示落点）
+}
+
+// add 对单篇被引文献做 R5.8 时效分档 + R5.9 自引计数。
+// 无年份（Year<=0）只参与自引计数，不参与分档。
+func (r *recencyScore) add(p *model.Paper, k string, o citeOrigin, spec *CitationSpec, baselineYear, warnAge, maxAge int) {
+	switch {
+	case p.Year <= 0:
+		// 无年份，跳过时效分档
+	case p.Year < baselineYear-maxAge:
+		r.stale++
+		r.out = append(r.out, healthViolation{o.file, Violation{
+			RuleID:     ruleCurrency,
+			Line:       o.line,
+			Problem:    fmt.Sprintf("引用的文献 %s（%d 年）距今已超过 %d 年", k, p.Year, maxAge),
+			Suggestion: "核查是否有更新的权威文献可替换",
+		}})
+	case p.Year < baselineYear-warnAge:
+		r.aging++
+		if !r.hasAging {
+			r.hasAging = true
+			r.firstAging = o
+		}
+	default:
+		r.within++
+	}
+	if spec.HasSelfCite() && isSelfCited(p, spec.SelfCitationAuthors) {
+		r.selfHits++
+	}
 }
 
 // isSelfCited 判断论文是否含指定作者（作者本人署名匹配任意 Family）。
