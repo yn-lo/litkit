@@ -7,6 +7,7 @@ package lint
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,8 +43,17 @@ type ManuscriptSpec struct {
 	BookTopLevel string `yaml:"book_top_level"`
 	// StyleExemptTerms R4.5 术语黑名单豁免词（学科术语/固定搭配），空=不豁免。
 	StyleExemptTerms []string `yaml:"style_exempt_terms"`
+	// ForbiddenTerms R7.3 自定义正文禁用字词（词组或单个字符/符号均可）。
+	// 每条可带自定义违规提示 note；命中时 verify 在 AI 汇报中展示 note（空=默认提示）。
+	ForbiddenTerms []ForbiddenTerm `yaml:"forbidden_terms"`
 	// SkipRules 永久跳过的规则 ID（等效每次 verify --skip），空=全部启用。
 	SkipRules []string `yaml:"skip_rules"`
+}
+
+// ForbiddenTerm 一条自定义正文禁用字词（R7.3）。
+type ForbiddenTerm struct {
+	Term string `yaml:"term"` // 词组或单个字符/符号，正文子串命中即违规
+	Note string `yaml:"note"` // 自定义违规提示；空=使用默认文案
 }
 
 // WordCounts 字数阈值 [min, max]。
@@ -190,6 +200,11 @@ func (s *ManuscriptSpec) Validate() error {
 	}
 	if !IsValidBookTopLevel(s.BookTopLevel) {
 		return fmt.Errorf("book_top_level 必须为 auto|book|chapter|section（空=auto），got %q", s.BookTopLevel)
+	}
+	for _, ft := range s.ForbiddenTerms {
+		if strings.TrimSpace(ft.Term) == "" {
+			return fmt.Errorf("forbidden_terms 存在空 term（R7.3 禁用字词必填 term）")
+		}
 	}
 	// skip_rules 中的规则 ID 必须已注册
 	for _, id := range s.SkipRules {

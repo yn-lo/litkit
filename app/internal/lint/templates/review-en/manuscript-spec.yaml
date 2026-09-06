@@ -34,6 +34,9 @@ heading:
   require_numbering: true   # Headings must carry numeric numbers (1 / 1.1 / 1.1.1, aligned with markdown level)
 style_exempt_terms:         # R4.5 blacklist exemptions (disciplinary terms/collocations); empty=no exemptions
   # - robust estimator
+forbidden_terms:            # R7.3 custom forbidden terms in body text (phrase or a single character/symbol); each may carry a custom note
+  # - term: Ⓡ
+  #   note: Avoid the registered-trademark symbol
 boast_words:
   - revolutionary
   - groundbreaking

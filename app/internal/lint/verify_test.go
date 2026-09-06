@@ -324,6 +324,36 @@ func TestRule_R7_2_aiTraitWords(t *testing.T) {
 	}
 }
 
+// TestRule_R7_3_customForbiddenTerms 自定义禁用字词：词组与单个符号均可，逐条可带自定义违规提示。
+func TestRule_R7_3_customForbiddenTerms(t *testing.T) {
+	spec := DefaultSpec()
+	spec.ForbiddenTerms = []ForbiddenTerm{
+		{Term: "半角逗号", Note: "中文正文应用全角逗号"},
+		{Term: "Ⓡ", Note: "禁用注册商标符号"},
+	}
+	fr := runContent(t, "该结果使用半角逗号,  及符号Ⓡ。\n", spec, zhDraft())
+	got := violationsOf(fr, "R7.3")
+	if len(got) != 1 {
+		t.Fatalf("自定义禁用字词应在 1 行违规，got %d", len(got))
+	}
+	if got[0].Line != 1 || got[0].Problem != "中文正文应用全角逗号" {
+		t.Errorf("应符合自定义违规提示，got %+v", got[0])
+	}
+	// 未配置自定义提示时用默认文案
+	spec2 := DefaultSpec()
+	spec2.ForbiddenTerms = []ForbiddenTerm{{Term: "严禁词"}}
+	fr = runContent(t, "这是严禁词的表述。\n", spec2, zhDraft())
+	got = violationsOf(fr, "R7.3")
+	if len(got) != 1 || !strings.Contains(got[0].Problem, "严禁词") {
+		t.Errorf("无自定义提示应报默认文案，got %v", got)
+	}
+	// 空列表不触发
+	fr = runContent(t, "任意正文。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R7.3"); len(got) != 0 {
+		t.Errorf("forbidden_terms 为空不应违规，got %v", got)
+	}
+}
+
 func TestRule_R9_1(t *testing.T) {
 	fr := runContent(t, "【注意】此处待修改。\n", DefaultSpec(), zhChapter())
 	got := violationsOf(fr, "R9.1")

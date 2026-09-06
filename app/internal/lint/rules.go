@@ -1124,6 +1124,33 @@ func checkR72(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// checkR73 自定义禁用字词：按 spec.ForbiddenTerms 扫描正文子串命中违规。
+// 每条可配自定义违规提示 Note（空=默认文案）。空列表不检查。
+func checkR73(src *Source, spec *ManuscriptSpec) []Violation {
+	terms := spec.ForbiddenTerms
+	var vs []Violation
+	for i, ln := range src.Body {
+		lower := strings.ToLower(ln)
+		for _, ft := range terms {
+			if !strings.Contains(lower, strings.ToLower(ft.Term)) {
+				continue
+			}
+			problem := fmt.Sprintf("正文含自定义禁用字词 %q", ft.Term)
+			if ft.Note != "" {
+				problem = ft.Note
+			}
+			vs = append(vs, Violation{
+				RuleID:     "R7.3",
+				Line:       src.bodyIdx[i],
+				Problem:    problem,
+				Suggestion: "请移除或替换该字词",
+			})
+			break // 一行报一次
+		}
+	}
+	return vs
+}
+
 // checkR91 用户标记：含 【 或 】 违规。
 func checkR91(src *Source, _ *ManuscriptSpec) []Violation {
 	var vs []Violation
@@ -1602,6 +1629,7 @@ func AllRules() []Rule {
 		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61, Fix: fixR61},
 		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71, Fix: fixR71},
 		{ID: "R7.2", Name: "自我夸大", Category: CatBoastWords, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
+		{ID: "R7.3", Name: "自定义禁用字词", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR73},
 		{ID: "R8.1", Name: "全文字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR81},
 		{ID: "R8.2", Name: "摘要字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},
 		{ID: "R8.3", Name: "段长", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR83},

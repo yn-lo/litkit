@@ -35,6 +35,9 @@ heading:
   require_numbering: true   # 标题必须带数字编号（1 / 1.1 / 1.1.1，与 markdown 层级对齐）
 style_exempt_terms:         # R4.5 术语黑名单豁免词（学科术语/固定搭配），空=不豁免
   # - 稳健估计
+forbidden_terms:            # R7.3 自定义正文禁用字词（词组或单个符号），逐条可带自定义违规提示 note
+  # - term: Ⓡ
+  #   note: 禁用注册商标符号
 boast_words:
   - 首次证实
   - 颠覆性

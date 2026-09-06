@@ -35,6 +35,9 @@ book_top_level: auto    # 文件顶层标题级别：auto（默认，整本/单�
 skip_rules: []          # 永久跳过的规则 ID（等效每次 verify --skip，如 [R3.4, R8.1]）；空=全部启用
 style_exempt_terms:         # R4.5 术语黑名单豁免词（学科术语/固定搭配），空=不豁免
   # - 稳健估计
+forbidden_terms:            # R7.3 自定义正文禁用字词（词组或单个符号），逐条可带自定义违规提示 note
+  # - term: Ⓡ
+  #   note: 禁用注册商标符号
 boast_words:
   - 首次证实
   - 颠覆性
