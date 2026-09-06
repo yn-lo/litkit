@@ -175,6 +175,10 @@ func TestCheckCitationHealth_RecencySummary(t *testing.T) {
 	if rec.RecentRatio != 0.25 {
 		t.Errorf("近5年占比应为 0.25，got %.2f", rec.RecentRatio)
 	}
+	// 存在超警告档文献时，须附"仅报告，非建议替换"说明
+	if rec.Note == "" {
+		t.Error("存在距今超过 5 年文献时，recency 应附带说明（仅报告，非建议替换）")
+	}
 	// 违规：1 条 >10y 逐篇 + 1 条 5-10y 聚合 = 2 条 R5.8
 	r58 := 0
 	for _, h := range got {

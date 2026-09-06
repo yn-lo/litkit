@@ -36,11 +36,12 @@ type Report struct {
 // 均为"距今超过 N 年"计数，枚举全部成功解析出年份的被引文献（按 citeKey 去重）。
 // Within5 + Over5 = Total；Over5 ⊇ Over10。
 type RecencySummary struct {
-	Total       int     `json:"total"`       // 已解析出年份的被引文献总数
-	Within5     int     `json:"within5"`     // 距今 ≤ warn_age_years（默认 5）篇数
-	Over5       int     `json:"over5"`       // 距今 > warn_age_years（默认 5）篇数
-	Over10      int     `json:"over10"`      // 距今 > max_age_years（默认 10）篇数
-	RecentRatio float64 `json:"recentRatio"` // Within5 / Total（近 5 年文献占比）
+	Total       int     `json:"total"`          // 已解析出年份的被引文献总数
+	Within5     int     `json:"within5"`        // 距今 ≤ warn_age_years（默认 5）篇数
+	Over5       int     `json:"over5"`          // 距今 > warn_age_years（默认 5）篇数
+	Over10      int     `json:"over10"`         // 距今 > max_age_years（默认 10）篇数
+	RecentRatio float64 `json:"recentRatio"`    // Within5 / Total（近 5 年文献占比）
+	Note        string  `json:"note,omitempty"` // 仅报告非建议替换：时效为信息提示，经典/奠基文献可保留
 }
 
 // CitationRelevanceReport 引用相关性评分汇总。

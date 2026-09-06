@@ -1064,6 +1064,14 @@ func TestRule_R1_6_EmptySection(t *testing.T) {
 	if got := violationsOf(reviewRun(t, "# 标题\n# 1 引言\n正文。\n"), "R1.6"); len(got) != 0 {
 		t.Errorf("正常章节不应报 R1.6，got %+v", got)
 	}
+	// 标题下紧跟子标题（更深层级）：分组标题由子标题承载内容，不判空
+	if got := violationsOf(reviewRun(t, "# 标题\n# 1 引言\n# 1.1 背景\n正文。\n"), "R1.6"); len(got) != 0 {
+		t.Errorf("标题下紧跟子标题不应报 R1.6，got %+v", got)
+	}
+	// 子标题本身为空仍应报
+	if got := violationsOf(reviewRun(t, "# 标题\n# 1 引言\n# 1.1 背景\n# 2 结果\n正文。\n"), "R1.6"); len(got) != 1 {
+		t.Errorf("空子标题应报 R1.6，got %+v", got)
+	}
 }
 
 // ---- R1.7 空/重复标题 ----

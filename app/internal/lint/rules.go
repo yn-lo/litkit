@@ -780,9 +780,10 @@ func checkR19(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR16 空章节：编号标题到下一个标题之间无任何内容违规。
+// checkR16 空章节：编号标题到下一个同级/上级标题之间无任何内容违规。
 //
-// 大标题（首个无编号标题）豁免；判定基于原始 Lines，章节内的表格/图片行算有内容。
+// 分组标题（后紧跟更深层级子标题）由子标题承载内容，不判空；
+// 判定基于原始 Lines，章节内的表格/图片行算有内容。
 func checkR16(src *Source, _ *ManuscriptSpec) []Violation {
 	var vs []Violation
 	first := true
@@ -791,7 +792,7 @@ func checkR16(src *Source, _ *ManuscriptSpec) []Violation {
 		if !isHeading(t) {
 			continue
 		}
-		_, num, _ := headingLevel(t)
+		curLevel, num, _ := headingLevel(t)
 		if first {
 			first = false
 			if num == "" {
@@ -803,11 +804,19 @@ func checkR16(src *Source, _ *ManuscriptSpec) []Violation {
 		}
 		start := src.bodyIdx[i]   // 标题行号（1 起）
 		end := len(src.Lines) + 1 // 下一标题行号；无则视为文件末尾后一行
+		hasChild := false         // 下一标题是否更深层级（子标题）
 		for j := i + 1; j < len(src.Body); j++ {
 			if isHeading(strings.TrimSpace(src.Body[j])) {
 				end = src.bodyIdx[j]
+				nextLevel, _, _ := headingLevel(strings.TrimSpace(src.Body[j]))
+				if nextLevel > curLevel {
+					hasChild = true
+				}
 				break
 			}
+		}
+		if hasChild {
+			continue // 分组标题：内容承载于子标题下
 		}
 		hasContent := false
 		for k := start; k < end-1; k++ { // 0-based：标题行之后到下一标题之前

@@ -218,6 +218,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 - `over5`：距今 > `warn_age_years`（默认 5）篇数（含 `over10`）
 - `over10`：距今 > `max_age_years`（默认 10）篇数
 - `recentRatio`：`within5 / total`（近 5 年文献占比）
+- `note`：仅 `over5>0` 时输出，说明时效"仅报告，非建议替换"（经典或奠基性文献可按需保留）
 
 违规：距今 > `max_age_years`（默认 10）的逐篇报 R5.8；距今介于 `warn_age_years` 与 `max_age_years` 之间的按篇数聚合提示一条 R5.8（附近 5 年占比）。两者均属 S 类（仅人工复核，不阻断）。
 

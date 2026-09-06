@@ -145,6 +145,10 @@ func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptS
 	if summary.Total > 0 {
 		summary.RecentRatio = float64(summary.Within5) / float64(summary.Total)
 	}
+	// 存在超警告档文献时附带说明：时效仅报告，非建议替换（经典/奠基文献可按需保留）
+	if summary.Over5 > 0 {
+		summary.Note = "仅报告，非建议替换：文献时效为信息提示，不强制替换；经典或奠基性文献可按需保留。"
+	}
 	// R5.8 软档：存在 5-10y 文献时聚合提示，推动补充近 5 年文献
 	if rs.hasAging {
 		out = append(out, healthViolation{rs.firstAging.file, Violation{
