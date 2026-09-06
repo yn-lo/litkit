@@ -23,9 +23,16 @@ func (r FixReport) Total() int {
 
 // 修正用正则（集中管理）。
 var (
-	halfWidthCnRe   = regexp.MustCompile(`[\x{4e00}-\x{9fff}][,.;:]`) // 中文后半角标点（R3.1）
-	boldContentRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)           // 加粗标记（R1.4）
-	citePunctMoveRe = regexp.MustCompile(`([。，,.])\s*(\[@[^\]]+\])`)  // 标点后紧跟引用（R6.1）
+	// ellipsisHold 三点省略号的临时占位符（私有区字符），避免 R3.1 误转省略号首点。
+	ellipsisHold    = "\uFFF0"
+	halfWidthCnRe   = regexp.MustCompile(`[\x{4e00}-\x{9fff}][,.;:?!]`) // 中文后半角标点（R3.1）
+	boldContentRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)             // 加粗标记（R1.4）
+	citePunctMoveRe = regexp.MustCompile(`([。，,.])\s*(\[@[^\]]+\])`)    // 标点后紧跟引用（R6.1）
+
+	// R3.5 中文语境半角括号：整对内含汉字、或汉字紧邻单侧括号时转全角。
+	fixParenCnRe = regexp.MustCompile(`\(([^()]*[\x{4e00}-\x{9fff}][^()]*)\)`) // 括号内含汉字
+	fixParenLRe  = regexp.MustCompile(`([\x{4e00}-\x{9fff}])\(`)               // 汉字紧邻左半角括号
+	fixParenRRe  = regexp.MustCompile(`\)([\x{4e00}-\x{9fff}])`)               // 右半角括号紧邻汉字
 
 	// R3.3 数字范围子模式
 	fixPctRangeRe  = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)%`)                                // 10-16% → 10%～16%
@@ -36,8 +43,10 @@ var (
 )
 
 // fixR31 中文后半角标点转全角（R3.1）。
+// 三点省略号 `...` 先用占位符保护（交由 R3.6 整体转换），避免把省略号首点误转成句号。
 func fixR31(line string) (string, bool) {
 	changed := false
+	line = ellipsisRe.ReplaceAllString(line, ellipsisHold) // `...` → 占位符
 	out := halfWidthCnRe.ReplaceAllStringFunc(line, func(m string) string {
 		changed = true
 		r := []rune(m)
@@ -50,10 +59,42 @@ func fixR31(line string) (string, bool) {
 			r[1] = '；'
 		case ':':
 			r[1] = '：'
+		case '?':
+			r[1] = '？'
+		case '!':
+			r[1] = '！'
 		}
 		return string(r)
 	})
+	out = strings.ReplaceAll(out, ellipsisHold, "...") // 恢复省略号
 	return out, changed
+}
+
+// fixR35 中文语境半角括号转全角（R3.5）：整对内含汉字、或汉字紧邻单侧括号。
+// 纯英文/数字括注与两侧均非汉字的内容不动；幂等（全角括号不再次匹配）。
+func fixR35(line string) (string, bool) {
+	changed := false
+	apply := func(re *regexp.Regexp, repl string) {
+		before := line
+		line = re.ReplaceAllString(line, repl)
+		if line != before {
+			changed = true
+		}
+	}
+	apply(fixParenCnRe, "（${1}）")
+	apply(fixParenLRe, "${1}（")
+	apply(fixParenRRe, "）${1}")
+	return line, changed
+}
+
+// fixR36 中文三点省略号转全角（R3.6）：`...` → 「……」。
+// 网址行与纯英文行（无汉字）豁免，避免误改链接/英文内容。
+func fixR36(line string) (string, bool) {
+	if strings.Contains(line, "://") || !hanRe.MatchString(line) || !ellipsisRe.MatchString(line) {
+		return line, false
+	}
+	out := strings.ReplaceAll(line, "...", "……")
+	return out, out != line
 }
 
 // fixR32 中文上下文直引号转弯引号（R3.2，开合交替配对）。

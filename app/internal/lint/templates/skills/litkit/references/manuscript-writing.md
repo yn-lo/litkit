@@ -33,7 +33,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> [选项]
 | `structure` | 章节结构 | R1.1, R1.4-R1.9 |
 | `heading` | 标题规范 | R1.2, R1.3, R7.1 |
 | `statistics` | 统计格式 | R2.1 |
-| `punctuation` | 标点符号 | R3.1, R3.2 |
+| `punctuation` | 标点符号 | R3.1, R3.2, R3.5, R3.6 |
 | `style` | 行文风格 | R4.2 |
 | `citation` | 引用规范 | R5.1-R5.3, R6.1 |
 | `boast_words` | 自我夸大/AI痕迹 | R7.2 |

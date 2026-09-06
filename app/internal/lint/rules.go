@@ -133,19 +133,22 @@ type Rule struct {
 
 // 预编译正则（mnd：集中管理，避免规则函数内重复编译）。
 var (
-	parenNoteRe     = regexp.MustCompile(`（[^）]*）`)                                   // 术语括注
-	headingNumRe    = regexp.MustCompile(`^(\d+(?:\.\d+)*)`)                          // 标题编号
-	headingEndRe    = regexp.MustCompile(`[。，、；：！？.]$`)                               // 标题末尾标点
-	boldRe          = regexp.MustCompile(`\*\*[^*]+\*\*`)                             // 加粗
-	pValueRe        = regexp.MustCompile(`([Pp])\s*(=|<=|>=|<|>|≤|≥)\s*(0?\.\d+)`)    // P 值
-	halfWidthRe     = regexp.MustCompile(`[\x{4e00}-\x{9fff}][,.;:]`)                 // 中文后半角标点
-	straightQuoteRe = regexp.MustCompile(`[\x{4e00}-\x{9fff}]"|"[\x{4e00}-\x{9fff}]`) // 中文上下文直引号
-	apaPlaceholder  = regexp.MustCompile(`\([A-Z][a-z]+,\s*\d{4}\)`)                  // (Author, 2024)
-	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                   // [数字]
-	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                      // 标点后紧跟引用（违规）
-	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                               // 引用占位符 [@citeKey]
-	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){2,}`)                   // 连续引用连串（2+ 个，中间仅空白）
-	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)          // 图表引用/题注
+	parenNoteRe     = regexp.MustCompile(`（[^）]*）`)                                                                         // 术语括注
+	headingNumRe    = regexp.MustCompile(`^(\d+(?:\.\d+)*)`)                                                                // 标题编号
+	headingEndRe    = regexp.MustCompile(`[。，、；：！？.]$`)                                                                     // 标题末尾标点
+	boldRe          = regexp.MustCompile(`\*\*[^*]+\*\*`)                                                                   // 加粗
+	pValueRe        = regexp.MustCompile(`([Pp])\s*(=|<=|>=|<|>|≤|≥)\s*(0?\.\d+)`)                                          // P 值
+	halfWidthRe     = regexp.MustCompile(`[\x{4e00}-\x{9fff}][,.;:?!]`)                                                     // 中文后半角标点
+	hanRe           = regexp.MustCompile(`[\x{4e00}-\x{9fff}]`)                                                             // 是否存在汉字
+	halfParenRe     = regexp.MustCompile(`\([^()]*[\x{4e00}-\x{9fff}][^()]*\)|[\x{4e00}-\x{9fff}]\(|\)[\x{4e00}-\x{9fff}]`) // 中文语境半角括号（R3.5）
+	ellipsisRe      = regexp.MustCompile(`\.\.\.`)                                                                          // 三点省略号（R3.6）
+	straightQuoteRe = regexp.MustCompile(`[\x{4e00}-\x{9fff}]"|"[\x{4e00}-\x{9fff}]`)                                       // 中文上下文直引号
+	apaPlaceholder  = regexp.MustCompile(`\([A-Z][a-z]+,\s*\d{4}\)`)                                                        // (Author, 2024)
+	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                                                         // [数字]
+	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                                                            // 标点后紧跟引用（违规）
+	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                                                                     // 引用占位符 [@citeKey]
+	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){2,}`)                                                         // 连续引用连串（2+ 个，中间仅空白）
+	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)                                                // 图表引用/题注
 	redundantRes    = []*regexp.Regexp{
 		regexp.MustCompile(`进行`),
 		regexp.MustCompile(`通过.*使`),
@@ -1020,13 +1023,46 @@ func checkR21(src *Source, _ *ManuscriptSpec) []Violation {
 }
 
 // checkR31 全半角：中文字符后紧跟半角标点违规。
+// 三点省略号 `...` 先剔除（交由 R3.6 整体判定），避免把省略号首点误报为句号。
 func checkR31(src *Source, _ *ManuscriptSpec) []Violation {
-	return bodyRuleViolations(src, halfWidthRe, "R3.1", "中文后使用了半角标点", "改用全角标点")
+	var vs []Violation
+	for i, ln := range src.Body {
+		if halfWidthRe.MatchString(ellipsisRe.ReplaceAllString(ln, "")) {
+			vs = append(vs, Violation{RuleID: "R3.1", Line: src.bodyIdx[i], Problem: "中文后使用了半角标点", Suggestion: "改用全角标点"})
+		}
+	}
+	return vs
 }
 
 // checkR32 中文引号：中文上下文出现直引号违规。
 func checkR32(src *Source, _ *ManuscriptSpec) []Violation {
 	return bodyRuleViolations(src, straightQuoteRe, "R3.2", "中文上下文使用了直引号", "改用中文弯引号")
+}
+
+// checkR35 中文括号：半角括号内含汉字，或紧邻汉字（中文语境）违规。
+// 纯英文/数字括注（如 (SD)、(HR=1.5)，两侧不与汉字邻接）视为可接受的半角用法，不报。
+func checkR35(src *Source, _ *ManuscriptSpec) []Violation {
+	return bodyRuleViolations(src, halfParenRe, "R3.5",
+		"中文语境使用了半角括号",
+		"改用全角括号（内容含汉字或紧邻中文时，如（SD））")
+}
+
+// checkR36 中文省略号：中文句内三点 `...` 违规，应写全角省略号「……」。
+// 网址/含 :// 的行与纯英文行（无汉字）豁免。
+func checkR36(src *Source, _ *ManuscriptSpec) []Violation {
+	var vs []Violation
+	for i, ln := range src.Body {
+		if strings.Contains(ln, "://") || !ellipsisRe.MatchString(ln) || !hanRe.MatchString(ln) {
+			continue
+		}
+		vs = append(vs, Violation{
+			RuleID:     "R3.6",
+			Line:       src.bodyIdx[i],
+			Problem:    "中文句内使用了半角三点省略号",
+			Suggestion: "改用全角省略号……（连续两个 U+2026）",
+		})
+	}
+	return vs
 }
 
 // checkR33 数字范围规范（yueshu.md 八、数字）：范围用波浪线、百分号只在范围末、
@@ -1624,6 +1660,8 @@ func AllRules() []Rule {
 		{ID: "R3.2", Name: "中文引号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR32, Fix: fixR32},
 		{ID: "R3.3", Name: "数字范围", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR33, Fix: fixR33},
 		{ID: "R3.4", Name: "计量单位", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR34},
+		{ID: "R3.5", Name: "中文括号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeDraft, Check: checkR35, Fix: fixR35},
+		{ID: "R3.6", Name: "中文省略号", Category: CatPunctuation, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeDraft, Check: checkR36, Fix: fixR36},
 		{ID: "R4.2", Name: "句式冗余", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR42},
 		{ID: ruleR43, Name: "破折号滥用", Category: CatStyle, Langs: []string{"zh"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR43},
 		{ID: ruleR44, Name: "段长均匀", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR44},

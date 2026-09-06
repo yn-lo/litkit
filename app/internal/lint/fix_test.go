@@ -23,6 +23,38 @@ func TestFix_R31_HalfWidthPunct(t *testing.T) {
 	}
 }
 
+func TestFix_R31_QuestionExclaim(t *testing.T) {
+	got, rep := fixContent("此为疑问?或强调!\n")
+	if !strings.Contains(got, "此为疑问？或强调！") {
+		t.Errorf("问号/感叹号应转全角，got %q", got)
+	}
+	if rep.Applied["R3.1"] != 1 {
+		t.Errorf("R3.1 应修正 1 行，got %v", rep.Applied)
+	}
+}
+
+func TestFix_R35_HalfWidthParen(t *testing.T) {
+	got, _ := fixContent("标准偏差(SD)为5。结果(见表1)正确。\n")
+	if !strings.Contains(got, "标准偏差（SD）为5。结果（见表1）正确。") {
+		t.Errorf("半角括号应转全角，got %q", got)
+	}
+	// 独立英文括注不动
+	got, _ = fixContent("结果 (SD) 为 5。\n")
+	if !strings.Contains(got, "结果 (SD) 为 5。") {
+		t.Errorf("独立英文括注不应改动，got %q", got)
+	}
+}
+
+func TestFix_R36_Ellipsis(t *testing.T) {
+	got, rep := fixContent("结果尚不明确...请复核。\n")
+	if !strings.Contains(got, "结果尚不明确……请复核。") {
+		t.Errorf("三点省略号应转全角省略号，got %q", got)
+	}
+	if rep.Applied["R3.6"] != 1 {
+		t.Errorf("R3.6 应修正 1 行，got %v", rep.Applied)
+	}
+}
+
 func TestFix_R32_StraightQuote(t *testing.T) {
 	got, rep := fixContent("他说\"你好\"。\n")
 	if !strings.Contains(got, "他说“你好”。") {

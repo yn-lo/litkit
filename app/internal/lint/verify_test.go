@@ -198,6 +198,52 @@ func TestRule_R3_1(t *testing.T) {
 	if got := violationsOf(fr, "R3.1"); len(got) != 0 {
 		t.Errorf("全角逗号不应违规，got %v", got)
 	}
+	// 半角问号/感叹号紧跟汉字也应报
+	fr = runContent(t, "此为疑问?或强调!\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.1"); len(got) != 1 {
+		t.Errorf("半角问号/感叹号应报 R3.1，got %v", got)
+	}
+	fr = runContent(t, "此为疑问？或强调！\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.1"); len(got) != 0 {
+		t.Errorf("全角问号/感叹号不应违规，got %v", got)
+	}
+}
+
+func TestRule_R3_5_HalfWidthParen(t *testing.T) {
+	// 半角括号紧邻汉字：报
+	fr := runContent(t, "标准偏差(SD)为5。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.5"); len(got) != 1 {
+		t.Errorf("紧邻汉字的半角括号应报 R3.5，got %v", got)
+	}
+	// 半角括号内含汉字：报
+	fr = runContent(t, "结果(见表1)正确。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.5"); len(got) != 1 {
+		t.Errorf("内含汉字的半角括号应报 R3.5，got %v", got)
+	}
+	// 全角括号：不报
+	if got := violationsOf(runContent(t, "结果（见表1）正确。\n", DefaultSpec(), zhDraft()), "R3.5"); len(got) != 0 {
+		t.Errorf("全角括号不应违规，got %v", got)
+	}
+	// 纯英文/数字括注（不与汉字邻接）：不报
+	if got := violationsOf(runContent(t, "结果 (SD) 为 5。\n", DefaultSpec(), zhDraft()), "R3.5"); len(got) != 0 {
+		t.Errorf("独立英文括注不应违规，got %v", got)
+	}
+}
+
+func TestRule_R3_6_Ellipsis(t *testing.T) {
+	// 中文句内三点省略号：报
+	fr := runContent(t, "结果尚不明确...\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.6"); len(got) != 1 {
+		t.Errorf("中文句内三点省略号应报 R3.6，got %v", got)
+	}
+	// 全角省略号：不报
+	if got := violationsOf(runContent(t, "结果尚不明确……\n", DefaultSpec(), zhDraft()), "R3.6"); len(got) != 0 {
+		t.Errorf("全角省略号不应违规，got %v", got)
+	}
+	// 网址：不报
+	if got := violationsOf(runContent(t, "详见 https://example.com 说明。\n", DefaultSpec(), zhDraft()), "R3.6"); len(got) != 0 {
+		t.Errorf("网址不应报 R3.6，got %v", got)
+	}
 }
 
 func TestRule_R3_2(t *testing.T) {
