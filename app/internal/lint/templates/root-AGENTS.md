@@ -16,7 +16,8 @@
 ## 论文类型
 
 每种类型在 `.litkit/<type-lang>/` 下有独立阈值配置（`manuscript-spec.yaml`）。
-查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical|book --lang zh|en`
+查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical|book|proposal --lang zh|en`
+类型说明：review（综述）/ empirical（四段式实证）/ book（书籍专著）/ proposal（学术标书/课题申请书，中文）
 
 ## 检索策略
 
@@ -28,6 +29,8 @@
 
 - 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
+- 引用模式看 spec 的 `citation_mode`：默认 inline（`[@citeKey]` 内联引用）；endnote（标书等）正文**禁止内联引用**，参考文献编号条目置于报告正文末尾（R10.3）
+- 标书（proposal）封面字段（负责人、单位、电话等）写在首个正文章节标题之前，不参与字数与用词审查；占位符 `〔　〕` 会被 R10.4 提示
 - 所有撰写硬性规定（字数、引用数、章节结构、标题层级、格式要求等）见 `.litkit/<type-lang>/manuscript-spec.yaml` 顶部注释
 
 ## 重要规则（AI 必读）

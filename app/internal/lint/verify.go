@@ -154,7 +154,7 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 	}
 	hasA, hasS := false, false
 	for _, p := range paths {
-		src, err := ParseSource(p)
+		src, err := parseSourceWithSpec(p, spec)
 		if err != nil {
 			return report, err
 		}

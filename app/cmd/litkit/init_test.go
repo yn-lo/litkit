@@ -99,7 +99,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
 	got := string(data)
-	for _, want := range []string{"litkit search", "--mode", "litkit verify", "--check", "ls .litkit/", "不写摘要"} {
+	for _, want := range []string{"litkit search", "--mode", "litkit verify", "--check", "ls .litkit/", "不写摘要", "proposal", "citation_mode"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}
@@ -117,6 +117,26 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 	}
 	if spec.PaperType != lint.PaperTypeReview {
 		t.Errorf("paper_type 应为 review，got %s", spec.PaperType)
+	}
+}
+
+func TestInitWorkdir_typeProposal(t *testing.T) {
+	dir := t.TempDir()
+	if err := initWorkdir(dir, false, lint.PaperTypeProposal, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	spec, err := lint.LoadSpec(lint.SpecPath(dir, lint.PaperTypeProposal, lint.LangZH))
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if spec.PaperType != lint.PaperTypeProposal {
+		t.Errorf("paper_type 应为 proposal，got %s", spec.PaperType)
+	}
+	if spec.CitationMode != lint.CitationModeEndnote {
+		t.Errorf("proposal 引用模式应为 endnote，got %s", spec.CitationMode)
+	}
+	if len(spec.SectionList()) == 0 {
+		t.Error("proposal 应有章节清单")
 	}
 }
 

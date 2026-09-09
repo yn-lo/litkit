@@ -17,6 +17,13 @@ const (
 	PaperTypeReview    = "review"    // 综述
 	PaperTypeEmpirical = "empirical" // 四段式实证
 	PaperTypeBook      = "book"      // 书籍（医学书稿编校细则，yueshu.md）
+	PaperTypeProposal  = "proposal"  // 学术标书（课题申请书）
+)
+
+// 引用模式常量（citation_mode）：inline=正文内联引用（默认）；endnote=正文不内联、文末参考文献。
+const (
+	CitationModeInline  = "inline"
+	CitationModeEndnote = "endnote"
 )
 
 // 撰写语言常量（C1 中文优先，zh 为默认）。
@@ -30,14 +37,19 @@ const (
 // ManuscriptSpec 撰写规范配置（.litkit/<type>/manuscript-spec.yaml）。
 // 用户可手动修改；AI 直接读取此文件，无需额外步骤。
 type ManuscriptSpec struct {
-	PaperType  string        `yaml:"paper_type"` // review | empirical | book
-	Lang       string        `yaml:"lang"`       // zh | en
-	Journal    string        `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
-	Sections   []string      `yaml:"sections"`   // 当前论文类型的章节清单
-	WordCount  WordCounts    `yaml:"word_counts"`
-	Citation   CitationSpec  `yaml:"citation"`
-	Heading    HeadingLimits `yaml:"heading"`
-	BoastWords []string      `yaml:"boast_words"` // 自我夸大/AI痕迹禁用词表（空=使用默认词表）
+	PaperType string   `yaml:"paper_type"` // review | empirical | book | proposal
+	Lang      string   `yaml:"lang"`       // zh | en
+	Journal   string   `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
+	Sections  []string `yaml:"sections"`   // 当前论文类型的章节清单
+	// CitationMode 引用模式：inline（默认，正文内联引用）| endnote（正文不内联，文末参考文献）。
+	CitationMode string `yaml:"citation_mode"`
+	// SectionLimits 每节字数区间（R10.2）：键为 section 名，值为 [min, max]；
+	// 未配置的节不查字数。yaml 形式：section_limits: { "中文摘要": [200, 400] }。
+	SectionLimits map[string][2]int `yaml:"section_limits"`
+	WordCount     WordCounts        `yaml:"word_counts"`
+	Citation      CitationSpec      `yaml:"citation"`
+	Heading       HeadingLimits     `yaml:"heading"`
+	BoastWords    []string          `yaml:"boast_words"` // 自我夸大/AI痕迹禁用词表（空=使用默认词表）
 	// BookTopLevel 书籍文件顶层标题级别（仅 book 生效）：auto|book|chapter|section。
 	// auto（默认）自动兼容整本书/单章/单节文件；book 强制首标题为书名。
 	BookTopLevel string `yaml:"book_top_level"`
@@ -162,9 +174,14 @@ func LoadSpec(path string) (*ManuscriptSpec, error) {
 // Validate 校验规范字段合法性（信任边界输入校验）。
 func (s *ManuscriptSpec) Validate() error {
 	switch s.PaperType {
-	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook:
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook, PaperTypeProposal:
 	default:
-		return fmt.Errorf("paper_type 必须为 review|empirical|book，got %q", s.PaperType)
+		return fmt.Errorf("paper_type 必须为 review|empirical|book|proposal，got %q", s.PaperType)
+	}
+	switch s.CitationMode {
+	case "", CitationModeInline, CitationModeEndnote:
+	default:
+		return fmt.Errorf("citation_mode 必须为 inline|endnote（空=inline），got %q", s.CitationMode)
 	}
 	switch s.Lang {
 	case LangZH, LangEN:
@@ -180,17 +197,8 @@ func (s *ManuscriptSpec) Validate() error {
 	if err := validateRange("word_counts.paragraph", s.WordCount.Paragraph); err != nil {
 		return err
 	}
-	if err := validateRange("citation.count", s.Citation.Count); err != nil {
+	if err := s.validateCitation(); err != nil {
 		return err
-	}
-	if s.Citation.RunLimit < 0 {
-		return fmt.Errorf("citation.run_limit 必须 >= 0（0=默认 3），got %d", s.Citation.RunLimit)
-	}
-	if s.Citation.MaxAgeYears < 0 {
-		return fmt.Errorf("citation.max_age_years 必须 >= 0（0=默认 10），got %d", s.Citation.MaxAgeYears)
-	}
-	if s.Citation.SelfCitationMaxRatio < 0 {
-		return fmt.Errorf("citation.self_citation_max_ratio 必须 >= 0（0=默认 0.15），got %v", s.Citation.SelfCitationMaxRatio)
 	}
 	if s.Heading.MaxLevel <= 0 {
 		return fmt.Errorf("heading.max_level 必须 > 0")
@@ -206,11 +214,33 @@ func (s *ManuscriptSpec) Validate() error {
 			return fmt.Errorf("forbidden_terms 存在空 term（R7.3 禁用字词必填 term）")
 		}
 	}
+	for name, r := range s.SectionLimits {
+		if r[0] <= 0 || r[1] <= 0 || r[0] >= r[1] {
+			return fmt.Errorf("section_limits[%s] 须满足 0 < min < max，got %v", name, r)
+		}
+	}
 	// skip_rules 中的规则 ID 必须已注册
 	for _, id := range s.SkipRules {
 		if !isRegisteredRule(id) {
 			return fmt.Errorf("skip_rules 含未知规则 %q（运行 litkit rules 查看全部规则 ID）", id)
 		}
+	}
+	return nil
+}
+
+// validateCitation 校验 citation 配置块。
+func (s *ManuscriptSpec) validateCitation() error {
+	if err := validateRange("citation.count", s.Citation.Count); err != nil {
+		return err
+	}
+	if s.Citation.RunLimit < 0 {
+		return fmt.Errorf("citation.run_limit 必须 >= 0（0=默认 3），got %d", s.Citation.RunLimit)
+	}
+	if s.Citation.MaxAgeYears < 0 {
+		return fmt.Errorf("citation.max_age_years 必须 >= 0（0=默认 10），got %d", s.Citation.MaxAgeYears)
+	}
+	if s.Citation.SelfCitationMaxRatio < 0 {
+		return fmt.Errorf("citation.self_citation_max_ratio 必须 >= 0（0=默认 0.15），got %v", s.Citation.SelfCitationMaxRatio)
 	}
 	return nil
 }
@@ -274,7 +304,7 @@ func TypeLangDir(paperType, lang string) string {
 // IsValidPaperType 判断是否为已注册论文类型。
 func IsValidPaperType(t string) bool {
 	switch t {
-	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook:
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook, PaperTypeProposal:
 		return true
 	}
 	return false
@@ -282,5 +312,5 @@ func IsValidPaperType(t string) bool {
 
 // PaperTypesLabel 返回论文类型枚举的展示标签（用于帮助文本与参数错误提示）。
 func PaperTypesLabel() string {
-	return "review|empirical|book"
+	return "review|empirical|book|proposal"
 }

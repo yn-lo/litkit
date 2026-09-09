@@ -27,13 +27,20 @@ func isRefsHeading(trimmed string) bool {
 	return strings.Contains(title, "参考文献") || strings.Contains(title, "references")
 }
 
-// ParseSource 从文件路径解析 Source。
+// ParseSource 从文件路径解析 Source（无 spec，全部行参与分段）。
 // 分段逻辑：
 //   - 代码块：``` 到 ``` 之间的行排除
 //   - 参考文献：从参考文献标题行开始到文件末尾排除
 //   - 表格：以 | 开头的连续行排除
 //   - 其余为 Body
 func ParseSource(path string) (*Source, error) {
+	return parseSourceWithSpec(path, nil)
+}
+
+// parseSourceWithSpec 从文件路径解析 Source；spec 定义 sections 时，
+// 首个 section 标题之前的非标题行（封面/简表字段）不进入 Body，
+// 标题行保留（主标题仍受 R1.2 等检查）。spec 为 nil 或无 sections 时行为与旧版一致。
+func parseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("lint: read source %s: %w", path, err)
@@ -42,10 +49,14 @@ func ParseSource(path string) (*Source, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
 
+	// 作用域收口：首个 section 标题行号（1 起），0=无 sections 或未命中
+	coverEnd := firstSectionLine(lines, spec)
+
 	src := &Source{Path: path, Lines: lines}
 	inCode := false
 	inRefs := false
 	for i, ln := range lines {
+		lineNo := i + 1
 		trimmed := strings.TrimSpace(ln)
 		// 代码块围栏切换（围栏行本身排除）
 		if strings.HasPrefix(trimmed, "```") {
@@ -53,6 +64,10 @@ func ParseSource(path string) (*Source, error) {
 			continue
 		}
 		if inCode {
+			continue
+		}
+		// 封面区（首个 section 标题之前）：标题行保留，其余排除
+		if coverEnd > 0 && lineNo < coverEnd && !isHeading(trimmed) {
 			continue
 		}
 		// 参考文献标题：自此到文件末尾排除
@@ -69,9 +84,32 @@ func ParseSource(path string) (*Source, error) {
 			continue
 		}
 		src.Body = append(src.Body, ln)
-		src.bodyIdx = append(src.bodyIdx, i+1)
+		src.bodyIdx = append(src.bodyIdx, lineNo)
 	}
 	return src, nil
+}
+
+// firstSectionLine 返回首个命中 spec.Sections 的标题行号（1 起）；
+// spec 为 nil / 无 sections / 无命中时返回 0。
+func firstSectionLine(lines []string, spec *ManuscriptSpec) int {
+	if spec == nil || len(spec.Sections) == 0 {
+		return 0
+	}
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		if _, _, text := headingLevel(t); text != "" {
+			textLower := strings.ToLower(text)
+			for _, sec := range spec.Sections {
+				if strings.Contains(textLower, strings.ToLower(sec)) {
+					return i + 1
+				}
+			}
+		}
+	}
+	return 0
 }
 
 // BodyContent 返回以 \n 连接的正文文本（供 core.ExtractCiteSentences 使用）。

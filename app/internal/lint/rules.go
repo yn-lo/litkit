@@ -1639,6 +1639,109 @@ func checkR83(src *Source, spec *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// inlineCiteRe 内联引用标记：[1] / [1,2]（非 [@citeKey] 形式的数字引用）。
+var inlineCiteRe = regexp.MustCompile(`\[\d+(?:[,，]\s*\d+)*\]`)
+
+// checkR103 引用模式校验（citation_mode=endnote）：正文出现数字内联引用
+// （[1] / [1,2]）违规；文末须存在参考文献节。inline/空模式不检查。
+func checkR103(src *Source, spec *ManuscriptSpec) []Violation {
+	if spec.CitationMode != CitationModeEndnote {
+		return nil
+	}
+	var vs []Violation
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if isHeading(t) || strings.HasPrefix(t, "[@") {
+			continue
+		}
+		if m := inlineCiteRe.FindString(t); m != "" {
+			vs = append(vs, Violation{
+				RuleID:     "R10.3",
+				Line:       src.bodyIdx[i],
+				Problem:    "endnote 模式正文出现内联引用 " + m,
+				Suggestion: "删除内联引用标记，文献统一列入文末参考文献节",
+			})
+		}
+	}
+	if !src.HasRefs {
+		vs = append(vs, Violation{
+			RuleID:     "R10.3",
+			Line:       1,
+			Problem:    "endnote 模式文末缺少参考文献节",
+			Suggestion: "在报告正文末尾添加参考文献标题与编号条目",
+		})
+	}
+	return vs
+}
+
+// checkR102 每节字数区间（R10.2）：spec.SectionLimits 配置的节，其正文
+// （该节标题到下一标题之间）字数不在 [min, max] 区间违规；未配置的节不查。
+func checkR102(src *Source, spec *ManuscriptSpec) []Violation {
+	if len(spec.SectionLimits) == 0 {
+		return nil
+	}
+	var vs []Violation
+	// 定位每个 section 标题在 Body 中的位置，累计到下一标题的字数
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if !isHeading(t) {
+			continue
+		}
+		_, _, text := headingLevel(t)
+		if text == "" {
+			continue
+		}
+		textLower := strings.ToLower(text)
+		var lim [2]int
+		var secName string
+		for name, r := range spec.SectionLimits {
+			if strings.Contains(textLower, strings.ToLower(name)) {
+				lim, secName = r, name
+				break
+			}
+		}
+		if secName == "" {
+			continue
+		}
+		words := 0
+		for j := i + 1; j < len(src.Body); j++ {
+			if isHeading(strings.TrimSpace(src.Body[j])) {
+				break
+			}
+			words += wordCount(src.Body[j])
+		}
+		if words < lim[0] || words > lim[1] {
+			vs = append(vs, Violation{
+				RuleID:     "R10.2",
+				Line:       src.bodyIdx[i],
+				Problem:    fmt.Sprintf("章节 %q 字数 %d 不在 %d-%d 区间", secName, words, lim[0], lim[1]),
+				Suggestion: "按 manuscript-spec.yaml 的 section_limits 调整该节篇幅",
+			})
+		}
+	}
+	return vs
+}
+
+// placeholderRe 全角占位符：〔　〕 / 〔 ）等留白待填标记。
+var placeholderRe = regexp.MustCompile(`〔[　\s]*〕`)
+
+// checkR104 占位符提示（R10.4）：正文出现全角占位符〔　〕提示待填写。
+// S 类：脚本初筛+人工确认，提示性输出。
+func checkR104(src *Source, spec *ManuscriptSpec) []Violation {
+	var vs []Violation
+	for i, ln := range src.Body {
+		if m := placeholderRe.FindString(ln); m != "" {
+			vs = append(vs, Violation{
+				RuleID:     "R10.4",
+				Line:       src.bodyIdx[i],
+				Problem:    "存在占位符 " + m + "，内容待填写",
+				Suggestion: "填写实际内容后移除占位符；如确需保留请用 --skip R10.4 跳过",
+			})
+		}
+	}
+	return vs
+}
+
 // AllRules 返回全部已注册规则（按 ID 排序）。
 //
 // Types 维度：空=全部类型适用；仅特定类型时标注（如 R2.1 P值仅 empirical）。
@@ -1681,6 +1784,9 @@ func AllRules() []Rule {
 		{ID: "R8.2", Name: "摘要字数", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR82},
 		{ID: "R8.3", Name: "段长", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR83},
 		{ID: "R9.1", Name: "用户标记", Category: CatTodo, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR91},
+		{ID: "R10.2", Name: "章节字数区间", Category: CatWordCounts, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR102},
+		{ID: "R10.3", Name: "引用模式", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR103},
+		{ID: "R10.4", Name: "占位符提示", Category: CatStructure, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeChapter, Check: checkR104},
 	}
 	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
 	return rules
