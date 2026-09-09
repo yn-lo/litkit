@@ -71,7 +71,7 @@ manuscript-spec.yaml、verifier_models.json。
 
 ## verify 实现要点（已落地）
 
-- **19 条规则**：16 A 类（自动判定）+ 3 S 类（半自动）；M 类（R2.4/R4.3）仅输出人工核对提示，不计入 violations
+- **41 条规则**：27 A 类（自动判定）+ 14 S 类（半自动）；S 类命中仅提示人工确认，不计入 fail 判定
 - **模式递增**：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文），高模式包含低模式全部规则
 - **Markdown 分段**：排除代码块/参考文献/表格后检查 Body
 - **纯函数设计**：lint.Run() 无 IO，接收文本与配置返回 Report；CLI 是薄壳（读文件 → Run → 输出 JSON）

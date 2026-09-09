@@ -92,3 +92,56 @@ func TestCheckR49_AbstractNoCitation(t *testing.T) {
 		t.Fatalf("英文 Abstract 内引用应报 R4.9，got %d: %+v", len(got), got)
 	}
 }
+
+// ---- R4.10 重复句段 ----
+
+func TestCheckR410_CrossParagraphRepeat(t *testing.T) {
+	src := mustParse(t, "# 1 引言\n\n本研究采用术后疼痛恐惧面部评估工具进行测量。\n\n# 2 讨论\n\n如前所述，本研究采用术后疼痛恐惧面部评估工具进行测量。\n")
+	vs := checkR410(src, mustSpec(LangZH))
+	if len(vs) != 1 {
+		t.Fatalf("跨段重复片段应报 1 条，got %d: %+v", len(vs), vs)
+	}
+	if vs[0].Line != 3 {
+		t.Fatalf("应报首次出现行 3，got %d", vs[0].Line)
+	}
+	if !strings.Contains(vs[0].Problem, "重复出现 2 次") {
+		t.Fatalf("应报出现次数 2，got %q", vs[0].Problem)
+	}
+}
+
+func TestCheckR410_LongestOnly(t *testing.T) {
+	// 整句重复：句内子片段的重复由最长段覆盖，只报 1 条
+	sent := "本研究采用术后疼痛恐惧面部评估工具进行测量与分析。结果可靠。"
+	src := mustParse(t, sent+"\n\n第二部分："+sent+"\n")
+	vs := checkR410(src, mustSpec(LangZH))
+	if len(vs) != 1 {
+		t.Fatalf("整句重复应只报最长 1 条，got %d: %+v", len(vs), vs)
+	}
+	if !strings.Contains(vs[0].Problem, "重复出现 2 次") {
+		t.Fatalf("应报出现次数 2，got %q", vs[0].Problem)
+	}
+}
+
+func TestCheckR410_ThresholdConfigurable(t *testing.T) {
+	src := mustParse(t, "术后疼痛恐惧面部显著影响生活质量。\n\n因此术后疼痛恐惧面部值得关注。\n")
+	// 默认 10：8 字片段不报
+	if got := checkR410(src, mustSpec(LangZH)); len(got) != 0 {
+		t.Fatalf("8 字片段低于默认阈值 10 不应报，got %v", got)
+	}
+	spec := mustSpec(LangZH)
+	spec.RepeatMinLen = 5
+	if vs := checkR410(src, spec); len(vs) != 1 {
+		t.Fatalf("repeat_min_len=5 时 8 字片段应报 1 条，got %d: %+v", len(vs), vs)
+	}
+}
+
+func TestCheckR410_TripleOccurrence(t *testing.T) {
+	src := mustParse(t, "术前评估包括影像学检查与实验室检验。术后评估包括影像学检查与实验室检验。随访评估包括影像学检查与实验室检验。\n")
+	vs := checkR410(src, mustSpec(LangZH))
+	if len(vs) != 1 {
+		t.Fatalf("同一片段 3 次出现应合并报 1 条，got %d: %+v", len(vs), vs)
+	}
+	if !strings.Contains(vs[0].Problem, "重复出现 3 次") {
+		t.Fatalf("应报出现次数 3，got %q", vs[0].Problem)
+	}
+}

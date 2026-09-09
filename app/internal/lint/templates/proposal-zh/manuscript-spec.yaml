@@ -30,6 +30,7 @@ heading:
   max_level: 3
   max_length: 30              # 标书标题普遍长于论文（如"拟解决的关键科学问题"）
   require_numbering: false    # 标书标题多用"（一）（二）/1.2"混合编号，不强制纯数字编号
+repeat_min_len: 10            # R4.10 重复句段检测最小长度：连续片段≥该值且出现≥2 次报潜在冗余；0=默认 10
 boast_words:
   - 首次证实
   - 颠覆性

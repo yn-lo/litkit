@@ -38,6 +38,7 @@ style_exempt_terms:         # R4.5 术语黑名单豁免词（学科术语/固�
 forbidden_terms:            # R7.3 自定义正文禁用字词（词组或单个符号），逐条可带自定义违规提示 note
   # - term: Ⓡ
   #   note: 禁用注册商标符号
+repeat_min_len: 10          # R4.10 重复句段检测最小长度：连续片段≥该值且出现≥2 次报潜在冗余；0=默认 10
 boast_words:
   - 首次证实
   - 颠覆性

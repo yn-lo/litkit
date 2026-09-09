@@ -37,6 +37,7 @@ style_exempt_terms:         # R4.5 blacklist exemptions (disciplinary terms/coll
 forbidden_terms:            # R7.3 custom forbidden terms in body text (phrase or a single character/symbol); each may carry a custom note
   # - term: Ⓡ
   #   note: Avoid the registered-trademark symbol
+repeat_min_len: 10          # R4.10 Min length of a repeated fragment (>=2 occurrences flagged as redundancy); 0=default 10
 boast_words:
   - revolutionary
   - groundbreaking

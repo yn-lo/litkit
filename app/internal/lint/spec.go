@@ -58,6 +58,9 @@ type ManuscriptSpec struct {
 	// ForbiddenTerms R7.3 自定义正文禁用字词（词组或单个字符/符号均可）。
 	// 每条可带自定义违规提示 note；命中时 verify 在 AI 汇报中展示 note（空=默认提示）。
 	ForbiddenTerms []ForbiddenTerm `yaml:"forbidden_terms"`
+	// RepeatMinLen R4.10 重复句段检测最小长度：正文连续字串 ≥ 该值且出现 ≥2 次判潜在冗余。
+	// 0/缺省=10。调小（如 5）扫描更激进，术语反复出现会多报；调大减少干扰。
+	RepeatMinLen int `yaml:"repeat_min_len"`
 	// SkipRules 永久跳过的规则 ID（等效每次 verify --skip），空=全部启用。
 	SkipRules []string `yaml:"skip_rules"`
 }
@@ -242,6 +245,9 @@ func (s *ManuscriptSpec) validateCitation() error {
 	if s.Citation.SelfCitationMaxRatio < 0 {
 		return fmt.Errorf("citation.self_citation_max_ratio 必须 >= 0（0=默认 0.15），got %v", s.Citation.SelfCitationMaxRatio)
 	}
+	if s.RepeatMinLen < 0 {
+		return fmt.Errorf("repeat_min_len 必须 >= 0（0=默认 10），got %d", s.RepeatMinLen)
+	}
 	return nil
 }
 
@@ -282,6 +288,14 @@ func (s *ManuscriptSpec) SectionList() []string {
 // BoastWordList 返回夸大词表；spec 为空时返回 nil（verify 跳过）。
 func (s *ManuscriptSpec) BoastWordList() []string {
 	return s.BoastWords
+}
+
+// RepeatLen 返回重复句段检测最小长度（R4.10）；未配置（0/缺省）时用默认 10。
+func (s *ManuscriptSpec) RepeatLen() int {
+	if s.RepeatMinLen <= 0 {
+		return defaultRepeatMinLen
+	}
+	return s.RepeatMinLen
 }
 
 // StyleLabel 返回引用样式的 AI 可读标签。

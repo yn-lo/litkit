@@ -68,13 +68,20 @@ const (
 	ruleSelfCite   = "R5.9" // 自引比例上限
 
 	// 行文质量微规则 ID（final 模式，借鉴 academic-paper writing_quality_check）
-	ruleR43 = "R4.3" // 破折号滥用
-	ruleR44 = "R4.4" // 段长均匀（AI 痕迹）
-	ruleR45 = "R4.5" // AI 高频术语黑名单
-	ruleR46 = "R4.6" // 提纲挈领式开头（AI 痕迹）
-	ruleR47 = "R4.7" // 句长突变缺失（节奏呆板）
-	ruleR48 = "R4.8" // 分号过密
-	ruleR49 = "R4.9" // 摘要禁引用
+	ruleR43  = "R4.3"  // 破折号滥用
+	ruleR44  = "R4.4"  // 段长均匀（AI 痕迹）
+	ruleR45  = "R4.5"  // AI 高频术语黑名单
+	ruleR46  = "R4.6"  // 提纲挈领式开头（AI 痕迹）
+	ruleR47  = "R4.7"  // 句长突变缺失（节奏呆板）
+	ruleR48  = "R4.8"  // 分号过密
+	ruleR49  = "R4.9"  // 摘要禁引用
+	ruleR410 = "R4.10" // 重复句段（潜在冗余）
+
+	// 重复句段检测默认最小长度（R4.10），spec.repeat_min_len 可覆盖。
+	defaultRepeatMinLen = 10
+
+	// 违规文案中重复片段预览的最大 rune 数（R4.10）。
+	snippetMaxRunes = 30
 
 	// 破折号滥用阈值（R4.3）：全文双破折号超过该值违规。
 	emDashLimit = 4
@@ -1556,6 +1563,130 @@ func checkR49(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
+// repeatCand 一条重复片段候选：首次出现区间 [start,end) 与全部出现区间。
+type repeatCand struct {
+	start, end int
+	occ        [][2]int // 全部出现区间
+}
+
+// repeatCandidates 扫描重复片段候选：L-gram 分组两两配对取极大匹配
+// （起点左一字不同、不可再左扩），右扩到最长。
+// ponytail: 组内两两配对 O(k²)（k=同一 L-gram 出现次数），正常文稿 k 很小；
+// 病理重复（同段几十次）退化为 O(n²) 仍可用，实测成瓶颈再换后缀数组。
+func repeatCandidates(text []rune, minLen int) []repeatCand {
+	groups := map[string][]int{}
+	for p := 0; p+minLen <= len(text); p++ {
+		key := string(text[p : p+minLen])
+		groups[key] = append(groups[key], p)
+	}
+	bySpan := map[[2]int]int{} // (start,end) → cands 下标（同一片段多次出现合并）
+	var cands []repeatCand
+	for _, pos := range groups {
+		if len(pos) < 2 {
+			continue
+		}
+		for a := 0; a < len(pos); a++ {
+			for b := a + 1; b < len(pos); b++ {
+				i, j := pos[a], pos[b]
+				if i > 0 && j > 0 && text[i-1] == text[j-1] {
+					continue // 可左扩：由更左起点的配对报告
+				}
+				e := 0
+				for i+e < len(text) && j+e < len(text) && text[i+e] == text[j+e] {
+					e++
+				}
+				sp := [2]int{i, i + e}
+				if idx, ok := bySpan[sp]; ok {
+					cands[idx].occ = append(cands[idx].occ, [2]int{j, j + e})
+					continue
+				}
+				bySpan[sp] = len(cands)
+				cands = append(cands, repeatCand{start: i, end: i + e, occ: [][2]int{{i, i + e}, {j, j + e}}})
+			}
+		}
+	}
+	return cands
+}
+
+// longestRepeats 最长优先去重：候选每次出现均包含于已保留更长候选的出现内 → 丢弃。
+func longestRepeats(cands []repeatCand) []repeatCand {
+	sort.Slice(cands, func(a, b int) bool {
+		la, lb := cands[a].end-cands[a].start, cands[b].end-cands[b].start
+		if la != lb {
+			return la > lb
+		}
+		return cands[a].start < cands[b].start
+	})
+	inOcc := func(iv [2]int, c *repeatCand) bool {
+		for _, o := range c.occ {
+			if iv[0] >= o[0] && iv[1] <= o[1] {
+				return true
+			}
+		}
+		return false
+	}
+	var kept []repeatCand
+	for _, c := range cands {
+		covered := true
+		for _, iv := range c.occ {
+			ok := false
+			for k := range kept {
+				if inOcc(iv, &kept[k]) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				covered = false
+				break
+			}
+		}
+		if !covered {
+			kept = append(kept, c)
+		}
+	}
+	return kept
+}
+
+// checkR410 重复句段：正文任意连续 ≥spec.repeat_min_len 字片段出现 ≥2 次判潜在冗余（S 类）。
+// 只报最长重复段：某片段每次出现均包含于更长重复段的出现内时不单独报，避免同段碎片刷屏。
+func checkR410(src *Source, spec *ManuscriptSpec) []Violation {
+	minLen := spec.RepeatLen()
+	if minLen < 2 {
+		minLen = 2 // 1-gram 分组爆炸且无判冗余意义，钳到 2
+	}
+	// 拼接正文（去标题/空行），lineOf 记录每个字符位置对应的原始行号
+	var text []rune
+	var lineOf []int
+	for i, ln := range src.Body {
+		t := strings.TrimSpace(ln)
+		if t == "" || isHeading(t) {
+			continue
+		}
+		for _, r := range t {
+			text = append(text, r)
+			lineOf = append(lineOf, src.bodyIdx[i])
+		}
+	}
+	if len(text) < 2*minLen {
+		return nil
+	}
+	var vs []Violation
+	for _, c := range longestRepeats(repeatCandidates(text, minLen)) {
+		snippet := string(text[c.start:c.end])
+		if r := []rune(snippet); len(r) > snippetMaxRunes {
+			snippet = string(r[:snippetMaxRunes]) + "…"
+		}
+		vs = append(vs, Violation{
+			RuleID:     ruleR410,
+			Line:       lineOf[c.start],
+			Problem:    fmt.Sprintf("连续 %d 字片段 %q 重复出现 %d 次（潜在冗余）", c.end-c.start, snippet, len(c.occ)),
+			Suggestion: "删减或改写重复表述，同一论述保留一处",
+		})
+	}
+	return vs
+}
+
 // checkR53 引用密度：引用聚集程度 + 全文引用篇数区间。
 //
 // 聚集检查：连续 N+1 个引用（中间仅空白）连串出现违规——引用应分散到论述对应处，
@@ -1773,6 +1904,7 @@ func AllRules() []Rule {
 		{ID: ruleR47, Name: "句长突变", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR47},
 		{ID: ruleR48, Name: "分号过密", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR48},
 		{ID: ruleR49, Name: "摘要禁引用", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR49},
+		{ID: ruleR410, Name: "重复句段", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR410},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
 		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},

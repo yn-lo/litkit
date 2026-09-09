@@ -63,7 +63,7 @@ owner: litkit-core
   封面、简表、签章页均计入 Body。改为：spec 定义 sections 时，
   首个 section 标题之前的行不进入 Body，但标题行保留（主标题仍受 R1.2 等检查，
   封面字段文字排除）——ParseSource 一处收口，
-  全部既有规则（标点/加粗/AI 痕迹/引用/字数等 19 条）自动只作用于 section 范围，
+  全部既有规则（标点/加粗/AI 痕迹/引用/字数等 41 条）自动只作用于 section 范围，
   规则代码零改动；未定义 sections 的旧 yaml 保持现状（向后兼容）。
   不引入 body_start/body_end 变量，sections 即起止标记
 - **作用域改动不新增章节结构规则**：结构缺失/顺序由既有 R1.5/R1.9 覆盖；

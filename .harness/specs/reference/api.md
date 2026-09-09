@@ -188,7 +188,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
-> 21 条规则（18 A 类 + 3 S 类）；M 类（R2.4/R4.3）仅输出人工核对提示，不判 fail。
+> 41 条规则（27 A 类自动判定 + 14 S 类半自动）；S 类命中仅提示人工确认，不判 fail。
 > spec 的 `skip_rules` 字段可永久跳过指定规则（等效每次 `--skip`）。
 > 模式递增：chapter → draft → final，高模式包含低模式全部规则。
 > Markdown 分段：排除代码块/参考文献/表格后检查 Body。
@@ -207,7 +207,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
   ],
   "passed": false,
   "exitHint": "fix_and_rerun",
-  "manualChecklist": ["R2.4: 核对统计量与原文一致", "R4.3: 确认引用与论述对应"],
+  "manualChecklist": ["数据一致性：核对正文数据与表格/图片是否一致", "术语缩写：核对缩写首次出现是否给出全称"],
   "recency": { "total": 24, "within5": 15, "over5": 9, "over10": 3, "recentRatio": 0.625 }
 }
 ```
