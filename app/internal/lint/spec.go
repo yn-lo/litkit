@@ -39,7 +39,7 @@ const (
 type ManuscriptSpec struct {
 	PaperType string   `yaml:"paper_type"` // review | empirical | book | proposal
 	Lang      string   `yaml:"lang"`       // zh | en
-	Journal   string   `yaml:"journal"`    // 目标期刊（影响引用格式默认值与 checklist）
+	Journal   string   `yaml:"journal"`    // 目标期刊（写入留档；当前无规则读取）
 	Sections  []string `yaml:"sections"`   // 当前论文类型的章节清单
 	// CitationMode 引用模式：inline（默认，正文内联引用）| endnote（正文不内联，文末参考文献）。
 	CitationMode string `yaml:"citation_mode"`

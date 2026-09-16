@@ -173,16 +173,16 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（rules.md / checklist.md / specs/manuscript-spec.yaml / verifier_models.json，go:embed 编译进二进制）并渲染 AGENTS.md「撰写硬性规定」段；支持 `--type review\|empirical`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--refresh`（按现有 yaml 重渲染）、`--force`；交互式向导（stdin 是终端时） |
+| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（`.env` + `litkit.db` + `AGENTS.md` + `verifier_models.json`）与 `.agents/skills/`（litkit / academic-style / manuscript-format 三个技能），并按 `--type`/`--lang` 生成 `.litkit/<type-lang>/manuscript-spec.yaml`（模板 go:embed 编译进二进制）；支持 `--type review\|empirical\|book\|proposal`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--force`；交互式向导（stdin 是终端时） |
 | FR-LINT-02 | zh 专属规则 | P0 | 覆盖：全半角标点、中文引号、句式冗余（"进行""通过…使"）、"的/地/得"、"了/着/过"、AI 痕迹；规则标注 langs: zh |
 | FR-LINT-03 | en 专属规则 | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、AI 痕迹；规则标注 langs: en |
 | FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注、types 标注（空=全部类型；如 empirical 仅实证论文触发）；**规则代码单套按 langs x types 过滤，不设多套系统** |
 | FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
-| FR-LINT-06 | 人工审查清单 checklist.md | P1 | 覆盖 M 类规则 |
-| FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；改后 `litkit init --refresh` 同步 AGENTS.md |
-| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：M7 embedding 依赖（Layer 1 语义预筛）、人工标注集阈值校准 |
+| FR-LINT-06 | 人工审查清单（M 类规则） | P1 | 由 `verify` 输出的 `manualChecklist` 字段承载（不落独立文件，避免与规则集脱同步），M 类不自动判 fail |
+| FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；**manuscript-spec.yaml 即单一事实源**（含顶部「撰写硬性规定」注释），改后立即生效，无需重渲染任何文件 |
+| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：M7 embedding 依赖（Layer 1 语义预筛）、人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
 | FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令 |
-| FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | AGENTS.md 携带由 manuscript-spec.yaml 渲染的精简祈使句段落（非 yaml 数据复制），AI 写稿时自动遵守，事后 verify 兜底 |
+| FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | `manuscript-spec.yaml` 顶部注释即撰写硬性规定（精简祈使句，非 yaml 数据复制），`.litkit/AGENTS.md` 与 `.agents/skills/` 各技能均指向它；AI 写稿时自动遵守，事后 verify 兜底 |
 
 ### 4.5 FR-LIB 本地文献库
 

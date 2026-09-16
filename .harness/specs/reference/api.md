@@ -44,21 +44,21 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 输出：`{ total, sourceResults, errors, papers[] }`
 
 ```
-litkit init [--force] [--type review|empirical|book] [--lang zh|en] [--journal NAME] [--refresh]
+litkit init [--force] [--type review|empirical|book|proposal] [--lang zh|en] [--journal NAME]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
-| `--force` | 覆盖已存在的 `.env` / `AGENTS.md` | 关 |
-| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `book`（书籍，中文编校细则） | empirical |
+| `--force` | 覆盖已存在的 `.env` / `.litkit/AGENTS.md` 等模板文件 | 关 |
+| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `book`（书籍，中文编校细则）\| `proposal`（标书） | empirical |
 | `--lang` | 撰写语言 | zh |
-| `--journal` | 目标期刊名称（写入 spec，影响引用格式默认值与 checklist） | 空 |
-| `--refresh` | 按现有 manuscript-spec.yaml 重新生成 AGENTS.md 撰写段 | 关 |
+| `--journal` | 目标期刊名称（写入 spec 的 `journal` 字段；当前仅留档，暂无规则读取） | 空 |
 
-> 初始化当前工作目录：生成 `.env`（默认配置）与 `AGENTS.md`（AI agent 使用说明，
-> 含检索策略：英文词 / `--mode full` / 时间范围放宽），并初始化 `litkit.db`。
-> 已存在文件默认不覆盖。换新工作目录 → `litkit init`。
-> `--type`/`--lang`/`--journal` 仅在首次生成 yaml 时生效；`--refresh` 按现有 yaml 重新渲染 AGENTS.md。
+> 初始化当前工作目录：生成 `.env`（默认配置）、`.litkit/`（`AGENTS.md` + `verifier_models.json` + `litkit.db`）、
+> `.agents/skills/`（litkit / academic-style / manuscript-format 技能）与 `.litkit/<type-lang>/manuscript-spec.yaml`。
+> 已存在文件默认不覆盖（`--force` 覆盖）。换新工作目录 → `litkit init`。
+> 撰写硬性规定即 `manuscript-spec.yaml` 顶部注释（单一事实源），`AGENTS.md` 只是指向它的地图，
+> 故改 yaml 阈值后无需重新渲染任何文件。
 > 交互式向导：旗标未显式传值且 stdin 是终端时，进入问答。
 
 ```
@@ -188,9 +188,11 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
-> 41 条规则（27 A 类自动判定 + 14 S 类半自动）；S 类命中仅提示人工确认，不判 fail。
+> 42 条规则（28 A 类自动判定 + 14 S 类半自动）；S 类命中仅提示人工确认，不判 fail。
 > spec 的 `skip_rules` 字段可永久跳过指定规则（等效每次 `--skip`）。
 > 模式递增：chapter → draft → final，高模式包含低模式全部规则。
+> R5.2（`[待引证]` 占位符）仅在 final 模式判违规：chapter/draft 阶段为"证据不足待补文献"的合法中间态；
+> R5.4（`[TODO]`/`[TBD]` 待办标记）draft 起即违规。
 > Markdown 分段：排除代码块/参考文献/表格后检查 Body。
 
 输出：

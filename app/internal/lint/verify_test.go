@@ -273,15 +273,43 @@ func TestRule_R5_1(t *testing.T) {
 	}
 }
 
+// TestRule_R5_2 待引证占位符：chapter/draft 为合法中间态（写作中证据不足的显式出口），
+// 仅 final 模式判违规（终稿必须补齐）。
 func TestRule_R5_2(t *testing.T) {
-	fr := runContent(t, "此处需要补充证据[待引证]。\n", DefaultSpec(), zhDraft())
+	const content = "此处需要补充证据[待引证]。\n"
+	for _, opts := range []Options{zhChapter(), zhDraft()} {
+		fr := runContent(t, content, DefaultSpec(), opts)
+		if got := violationsOf(fr, "R5.2"); len(got) != 0 {
+			t.Errorf("%s 模式下 [待引证] 应视为合法中间态，got %v", opts.Mode, got)
+		}
+	}
+	fr := runContent(t, content, DefaultSpec(), zhFinal())
 	got := violationsOf(fr, "R5.2")
 	if len(got) != 1 || got[0].Line != 1 {
-		t.Errorf("待引证标记应在第 1 行违规，got %v", got)
+		t.Errorf("final 模式下待引证占位符应在第 1 行违规，got %v", got)
 	}
-	fr = runContent(t, "此处证据充分[@key2021]。\n", DefaultSpec(), zhDraft())
+	fr = runContent(t, "此处证据充分[@key2021]。\n", DefaultSpec(), zhFinal())
 	if got := violationsOf(fr, "R5.2"); len(got) != 0 {
-		t.Errorf("无标记不应违规，got %v", got)
+		t.Errorf("无占位符不应违规，got %v", got)
+	}
+}
+
+// TestRule_R5_4 待办标记：[TODO]/[TBD] 是作者备忘，draft 起即违规，
+// 与 [待引证] 的分模式语义区分开（拆分前二者共用 R5.2）。
+func TestRule_R5_4(t *testing.T) {
+	for _, marker := range []string{"[TODO]", "[TBD]"} {
+		fr := runContent(t, "此处"+marker+"待处理。\n", DefaultSpec(), zhDraft())
+		got := violationsOf(fr, "R5.4")
+		if len(got) != 1 || got[0].Line != 1 {
+			t.Errorf("%s 应在第 1 行违规，got %v", marker, got)
+		}
+		if got := violationsOf(fr, "R5.2"); len(got) != 0 {
+			t.Errorf("%s 不应触发 R5.2，got %v", marker, got)
+		}
+	}
+	fr := runContent(t, "此处证据充分[@key2021]。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R5.4"); len(got) != 0 {
+		t.Errorf("无待办标记不应违规，got %v", got)
 	}
 }
 

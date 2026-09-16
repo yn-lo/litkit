@@ -154,6 +154,8 @@ var (
 	numCiteRe       = regexp.MustCompile(`\[\d+\]`)                                                                         // [数字]
 	citePunctRe     = regexp.MustCompile(`[。，,.]\s*\[@[^\]]+\]`)                                                            // 标点后紧跟引用（违规）
 	citeRe          = regexp.MustCompile(`\[@[^\]]+\]`)                                                                     // 引用占位符 [@citeKey]
+	pendingCiteRe   = regexp.MustCompile(`\[待引证\]`)                                                                         // 待引证占位符（R5.2，证据不足待人工补文献）
+	todoMarkerRe    = regexp.MustCompile(`\[(?:TODO|TBD)\]`)                                                                // 待办标记（R5.4）
 	citeRunRe       = regexp.MustCompile(`(?:\[\@[^\]]+\]\s*){2,}`)                                                         // 连续引用连串（2+ 个，中间仅空白）
 	figTableRefRe   = regexp.MustCompile(`(?i)(图|表|table|figure)s?\s*(\d+)`)                                                // 图表引用/题注
 	redundantRes    = []*regexp.Regexp{
@@ -1112,20 +1114,20 @@ func checkR51(src *Source, _ *ManuscriptSpec) []Violation {
 	return vs
 }
 
-// checkR52 待引证标记：[待引证] / [TODO] / [TBD] 违规。
+// checkR52 待引证占位符：[待引证] 未补齐违规。
+//
+// 仅 final 模式生效：chapter/draft 阶段 [待引证] 是"证据不足待人工补文献"的合法中间态，
+// 写作过程中不得因此判 fail（否则模型会为规避违规而删除论断或改写为不承重的空话）。
+// 终稿（final）必须清零，故 From 设为 ModeFinal。
 func checkR52(src *Source, _ *ManuscriptSpec) []Violation {
-	var vs []Violation
-	for i, ln := range src.Body {
-		if strings.Contains(ln, "[待引证]") || strings.Contains(ln, "[TODO]") || strings.Contains(ln, "[TBD]") {
-			vs = append(vs, Violation{
-				RuleID:     "R5.2",
-				Line:       src.bodyIdx[i],
-				Problem:    "含待引证标记",
-				Suggestion: "补充引用后移除标记",
-			})
-		}
-	}
-	return vs
+	return bodyRuleViolations(src, pendingCiteRe, "R5.2",
+		"待引证占位符未补齐",
+		"补充引用后移除标记；文献须来自文献库（litkit search / lib list）")
+}
+
+// checkR54 待办标记：[TODO] / [TBD] 违规（作者备忘，任何模式都应清除，故 From 为 ModeDraft）。
+func checkR54(src *Source, _ *ManuscriptSpec) []Violation {
+	return bodyRuleViolations(src, todoMarkerRe, "R5.4", "含待办标记", "清除标记")
 }
 
 // checkR61 引用位置：标点后紧跟 [@xxx] 违规（引用应在标点前）。
@@ -1906,8 +1908,9 @@ func AllRules() []Rule {
 		{ID: ruleR49, Name: "摘要禁引用", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR49},
 		{ID: ruleR410, Name: "重复句段", Category: CatStyle, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR410},
 		{ID: "R5.1", Name: "引用占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR51},
-		{ID: "R5.2", Name: "待引证标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR52},
+		{ID: "R5.2", Name: "待引证占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
+		{ID: "R5.4", Name: "待办标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR54},
 		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61, Fix: fixR61},
 		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71, Fix: fixR71},
 		{ID: "R7.2", Name: "自我夸大", Category: CatBoastWords, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},
