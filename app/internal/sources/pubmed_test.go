@@ -145,6 +145,50 @@ func TestParsePubmedEFetch(t *testing.T) {
 	}
 }
 
+// 标题/摘要内嵌 sup/sub 等标签时，内容不得丢失（chardata 会丢弃子元素文本），
+// 上下标语义转 Unicode 字符保留（10³ / H₂O / CD⁴）。
+func TestParsePubmedEFetch_MixedContent(t *testing.T) {
+	xml := `<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">33333333</PMID>
+      <Article>
+        <ArticleTitle>CD<sup>4</sup> T cells at 10<sup>3</sup> per μL &amp; H<sub>2</sub>O assays</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="METHODS">Doses of 10<sup>3</sup> CFU with H<sub>2</sub>O control.</AbstractText>
+          <AbstractText>Plain segment with &lt;b&gt;escaped&lt;/b&gt; markup.</AbstractText>
+        </Abstract>
+        <Journal>
+          <Title>J Immuno</Title>
+          <JournalIssue><PubDate><Year>2022</Year></PubDate></JournalIssue>
+        </Journal>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>`
+	papers, err := parsePubmedEFetch([]byte(xml))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(papers) != 1 {
+		t.Fatalf("应返回 1 篇，got %d", len(papers))
+	}
+	p := papers[0]
+	wantTitle := "CD⁴ T cells at 10³ per μL & H₂O assays"
+	if p.Title != wantTitle {
+		t.Errorf("Title 上标语义应保留：got %q want %q", p.Title, wantTitle)
+	}
+	for _, want := range []string{"10³ CFU", "H₂O control", "Plain segment with"} {
+		if !strings.Contains(p.Abstract, want) {
+			t.Errorf("Abstract 应含 %q，got %q", want, p.Abstract)
+		}
+	}
+	if !strings.HasPrefix(p.Abstract, "METHODS: ") {
+		t.Errorf("Abstract 应保留段 Label 前缀，got %q", p.Abstract)
+	}
+}
+
 func TestPubmedSource_Search_endToEnd(t *testing.T) {
 	// httptest 同时模拟 esearch + efetch；按 path 分流
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

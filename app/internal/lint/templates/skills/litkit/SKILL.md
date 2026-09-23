@@ -89,7 +89,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --skip-check boast_wor
 
 **引用健康检查**（final 模式，需本地库 `--type/--lang` 生成 `.litkit`）：
 
-- R5.6 引用防伪：`[@citeKey]` 必须存在于本地库（A 类，退出码 1）
+- R5.6 引用防伪：`[@citeKey]` 必须存在于本地库（A 类，退出码 1）；R5.6–R5.9 遵循 verify 的 `--rule`/`--skip` 筛选（如 `--rule R3.1` 局部验证时不查库）
 - R5.7 撤稿：联网查 Crossref，被引文献已撤稿即报（A 类）
 - R5.8 引用时效：距今超 `max_age_years`（默认 10）逐篇提示；距今超 `warn_age_years`（默认 5）作两档计数汇总（`recency` 字段：>5 年 N 篇 / >10 年 K 篇 / 近 5 年占比）；均 S 类；**时效仅报告，非建议替换**——经典或奠基性文献可按需保留，勿因年代久远一律找替代文献
 - R5.9 自引比例：配置 `self_citation_authors` 后可启用，比例超 `self_citation_max_ratio`（默认 0.15）提示（S 类）

@@ -12,7 +12,7 @@
       "api_key": "",
       "base_url": "",
       "temperature": 0.1,
-      "max_tokens": 150
+      "max_tokens": 15000
     },
     {
       "id": "deepseek-chat",
@@ -22,7 +22,7 @@
       "api_key": "",
       "base_url": "",
       "temperature": 0.1,
-      "max_tokens": 150
+      "max_tokens": 15000
     },
     {
       "id": "qwen-plus",
@@ -32,7 +32,7 @@
       "api_key": "",
       "base_url": "",
       "temperature": 0.1,
-      "max_tokens": 150,
+      "max_tokens": 15000,
       "extra_body": { "enable_thinking": false }
     }
   ],

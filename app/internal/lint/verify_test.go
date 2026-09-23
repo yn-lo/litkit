@@ -180,6 +180,10 @@ func TestRule_R2_1(t *testing.T) {
 		{"结果显示 P<0.001 显著。\n", 0},  // 正确
 		{"结果显示 P=0.006 显著。\n", 0},  // 正确（3 位）
 		{"结果显示 P=0.03 显著。\n", 1},   // 默认 3 位，仅 2 位违规
+		{"结果显示 P>0.0001 显著。\n", 0}, // 大于类保留原语义，不折叠、不补位
+		{"结果显示 P≥0.0001 显著。\n", 0}, // 大于类同理
+		{"结果显示 P>0.05 显著。\n", 0},   // 大于类不强制小数位
+		{"结果显示 p>0.05 显著。\n", 1},   // 大写规范仍适用于大于类
 	}
 	for _, c := range cases {
 		fr := runContent(t, c.content, DefaultSpec(), zhDraft())
@@ -883,6 +887,46 @@ func TestRunFilesWithStore_NilStore_NoR56(t *testing.T) {
 	}
 }
 
+// 附加检查（R5.6–R5.9，注册表外）须遵循与注册表规则相同的 --rule/--skip 筛选：
+// 局部验证（如 --rule R3.1）不应被缺失引用阻断。
+func TestRunFilesWithStore_ExtraChecksFollowFilters(t *testing.T) {
+	s := newTestStore(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(path, []byte("这是正文，引用[@missing]文献。\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// --skip R5.6：缺失引用不报，exitHint 与不查库基线一致（不再被 R5.6 提升）
+	base, err := RunFilesWithStore([]string{path}, DefaultSpec(), Options{Lang: "zh", Mode: ModeDraft}, nil, nil)
+	if err != nil {
+		t.Fatalf("baseline RunFilesWithStore: %v", err)
+	}
+	rep, err := RunFilesWithStore([]string{path}, DefaultSpec(),
+		Options{Lang: "zh", Mode: ModeDraft, Skip: []string{ruleCiteExists}}, s, nil)
+	if err != nil {
+		t.Fatalf("RunFilesWithStore: %v", err)
+	}
+	if got := violationsOf(rep.Files[0], ruleCiteExists); len(got) != 0 {
+		t.Errorf("skip R5.6 不应报 R5.6，got %v", got)
+	}
+	if rep.ExitHint != base.ExitHint {
+		t.Errorf("skip R5.6 后 exitHint 应与纯规则基线一致（缺失引用不阻断）：got %s，baseline %s",
+			rep.ExitHint, base.ExitHint)
+	}
+	// --rule R3.1（Only）：R5.6 同样不运行，结构规则也被筛掉 → 全部通过
+	rep, err = RunFilesWithStore([]string{path}, DefaultSpec(),
+		Options{Lang: "zh", Mode: ModeDraft, Only: []string{"R3.1"}}, s, nil)
+	if err != nil {
+		t.Fatalf("RunFilesWithStore: %v", err)
+	}
+	if got := violationsOf(rep.Files[0], ruleCiteExists); len(got) != 0 {
+		t.Errorf("only R3.1 时不应运行 R5.6，got %v", got)
+	}
+	if rep.ExitHint != exitPass || !rep.Passed {
+		t.Errorf("only R3.1 后应为 pass，got %s passed=%v", rep.ExitHint, rep.Passed)
+	}
+}
+
 func mustParse(t *testing.T, content string) *Source {
 	t.Helper()
 	dir := t.TempDir()
@@ -1336,6 +1380,7 @@ func TestRule_R3_3(t *testing.T) {
 		{"1988—1998年。\n", 0},     // 合规
 		{"创伤后24～48小时。\n", 0},     // 合规
 		{"剂量为5 mg/(kg·d)。\n", 0}, // 合规
+		{"剂量为10mg～1g。\n", 0},     // 不同单位范围是合法科学表达，不报（也不可自动修）
 	}
 	for _, c := range cases {
 		fr := runContent(t, c.content, DefaultSpec(), zhDraft())

@@ -121,12 +121,26 @@ func fixR32(line string, _ *ManuscriptSpec) (string, bool) {
 }
 
 // fixR21 P 值格式（R2.1）：大写、前导零、小数位、P<0.001。
+// 大于类比较（>/>=/≥）保留原语义：小值边界有独立统计含义（如 P>0.0001），
+// 不得折叠为 P<0.001，也不重排小数位（避免产出 P>0.000 的荒谬形式）。
 func fixR21(line string, spec *ManuscriptSpec) (string, bool) {
 	changed := false
 	decimals := spec.PValueDecimals()
 	out := pValueRe.ReplaceAllStringFunc(line, func(m string) string {
 		sub := pValueRe.FindStringSubmatch(m)
 		op, num := sub[2], sub[3]
+		if strings.Contains(op, ">") || strings.Contains(op, "≥") {
+			// 大于类：仅规范大写与前导零，保留原小数位与语义
+			n := num
+			if strings.HasPrefix(n, ".") {
+				n = "0" + n
+			}
+			fixed := "P" + op + n
+			if fixed != m {
+				changed = true
+			}
+			return fixed
+		}
 		if strings.HasPrefix(num, ".") {
 			num = "0" + num
 		}
@@ -194,10 +208,24 @@ func fixR33(line string, _ *ManuscriptSpec) (string, bool) {
 			changed = true
 		}
 	}
+	applyFn := func(re *regexp.Regexp, fn func(string) string) {
+		before := line
+		line = re.ReplaceAllStringFunc(line, fn)
+		if line != before {
+			changed = true
+		}
+	}
 	// 替换模板用 ${n} 显式边界：$n 后紧跟汉字时会被 Go 解析为命名组导致替换为空
 	apply(fixSlashUnitRe, "${1}/(${2}·${3})") // 先处理复合单位（避免 kg 被误当单位两端）
 	apply(fixPctRangeRe, "${1}%～${2}%")
-	apply(fixUnitRangeRe, "${1}～${3}${4}")
+	applyFn(fixUnitRangeRe, func(m string) string {
+		sub := fixUnitRangeRe.FindStringSubmatch(m)
+		// 仅两端单位相同时才可省略重复单位；不同单位（10mg～1g）语义独立，不可合并
+		if !strings.EqualFold(sub[2], sub[4]) {
+			return m
+		}
+		return sub[1] + "～" + sub[3] + sub[4]
+	})
 	apply(fixYearRangeRe, "${1}—${2}年")
 	apply(fixHourRangeRe, "${1}～${2}${3}")
 	return line, changed

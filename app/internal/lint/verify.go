@@ -233,6 +233,7 @@ func CheckCiteKeys(src *Source, store *storage.Store) []Violation {
 // RunFilesWithStore 对文件执行规则验证 + 引用完整性附加校验。
 //
 // 在纯规则 RunFiles 之上叠加 R5.6 查库 + R5.7 撤稿（联网）+ R5.8 时效 + R5.9 自引；
+// 附加检查与注册表规则遵循同一 --rule/--skip 筛选（见 extraCheckEnabled）。
 // store 为 nil 时退化为纯规则验证，resolver 为 nil 时跳过撤稿。
 // 追加违规后按 A/S 方法重算 exitHint（R5.6/R5.7 属 A 类，R5.8/R5.9 属 S 类）。
 func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store *storage.Store, resolver RetractionResolver) (Report, error) {
@@ -254,19 +255,27 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 				return report, perr
 			}
 			srcs = append(srcs, src)
-			report.Files[i].Violations = append(report.Files[i].Violations, CheckCiteKeys(src, store)...)
+			if extraCheckEnabled(ruleCiteExists, opts) {
+				report.Files[i].Violations = append(report.Files[i].Violations, CheckCiteKeys(src, store)...)
+			}
 		}
 		// 撤稿/时效/自引均跨文件聚合：同一 citeKey 只在首次出现处报一条
-		if resolver != nil {
+		if resolver != nil && extraCheckEnabled(ruleRetracted, opts) {
 			for _, h := range checkRetractions(srcs, store, resolver) {
 				report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
 			}
 		}
+		currencyOn := extraCheckEnabled(ruleCurrency, opts)
+		selfCiteOn := extraCheckEnabled(ruleSelfCite, opts)
 		health, recency := checkCitationHealth(srcs, store, spec, time.Now().Year())
 		for _, h := range health {
-			report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
+			if (h.v.RuleID == ruleCurrency && currencyOn) || (h.v.RuleID == ruleSelfCite && selfCiteOn) {
+				report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
+			}
 		}
-		report.Recency = recency
+		if currencyOn {
+			report.Recency = recency
+		}
 	}
 	hasA, hasS := recomputeExitHint(method, report,
 		[]string{ruleCiteExists, ruleRetracted}, []string{ruleCurrency, ruleSelfCite})
@@ -280,6 +289,16 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	}
 	report.Passed = report.ExitHint == exitPass
 	return report, nil
+}
+
+// extraCheckEnabled 注册表外附加检查（R5.6–R5.9，不在 AllRules 中）是否运行：
+// 遵循与注册表规则相同的 --rule(Only)/--skip(Skip) 筛选；类别筛选不适用
+// （这些规则不在注册表，无类别归属）。
+func extraCheckEnabled(ruleID string, opts Options) bool {
+	if len(opts.Only) > 0 && !contains(opts.Only, ruleID) {
+		return false
+	}
+	return !contains(opts.Skip, ruleID)
 }
 
 // recomputeExitHint 遍历报告违规，按方法分类重算 A/S 命中。

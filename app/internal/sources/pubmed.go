@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,16 +54,23 @@ type pubmedArticleSet struct {
 	PubmedArticles []pubmedArticle `xml:"PubmedArticle"`
 }
 
+// pubmedAbstractText AbstractText 段：Label 属性 + 混合内容。
+// Value 用 innerxml 而非 chardata——PubMed 标题/摘要内嵌 <sup>/<sub>/<italic> 等
+// 标签，chardata 会丢弃子元素内文本（10<sup>3</sup> 变 10），破坏科学内容。
+type pubmedAbstractText struct {
+	Label string `xml:"Label,attr"`
+	Value string `xml:",innerxml"`
+}
+
 type pubmedArticle struct {
 	MedlineCitation struct {
 		PMID    string `xml:"PMID"`
 		Article struct {
-			Title    string `xml:"ArticleTitle"`
+			Title struct {
+				Inner string `xml:",innerxml"` // innerxml 不能与元素名同用，借包装字段取混合内容
+			} `xml:"ArticleTitle"`
 			Abstract struct {
-				Texts []struct {
-					Label string `xml:"Label,attr"`
-					Value string `xml:",chardata"`
-				} `xml:"AbstractText"`
+				Texts []pubmedAbstractText `xml:"AbstractText"`
 			} `xml:"Abstract"`
 			Authors []struct {
 				ForeName string `xml:"ForeName"`
@@ -85,6 +94,44 @@ type pubmedArticle struct {
 			Value  string `xml:",chardata"`
 		} `xml:"ArticleIdList>ArticleId"`
 	} `xml:"PubmedData"`
+}
+
+// PubMed 混合内容转平文用的标签与上下标映射。
+var (
+	supTagRe   = regexp.MustCompile(`<sup>(.*?)</sup>`)
+	subTagRe   = regexp.MustCompile(`<sub>(.*?)</sub>`)
+	otherTagRe = regexp.MustCompile(`<[^>]+>`)
+
+	supMap = map[rune]rune{'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '−': '⁻', 'n': 'ⁿ'}
+	subMap = map[rune]rune{'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '−': '₋'}
+)
+
+// scriptToUnicode 上下标内容整体转 Unicode 上下标字符；含不可映射字符时原样返回（退化为平文内联）。
+func scriptToUnicode(s string, m map[rune]rune) string {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		mapped, ok := m[r]
+		if !ok {
+			return s
+		}
+		out = append(out, mapped)
+	}
+	return string(out)
+}
+
+// stripInlineXML 将 PubMed 标题/摘要的混合 XML 内容转平文：
+// sup/sub 内容转 Unicode 上下标保留语义（10<sup>3</sup> → 10³、H<sub>2</sub>O → H₂O、
+// CD<sup>4</sup> → CD⁴），其余标签剥离保留内文，实体反转义，空白规范化。
+func stripInlineXML(s string) string {
+	s = supTagRe.ReplaceAllStringFunc(s, func(m string) string {
+		return scriptToUnicode(supTagRe.FindStringSubmatch(m)[1], supMap)
+	})
+	s = subTagRe.ReplaceAllStringFunc(s, func(m string) string {
+		return scriptToUnicode(subTagRe.FindStringSubmatch(m)[1], subMap)
+	})
+	s = otherTagRe.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // pubmedTerm 按检索等级构造 PubMed 检索词（FR-SEARCH-12）。
@@ -204,7 +251,7 @@ func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
 	for _, art := range set.PubmedArticles {
 		ma := art.MedlineCitation
 		p := model.Paper{
-			Title:    strings.TrimSpace(ma.Article.Title),
+			Title:    stripInlineXML(ma.Article.Title.Inner),
 			Abstract: composePubmedAbstract(ma.Article.Abstract.Texts),
 			PMID:     strings.TrimSpace(ma.PMID),
 			Year:     atoiSafe(ma.Article.Journal.Issue.PubDate.Year),
@@ -223,17 +270,14 @@ func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
 	return papers, nil
 }
 
-// composePubmedAbstract 合并 AbstractText 多段（带 Label）。
-func composePubmedAbstract(texts []struct {
-	Label string `xml:"Label,attr"`
-	Value string `xml:",chardata"`
-}) string {
+// composePubmedAbstract 合并 AbstractText 多段（带 Label），段内容经 stripInlineXML 转平文。
+func composePubmedAbstract(texts []pubmedAbstractText) string {
 	if len(texts) == 0 {
 		return ""
 	}
 	parts := make([]string, 0, len(texts))
 	for _, t := range texts {
-		v := strings.TrimSpace(t.Value)
+		v := strings.TrimSpace(stripInlineXML(t.Value))
 		if v == "" {
 			continue
 		}

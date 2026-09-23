@@ -192,11 +192,11 @@ var (
 	bookPureNumRe  = regexp.MustCompile(`^\d+[、．.]?\s`)             // 纯数字编号（应改用中文体系）
 
 	// R3.3 数字范围规范（yueshu.md 八、数字）
-	rangeHyphenPctRe  = regexp.MustCompile(`\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?%`)                            // 10-16% → 10%～16%
-	rangeUnitBothRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*[a-zA-Z℃°]+\s*[～~]\s*\d+(?:\.\d+)?\s*[a-zA-Z℃°]+`) // 10kg～15kg → 10～15kg
-	yearRangeWaveRe   = regexp.MustCompile(`\d{4}年\s*[～~]\s*\d{4}年`)                                           // 1988年～1998年 → 1988—1998年
-	hourRangeDashRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*—\s*\d+(?:\.\d+)?\s*(?:小时|分钟|天|周)`)                // 24—48小时 → 24～48小时
-	doubleSlashUnitRe = regexp.MustCompile(`[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+`)                  // mg/kg/d → mg/(kg·d)
+	rangeHyphenPctRe  = regexp.MustCompile(`\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?%`)                                    // 10-16% → 10%～16%
+	rangeUnitBothRe   = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)\s*[～~]\s*(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)`) // 10kg～15kg → 10～15kg（仅同单位）
+	yearRangeWaveRe   = regexp.MustCompile(`\d{4}年\s*[～~]\s*\d{4}年`)                                                   // 1988年～1998年 → 1988—1998年
+	hourRangeDashRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*—\s*\d+(?:\.\d+)?\s*(?:小时|分钟|天|周)`)                        // 24—48小时 → 24～48小时
+	doubleSlashUnitRe = regexp.MustCompile(`[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+`)                          // mg/kg/d → mg/(kg·d)
 
 	// R3.4 计量单位（yueshu.md 五、计量单位）：数字后的中文单位词 / 英制旧制单位
 	cnUnitRe = regexp.MustCompile(`\d+(?:\.\d+)?\s*(?:毫米汞柱|毫米水柱|毫克|微克|纳克|千克|公斤|克|厘米|毫米|千米|公里|米|毫升|升|毫摩尔|摩尔|兆帕|千帕|帕|千瓦|瓦|千伏|伏|毫安|安|兆赫|千赫|赫兹|焦耳|牛顿|摄氏度|华氏度|英寸|磅|英尺|尺|寸|两|钱|卡|石)`)
@@ -973,13 +973,15 @@ func checkR14(src *Source, _ *ManuscriptSpec) []Violation {
 }
 
 // checkR21 P 值格式：大写/前导零/小数位规范。
+// 大于类比较（>/>=/≥）保留原语义：不折叠为 P<0.001，也不强制小数位
+// （P>0.05、P>0.0001 为合法边界表达，数值位数由作者自定）。
 func checkR21(src *Source, spec *ManuscriptSpec) []Violation {
 	decimals := spec.PValueDecimals()
 	var vs []Violation
 	for i, ln := range src.Body {
 		line := src.bodyIdx[i]
 		for _, m := range pValueRe.FindAllStringSubmatch(ln, -1) {
-			letter, num := m[1], m[3]
+			letter, op, num := m[1], m[2], m[3]
 			if letter == "p" {
 				vs = append(vs, Violation{
 					RuleID:     ruleR21,
@@ -996,6 +998,9 @@ func checkR21(src *Source, spec *ManuscriptSpec) []Violation {
 					Suggestion: "写为 0.xx 形式",
 				})
 				continue
+			}
+			if strings.Contains(op, ">") || strings.Contains(op, "≥") {
+				continue // 大于类：保留原语义与小数位，不做折叠/补位
 			}
 			val, _ := strconv.ParseFloat(num, 64)
 			if val < pThreshold001 {
@@ -1065,10 +1070,15 @@ func checkR36(src *Source, _ *ManuscriptSpec) []Violation {
 
 // checkR33 数字范围规范（yueshu.md 八、数字）：范围用波浪线、百分号只在范围末、
 // 年份范围用一字线、复合单位分母用圆括号。
+// 单位范围仅在两端单位相同时才算"重复"（10kg～15kg）；不同单位范围（10mg～1g）
+// 是合法的科学表达，不报（报了也无法自动修，会造成 fix 死循环）。
 func checkR33(src *Source, _ *ManuscriptSpec) []Violation {
 	var vs []Violation
 	for i, ln := range src.Body {
 		for _, p := range numberPatterns {
+			if p.re == rangeUnitBothRe && !sameUnitRange(ln) {
+				continue
+			}
 			if p.re.MatchString(ln) {
 				vs = append(vs, Violation{RuleID: "R3.3", Line: src.bodyIdx[i],
 					Problem: p.problem, Suggestion: p.suggestion})
@@ -1077,6 +1087,16 @@ func checkR33(src *Source, _ *ManuscriptSpec) []Violation {
 		}
 	}
 	return vs
+}
+
+// sameUnitRange 行内是否存在两端单位相同的数字范围（10kg～15kg）。
+func sameUnitRange(ln string) bool {
+	for _, m := range rangeUnitBothRe.FindAllStringSubmatch(ln, -1) {
+		if strings.EqualFold(m[2], m[4]) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkR34 计量单位（yueshu.md 五、计量单位）：禁用中文单位词与英制/旧制单位。
