@@ -109,22 +109,18 @@ owner: litkit-core
 
 **验收**：`goreleaser build --snapshot` 产出 6 平台二进制且版本注入正确；sync 检查器全绿。
 
-## M7 语义检索与二期源（二期）
+## M7 本地库中文检索与二期源（二期）
 
-**范围**：embedding 基础设施、本地库双模式检索（远程语义重排不实现）；二期源适配（dblp、Zenodo、IEEE/ACM）。
+**范围**：本地库 FTS5 中文分词检索；二期源适配（dblp、Zenodo、IEEE/ACM）。不引入 embedding（语义检索已砍除，见 PRD 非目标）。
 
 | 任务 | 对应 FR |
 |---|---|
-| internal/embedding/：Provider 抽象（local / api）+ 向量存储 | FR-SEARCH-09 |
-| 本地模型集成 POC：goformer vs go-semantica 选型实测 | FR-SEARCH-09 |
 | 本地库 FTS5 中文分词（trigram） | FR-LIB-04 |
-| 本地库语义检索（导入时生成 embedding，跨语言） | FR-LIB-05 |
-| API 模式接入（阿里百炼 / 硅基流动）+ 环境变量 | FR-SEARCH-09 |
 | 二期源适配：Zenodo、IEEE/ACM | FR-SRC-07/08 |
 
-**产出**：`litkit library search --mode semantic` 中文 query 命中英文文献；`litkit library search --mode keyword` 中文词法命中。
+**产出**：`litkit library search --mode keyword` 中文词法命中。
 
-**验收**：中文 query 检索本地英文文献命中（FR-LIB-05）；本地库万级规模检索 < 1s。
+**验收**：中文文献按关键词/标题/作者命中（FR-LIB-04）；本地库万级规模检索 < 1s。
 
 ## M8 LLM 引用相关性评分（三期，一期 core 已落地）
 
@@ -140,7 +136,6 @@ owner: litkit-core
 | `litkit verify --report citation-refs` 输出引用评分报告 | FR-LINT-04/05 | ✅ 已完成 |
 | 配置项落地：verifier_models.json（模型清单/阈值/提示词版本，不含 API key） | FR-LINT-07 | ✅ 已完成 |
 | 多模型组合 POC：开源模型（本地推理）vs API 模型选型与阈值标定 | FR-LINT-08 | ⏳ 待做 |
-| Layer 1 embedding 语义预筛（依赖 M7 embedding 基础设施） | FR-LINT-08 | ⏳ 待 M7 |
 | 人工标注集阈值校准 | FR-LINT-08 | ⏳ 待做 |
 
 **产出**：`litkit verify --report citation-refs` 输出引用句-文献相关性评分与建议。
@@ -156,5 +151,5 @@ owner: litkit-core
 | M3 引用 | FR-REF / FR-LIB | M2 | 一期 |
 | M4 lint | FR-LINT（除 08） | M1 | 一期 |
 | M6 发布 | NFR | M3/M4 | 一期 |
-| M7 语义检索与二期源 | FR-SEARCH-09、FR-LIB-04/05、FR-SRC-07/08 | M2/M3 | 二期 |
-| M8 LLM 引用评分 | FR-LINT-08 | M4/M7 | 三期 |
+| M7 本地库中文检索与二期源 | FR-LIB-04、FR-SRC-07/08 | M2/M3 | 二期 |
+| M8 LLM 引用评分 | FR-LINT-08 | M4 | 三期 |

@@ -3,7 +3,7 @@
 // Scorer 接口是"多模型交叉打分"的核心抽象：
 //   - 每个模型实现 Scorer 接口，由 LLMScorer 包裹具体 API 调用
 //   - 评分结果经存储层增量缓存，自动由主键（sentence_hash+model_id+prompt_version）失效
-//   - 漏斗中 Layer 2 使用：仅对 Layer 0/1 标记的高风险项调用
+//   - 漏斗中 Layer 1 使用：仅对 Layer 0 标记的高风险项调用
 
 package core
 

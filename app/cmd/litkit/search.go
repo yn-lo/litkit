@@ -43,6 +43,25 @@ func shortErrors(errs []model.SourceError) []model.SourceError {
 	return out
 }
 
+// netErrorMarkers 网络类错误特征（小写子串匹配）。
+var netErrorMarkers = []string{
+	"timeout", "tls", "handshake", "connection refused", "connection reset",
+	"proxyconnect", "no such host", "network", "unreachable",
+}
+
+// hasNetworkError 判断源错误中是否存在网络类失败（用于追加代理提示）。
+func hasNetworkError(errs []model.SourceError) bool {
+	for _, e := range errs {
+		msg := strings.ToLower(e.Error)
+		for _, m := range netErrorMarkers {
+			if strings.Contains(msg, m) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // newSearchCmd 构造 `litkit search` 子命令。
 //
 // 默认输出 PaperSummary（FR-IFACE-04）；--full 输出完整 Paper。
@@ -67,7 +86,11 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
   --since YEAR         显式起始年份（优先于 --years）
   -y YEAR              精确单年过滤
 
---full 输出完整元数据（含 doi/pmid/arxivId/url/venue/全部作者）与完整错误。`,
+--full 输出完整元数据（含 doi/pmid/arxivId/url/venue/全部作者）与完整错误。
+
+网络：检索源默认直连。网络受限环境（报 TLS handshake timeout / connection
+timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部外呼走代理，
+配置详见 litkit --help。`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]
@@ -153,8 +176,12 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 			if len(res.Errors) > 0 && res.Total > 0 {
 				os.Exit(exitCodePartialFailure)
 			}
-			// 全部源失败：返回错误，由 main 以退出码 1 结束
+			// 全部源失败：返回错误，由 main 以退出码 1 结束。
+			// 网络类失败时追加代理提示（AI-first：错误消息即文档，agent 只读得到 stderr）。
 			if len(res.Errors) > 0 {
+				if hasNetworkError(res.Errors) {
+					return fmt.Errorf("search: 所有源均失败（检测到网络类错误；网络受限环境可在 .env 设 LITKIT_PROXY_URL=http://127.0.0.1:7890 启用代理，详见 litkit --help）")
+				}
 				return fmt.Errorf("search: 所有源均失败")
 			}
 			return nil

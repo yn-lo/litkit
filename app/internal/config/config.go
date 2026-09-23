@@ -20,16 +20,15 @@ import (
 
 // Defaults 默认值常量。
 const (
-	DefaultLang              = "zh"
-	DefaultHTTPTimeoutMS     = 15000
-	DefaultHTTPRetries       = 2
-	DefaultEmbeddingProvider = "local"
-	DefaultMaxResults        = 5      // 每源默认检索条数
-	DefaultRecentYears       = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
-	DefaultSearchMode        = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
-	DefaultSearchTimeoutMS   = 60000  // 默认整体检索超时（含全部源并发 + 重试）
-	DefaultLLMTimeoutMS      = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
-	DefaultVerifyLLMEnabled  = false  // LLM 评分默认关闭（避免意外远程调用）
+	DefaultLang             = "zh"
+	DefaultHTTPTimeoutMS    = 15000
+	DefaultHTTPRetries      = 2
+	DefaultMaxResults       = 5      // 每源默认检索条数
+	DefaultRecentYears      = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
+	DefaultSearchMode       = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
+	DefaultSearchTimeoutMS  = 60000  // 默认整体检索超时（含全部源并发 + 重试）
+	DefaultLLMTimeoutMS     = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
+	DefaultVerifyLLMEnabled = false  // LLM 评分默认关闭（避免意外远程调用）
 )
 
 // Config litkit 运行配置。全部经环境变量读取（FR-CONFIG-01）。
@@ -47,8 +46,6 @@ type Config struct {
 	SemanticScholarAPIKey string
 	IEEEAPIKey            string
 	ACMAPIKey             string
-	EmbeddingProvider     string // 默认 local
-	EmbeddingAPIKey       string
 	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
 	SciHubURL             string // Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03）
 	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads）
@@ -124,8 +121,6 @@ func loadFrom(envFile string) (*Config, error) {
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
 		IEEEAPIKey:            os.Getenv("LITKIT_IEEE_API_KEY"),
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),
-		EmbeddingProvider:     getenvDefault("LITKIT_EMBEDDING_PROVIDER", DefaultEmbeddingProvider),
-		EmbeddingAPIKey:       os.Getenv("LITKIT_EMBEDDING_API_KEY"),
 		UnpaywallEmail:        os.Getenv("LITKIT_UNPAYWALL_EMAIL"),
 		SciHubURL:             getenvDefault("LITKIT_SCI_HUB_URL", "https://sci-hub.se"),
 		FetchDownloadDir:      os.Getenv("LITKIT_FETCH_DOWNLOAD_DIR"),

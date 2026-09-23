@@ -90,7 +90,9 @@ skills/（litkit + references、academic-style、manuscript-format + references�
 - **纯函数设计**：lint.Run() 无 IO，接收文本与配置返回 Report；CLI 是薄壳（读文件 → Run → 输出 JSON）
 - **exitHint 三值**：pass / fix_and_rerun / manual_review；退出码 0=通过或仅需人工复核，1=有 A 类违规
 - **引用评分（FR-LINT-08）**：`--report citation-refs` 在规则验证后额外执行，输出包含 enabled/models/results 的 JSON 块
-  - 三层漏斗：Layer 0 数字集合规则（免费确定性）→ Layer 1 embedding 语义预筛（依赖 M7）→ Layer 2 LLM 多模型评分
+  - 两层漏斗：Layer 0 数字集合规则（免费确定性）→ Layer 1 LLM 多模型评分
+    （原 embedding 语义预筛层已砍除：引用对由 `[@citeKey]` 锚点显式确定，无召回问题；
+    预筛只能"跳过"不能"确认"，阈值偏松会静默漏报错引，而评分成本经缓存后可忽略）
   - 禁用模式：LITKIT_VERIFY_LINT_LLM=false 或无可启用模型时静默跳过，不报错
   - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API
   - 优雅降级：部分模型失败（401/超时）不影响其他模型评分

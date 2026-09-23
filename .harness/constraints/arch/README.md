@@ -11,7 +11,7 @@
 | 入口层 | `cmd/` | 服务层 / 适配层 / 叶子层 |
 | 服务层 | `internal/core` | 适配层 / 叶子层 |
 | 适配层 | `internal/sources` | 叶子层 |
-| 叶子层 | `internal/model` · `config` · `storage` · `util` · `embedding` | 仅叶子层 |
+| 叶子层 | `internal/model` · `config` · `storage` · `util` | 仅叶子层 |
 
 额外规则：
 

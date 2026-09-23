@@ -24,7 +24,6 @@ owner: litkit-core
 - 引用评分缓存 citation_scores（FR-LINT-08）：多模型对 (cite_key, sentence_hash) 的评分结果，主键 `(cite_key, sentence_hash, model_id, prompt_version)` 自然失效（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL
 - 增删查接口（FR-LIB-02）：`litkit lib list | search | rm | stats | path`
 - 本地 keyword 检索（FR-LIB-04）：M1 为 LIKE 检索（标题/作者/摘要）；FTS5+中文分词二期
-- 本地语义检索（FR-LIB-05）：二期（跨语言 embedding）
 
 ### 不包含
 - 文献管理数据库（Zotero/Mendeley 替代品）
@@ -61,4 +60,3 @@ schema 以 `schema/schema.sql` 单文件管理，`//go:embed` 在 Open 时执行
 - [x] 引用标记：同句重复引用幂等；引用不存在的 cite_key 被外键拒绝
 - [x] 库文件跟随 WORK_DIR（FR-LIB-03）；**测试固化目录：`e:\Codes\litkit\workspace`（litkit.db 落于此）**
 - [ ] 本地 keyword：中文文献按关键词/标题/作者命中（FR-LIB-04，FTS5 二期）
-- [ ] 本地语义：中文 query 命中英文文献；embedding 导入时生成、可重建（FR-LIB-05）

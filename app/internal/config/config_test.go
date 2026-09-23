@@ -70,7 +70,6 @@ func TestLoad_defaults(t *testing.T) {
 	t.Setenv("LITKIT_LANG", "")
 	t.Setenv("LITKIT_HTTP_TIMEOUT_MS", "")
 	t.Setenv("LITKIT_HTTP_RETRIES", "")
-	t.Setenv("LITKIT_EMBEDDING_PROVIDER", "")
 	t.Setenv("LITKIT_PROXY_URL", "")
 
 	cfg, err := Load()
@@ -88,9 +87,6 @@ func TestLoad_defaults(t *testing.T) {
 	}
 	if cfg.HTTPRetries != 2 {
 		t.Errorf("默认 HTTPRetries 应为 2，got %d", cfg.HTTPRetries)
-	}
-	if cfg.EmbeddingProvider != "local" {
-		t.Errorf("默认 EmbeddingProvider 应为 local，got %q", cfg.EmbeddingProvider)
 	}
 	if cfg.RecentYears != 3 {
 		t.Errorf("默认 RecentYears 应为 3，got %d", cfg.RecentYears)

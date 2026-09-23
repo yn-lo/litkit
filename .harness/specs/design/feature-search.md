@@ -27,7 +27,7 @@ owner: litkit-core
 - 二期源（Zenodo、IEEE/ACM）本期不实现
 - 移除源（CORE、DOAJ、OpenAIRE、Unpaywall、Europe PMC/PMC、HAL、BASE、SSRN/CiteSeerX、dblp）不实现
 - 无摘要源直接不实现（FR-SRC-19）；CrossRef 检索仅作元数据反查（见 feature-references）
-- 远程语义重排（`search --mode semantic`）：语义能力仅限本地文献库（FR-LIB-05），一期不实现
+- 远程语义重排（`search --mode semantic`）：不实现（全库均不引入 embedding，见 PRD 非目标）
 - Google Scholar / Sci-Hub（明确移除）
 - PDF 下载与全文抽取（摘要工作流）
 

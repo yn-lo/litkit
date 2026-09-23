@@ -97,7 +97,7 @@ litkit verify chapter1.md --mode draft                 # 6b. 撰写合规门禁
 
 ## 未来规划
 
-> 详细里程碑见 [roadmap.md](.harness/specs/plans/roadmap.md)。已发布（M1–M6）+ 推进中（M7 语义检索、M8 LLM 引用评分）之外的延伸方向：
+> 详细里程碑见 [roadmap.md](.harness/specs/plans/roadmap.md)。已发布（M1–M6）+ 推进中（M7 本地库中文检索与二期源、M8 LLM 引用评分）之外的延伸方向：
 
 - **图表生成**：直接产出 SVG（森林图 / PRISMA 流程图 / 纳入文献统计），数据来自本地库。
 - **系统综述 `litkit review`**：PRISMA 工作流（检索→去重→筛选→纳入清单→森林图数据）。

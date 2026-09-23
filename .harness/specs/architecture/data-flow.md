@@ -74,7 +74,5 @@ CLI → core.Search(ctx, ...)
 ```
 core.LibrarySearch(ctx, query, mode)：
   模式 keyword：SQLite FTS5（trigram 中文分词）→ 词法命中
-  模式 semantic：query embedding（internal/embedding Provider：local / api）→ SQLite 同库向量余弦 → 跨语言语义命中
-  embedding 在文献导入时生成并随元数据落库（paper_id, vector BLOB）；重导入触发重建
-  远程检索保持 keyword（FR-SEARCH-07），语义能力集中在本地文献库（FR-LIB-05）
+  远程检索保持 keyword（FR-SEARCH-07）
 ```

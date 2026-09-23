@@ -24,7 +24,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 - **中文优先**：内置中文（GB/T 7714）与英文（APA/IEEE）两套写作模式，支持中英文文献混排著录
 - **摘要工作流**：基于检索返回的元数据与摘要工作，不下载 PDF、不抽取全文
 - **统一检索**：单次调用跨多个国内可达学术平台检索，结果标准化、去重合并
-- **双模式检索**：本地文献库支持 keyword（FTS5+中文分词）与语义（跨语言，本地 embedding）双模式；远程检索保持 keyword 原生排序
+- **本地检索**：本地文献库 keyword 检索（FTS5+中文分词，二期）；远程检索保持 keyword 原生排序
 - **AI 友好**：CLI 输出 JSON 可被 AI shell 调用
 - **撰写合规门禁**：将论文撰写规范机械化为可执行验证，AI 输出违规即验证失败
 - **免费优先**：核心源全部基于公开 API，无订阅依赖
@@ -53,7 +53,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 ### 2.3 非目标
 
 - 中文文献数据库检索（知网 / 万方 / 维普无开放 API）
-- 远程全库语义检索（不预计算全库向量；远程检索保持 keyword 原生排序）
+- 全库语义检索（远程与本地均不引入 embedding，不预计算向量；远程检索保持 keyword 原生排序）
 - 文献管理数据库（Zotero/Mendeley 替代品）
 - PDF 阅读器 UI / 论文浏览器 / 引文图谱可视化
 - 商业数据库订阅访问（IEEE/ACM 仅提供可选适配骨架）
@@ -133,13 +133,12 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SEARCH-04 | 支持 sources / max_results_per_source / year 参数 | P0 | year 参数语义按源能力文档化 |
 | FR-SEARCH-05 | 每源独立 `search_<source>` 工具 | P1 | 默认源均有独立定向工具 |
 | FR-SEARCH-06 | 输出标准化字段集 | P0 | 字段集固定；列表字段可序列化往返无损 |
-| FR-SEARCH-07 | `search` 统一接口（keyword 模式） | P0 | 远程检索仅 keyword；semantic 模式仅限本地文献库（FR-LIB-05） |
-| FR-SEARCH-08 | 远程语义重排（keyword top-K → 本地重排） | 不包含（二期可评估） | 远程检索保持 keyword 原生排序；语义能力集中在本地文献库，避免 top-K 召回局限 |
+| FR-SEARCH-07 | `search` 统一接口（keyword 模式） | P0 | 远程检索仅 keyword 模式 |
+| FR-SEARCH-08 | 远程语义重排（keyword top-K → 本地重排） | 不包含 | 全库均不引入 embedding；远程检索保持 keyword 原生排序 |
 | FR-SEARCH-10 | 结果默认年份倒序 | P0 | 最新在前；year=0 排末尾。各源原始顺序语义不一，跨源混合后必须显式排序 |
 | FR-SEARCH-11 | 检索词语言约束 | P0 | 检索词必须为英文（各源英文语料为主，中文命中率极低）；CLI help 与 api.md 显式声明 |
 | FR-SEARCH-12 | 检索等级 | P0 | 默认 tiab=题目+摘要+关键词（源支持时）；`--mode full` 全文作高级选项；由 AGENTS.md 告知 AI 结果不足时的升级路径 |
 | FR-SEARCH-13 | 默认时间范围 | P0 | 默认最近 3 年（`LITKIT_DEFAULT_RECENT_YEARS`）；`--years N` 放宽或 `--since YEAR` 显式起始年；0=不限 |
-| FR-SEARCH-09 | embedding 基础设施（provider 抽象 + 本地向量库） | P1 | 仅服务本地库语义检索（FR-LIB-05）；默认本地模型零 key 零网络；配置 API key 自动切换；向量存 SQLite 同库；本地库规模（万级）检索 < 1s |
 
 ### 4.3 FR-FETCH 全文获取（可选能力，非摘要工作流默认路径）
 
@@ -180,7 +179,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单（M 类规则） | P1 | 由 `verify` 输出的 `manualChecklist` 字段承载（不落独立文件，避免与规则集脱同步），M 类不自动判 fail |
 | FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；**manuscript-spec.yaml 即单一事实源**（含顶部「撰写硬性规定」注释），改后立即生效，无需重渲染任何文件 |
-| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：M7 embedding 依赖（Layer 1 语义预筛）、人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
+| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
 | FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令 |
 | FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | `manuscript-spec.yaml` 顶部注释即撰写硬性规定（精简祈使句，非 yaml 数据复制），`.litkit/AGENTS.md` 与 `.agents/skills/` 各技能均指向它；AI 写稿时自动遵守，事后 verify 兜底 |
 
@@ -192,7 +191,6 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-LIB-02 | 增删查接口（CLI） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
 | FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**未设置 LITKIT_WORK_DIR 时拒绝执行（errNoWorkDir），不退化为 CWD，避免污染任意目录**。**测试固化目录：`e:\Codes\litkit\workspace`** |
 | FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | M1 为 LIKE 检索（标题/作者/摘要）；FTS5+分词二期 |
-| FR-LIB-05 | 本地语义检索（跨语言） | P1 | 中文 query 可命中英文文献（导入时生成 embedding）；嵌入信息可重建 |
 | FR-LIB-06 | 引用标识 cite_key | P0 | 3 字母 a-zA-Z 唯一；入库自动分配；AI 引用与引用标记的唯一入口 |
 | FR-LIB-07 | 引用标记 paper_refs | P1 | 记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿）；同句重复引用幂等 |
 
@@ -280,7 +278,6 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | HTML | goquery（可选源） | 需 HTML 抓取的源（预留，二期） |
 | 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL | 3 种核心样式原生实现；Zotero 已发布 GB/T 7714—2025 CSL 样式（numeric/author-date/note）；5 个 .csl 经 Pandoc |
 | 存储 | modernc.org/sqlite v1.54+ | 纯 Go（无 CGO），SQLite 3.53，FTS5 内建，交叉编译友好 |
-| 语义检索（仅本地文献库） | embedding provider 抽象：本地纯 Go 推理（goformer / go-semantica 候选）+ 可选国内 API（阿里百炼 text-embedding-v4 / 硅基流动 BGE-M3） | 默认本地零 key 零网络；API 提升质量；向量存 SQLite 同库，暴力余弦（本地规模） |
 | .env | joho/godotenv | .env 文件解析 |
 | 并发/限速 | goroutine + errgroup + golang.org/x/time/rate | 多源并发检索，单源失败隔离；每源令牌桶限速 |
 | 模板嵌入 | go:embed | lint 模板 + CSL 文件编译进二进制 |
@@ -319,8 +316,6 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 | LITKIT_WORK_DIR | 必填 | 统一工作目录。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
-| LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api；服务本地库语义检索 |
-| LITKIT_EMBEDDING_API_KEY | api 模式必需 | 阿里百炼 / 硅基流动 embedding key |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
 | LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼（检索源/元数据反查/全文获取/LLM 评分）统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
@@ -349,7 +344,6 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 - **C6 数据模型纯净**：核心数据载体不依赖任何上层模块
 - **C7 统一源抽象**：所有学术源实现统一接口
 - **C8 入库元数据必须含摘要**
-- **C9 语义检索双模式（仅本地文献库）**：本地模型默认（免费优先），可选 API 提升质量；不强制外部依赖；远程检索保持 keyword
 - **C10 授权预留**：本期不实现认证/授权，仅在接口层预留扩展点
 - **C11 开源发布**：核心代码开源（Apache-2.0）
 
@@ -372,10 +366,8 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 | 国内网络波动 | 部分源（arXiv/Semantic Scholar）偶发慢或不稳 | 超时隔离、降级、缓存 |
 | 上游限速波动 | arXiv 2026-02 起并发下偶发 429（官方 20/分但实测更严）；Semantic Scholar 无 key 为全用户共享池 | 每源限速器（arXiv 间隔 ≥3s）+ 指数退避重试 + 可选 key 提升档位 |
 | 上游 API 变更 | 字段变化导致解析异常 | 触网测试定期跑、解析器集中封装 |
-| 本地 embedding 质量 | 小型本地模型（BGE-small 级）检索质量有限 | API 模式提质量；本地模型选型 POC 验证 |
 
 ### 11.2 开放问题
 
 - 中文文献引用（知网等）的替代路径：仅支持著录（用户手动提供元数据），不支持检索
-- 本地 embedding 模型选型（服务本地库语义检索）：goformer（BGE 系列）vs go-semantica（GGUF）vs 外部 Ollama——由 POC 实测决定
 - 三期 LLM 引用评分的多模型组合策略（开源模型 vs API 模型、打分聚合方法、阈值标定）——由三期 POC 决定

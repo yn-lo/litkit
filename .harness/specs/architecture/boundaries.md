@@ -23,7 +23,7 @@ litkit 采用四层单向依赖架构，核心目的是：
    ↓
 适配层（internal/sources）
    ↓
-叶子层（internal/model · config · storage · util · embedding）
+叶子层（internal/model · config · storage · util）
 ```
 
 所有箭头单向，**禁止反向依赖**。`internal/` 天然隔离外部引用，架构检查工具强制层间方向（见 `.harness/constraints/arch/`）。
@@ -36,7 +36,7 @@ litkit 采用四层单向依赖架构，核心目的是：
 - 经 `internal/sources/registry.go` 使用源注册表
 
 ### 服务层（internal/core）
-- 业务流程编排：跨源并发检索、去重合并、本地库双模式检索（keyword/semantic）、元数据反查、引用渲染、手稿流水线、约束验证、缓存、文献库
+- 业务流程编排：跨源并发检索、去重合并、本地库 keyword 检索、元数据反查、引用渲染、手稿流水线、约束验证、缓存、文献库
 - 唯一的事务与业务编排点
 
 ### 适配层（internal/sources）
@@ -44,8 +44,8 @@ litkit 采用四层单向依赖架构，核心目的是：
 - 所有源复用同一缓存 / 降级 / 限速公共逻辑（源基类）
 - 禁止反向 import 入口层或服务层
 
-### 叶子层（internal/model · config · storage · util · embedding）
-- 数据模型、配置读取（.env 发现与密钥）、SQLite 存储、embedding provider（本地模型 / 可选 API）与向量存储、网络/文本工具
+### 叶子层（internal/model · config · storage · util）
+- 数据模型、配置读取（.env 发现与密钥）、SQLite 存储、网络/文本工具
 - 不依赖任何上层
 
 ## 关键规则（由约束层代码强制执行）

@@ -49,7 +49,13 @@ func newRootCmd(d *deps) *cobra.Command {
 跨源检索文献（摘要工作流）、生成规范引用（GB/T 7714—2025 / APA / IEEE）、
 排版手稿、AI 撰写合规门禁。
 
-输出默认 JSON，可被 AI shell 调用。`,
+输出默认 JSON，可被 AI shell 调用。
+
+配置（.env 自动发现：LITKIT_WORK_DIR/.env > CWD/.env 向上溯源，进程环境变量优先）：
+  LITKIT_PROXY_URL   显式代理（http/https/socks5，如 http://127.0.0.1:7890）；
+                      设置后全部外呼（检索源/元数据/全文/LLM 评分）统一走代理。
+                      网络受限环境（检索报 TLS handshake timeout 等）必配。
+  其余配置项见 README「环境变量」一节与 .env.example。`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       buildinfo.Version,

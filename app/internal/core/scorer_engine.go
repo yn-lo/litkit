@@ -1,6 +1,6 @@
 // scorer_engine.go 多模型扇出评分引擎（FR-LINT-08）。
 //
-// ScorerEngine 是三层漏斗中 Layer 2 的编排器：
+// ScorerEngine 是两层漏斗中 Layer 1（LLM 评分）的编排器：
 //   - 缓存优先：查 citation_scores 表，全命中直接返回聚合结果
 //   - 扇出并发：未命中模型用 errgroup 并行调用 LLMScorer
 //   - 优雅降级：部分模型失败不影响其他模型，只看剩余模型的一致率

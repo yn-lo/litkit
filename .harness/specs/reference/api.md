@@ -36,7 +36,7 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 | `--exclude` | 逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库） | 无 |
 | `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-02） | 关 |
 
-> 远程检索仅 keyword 模式（FR-SEARCH-07）；semantic 模式仅限本地文献库 `lib search`（二期）。
+> 远程与本地检索均仅 keyword 模式（FR-SEARCH-07）。
 > `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-02）。
 > **检索词语言**：必须使用英文（各源英文语料为主，中文命中率极低，FR-SEARCH-11）。
 > **检索等级**：默认 `tiab`（题目+摘要+关键词），全文检索 `--mode full`（FR-SEARCH-12）；**时间范围**默认最近 3 年（FR-SEARCH-13）。
@@ -242,8 +242,6 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_WORK_DIR | 必填 | 统一工作目录（库/输出默认在此）。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。测试固化目录：`e:\Codes\litkit\workspace` |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
-| LITKIT_EMBEDDING_PROVIDER | 可选 | local（默认）/ api |
-| LITKIT_EMBEDDING_API_KEY | api 模式必需 | 阿里百炼 / 硅基流动 embedding key |
 | LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（fetch，FR-FETCH-02） |
 | LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
 | LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |

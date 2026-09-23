@@ -16,7 +16,6 @@ owner: litkit-core
 | HTML（可选源） | goquery |
 | 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL（可选） |
 | 存储 | modernc.org/sqlite（纯 Go，无 CGO） |
-| 语义检索（仅本地文献库） | embedding provider 抽象（本地纯 Go 推理 / 可选国内 API）+ SQLite 同库向量存储 |
 | .env | joho/godotenv |
 | 并发/限速 | goroutine + errgroup + golang.org/x/time/rate |
 | 模板嵌入 | go:embed（lint 模板 + CSL 文件编译进二进制） |
@@ -29,9 +28,9 @@ owner: litkit-core
 
 ```
 cmd/litkit                       入口层（参数解析与注册，不含业务逻辑）
-internal/core                   服务层（检索去重 / 本地库双模式检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 缓存 / 文献库）
+internal/core                   服务层（检索去重 / 本地库 keyword 检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 缓存 / 文献库）
 internal/sources                适配层（每个学术源一个适配器，实现 PaperSource 接口）
-internal/model · config · storage · util · embedding   叶子层（数据模型 / 配置 / SQLite / embedding / 工具）
+internal/model · config · storage · util   叶子层（数据模型 / 配置 / SQLite / 工具）
 ```
 
 ## 部署拓扑
