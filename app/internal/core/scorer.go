@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"litkit/internal/util/httpclient"
 )
 
 // Scorer 引用相关性评分接口（FR-LINT-08）。
@@ -133,7 +136,8 @@ type LLMScorer struct {
 //
 // baseURL 为空时默认使用 OpenAI 官方 endpoint。
 // timeout 为 0 时使用默认 30s 超时。
-func NewLLMScorer(modelID, apiKey, baseURL, promptVersion string, timeout time.Duration) *LLMScorer {
+// proxy 为入口层校验后的显式代理（nil=直连，尊重标准 HTTPS_PROXY 环境变量）。
+func NewLLMScorer(modelID, apiKey, baseURL, promptVersion string, timeout time.Duration, proxy *url.URL) *LLMScorer {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -143,12 +147,16 @@ func NewLLMScorer(modelID, apiKey, baseURL, promptVersion string, timeout time.D
 	if promptVersion == "" {
 		promptVersion = "v1"
 	}
+	hc := &http.Client{Timeout: timeout}
+	if tr := httpclient.ProxyTransport(proxy); tr != nil {
+		hc.Transport = tr
+	}
 	return &LLMScorer{
 		modelID:       modelID,
 		promptVersion: promptVersion,
 		apiKey:        apiKey,
 		baseURL:       strings.TrimRight(baseURL, "/"),
-		httpClient:    &http.Client{Timeout: timeout},
+		httpClient:    hc,
 	}
 }
 

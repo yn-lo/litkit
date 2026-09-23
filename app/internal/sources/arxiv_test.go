@@ -130,7 +130,7 @@ func TestArxivSource_Search_viaHTTP(t *testing.T) {
 
 	// 构造 ArxivSource，覆盖 BaseURL 指向 httptest
 	src := NewArxivSource(
-		newHTTPClient(2000, 1),
+		newHTTPClient(2000, 1, nil),
 		ratelimit.New(100, 5),
 	)
 	src.BaseURL = srv.URL + "/api/query"
@@ -181,7 +181,7 @@ func TestArxivSource_Search_yearFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewArxivSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewArxivSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/api/query"
 
 	// year=2024 应只保留第二篇
@@ -203,7 +203,7 @@ func TestArxivSource_Search_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewArxivSource(newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewArxivSource(newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/api/query"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1})

@@ -44,7 +44,7 @@ var (
 
 // fixR31 中文后半角标点转全角（R3.1）。
 // 三点省略号 `...` 先用占位符保护（交由 R3.6 整体转换），避免把省略号首点误转成句号。
-func fixR31(line string) (string, bool) {
+func fixR31(line string, _ *ManuscriptSpec) (string, bool) {
 	changed := false
 	line = ellipsisRe.ReplaceAllString(line, ellipsisHold) // `...` → 占位符
 	out := halfWidthCnRe.ReplaceAllStringFunc(line, func(m string) string {
@@ -72,7 +72,7 @@ func fixR31(line string) (string, bool) {
 
 // fixR35 中文语境半角括号转全角（R3.5）：整对内含汉字、或汉字紧邻单侧括号。
 // 纯英文/数字括注与两侧均非汉字的内容不动；幂等（全角括号不再次匹配）。
-func fixR35(line string) (string, bool) {
+func fixR35(line string, _ *ManuscriptSpec) (string, bool) {
 	changed := false
 	apply := func(re *regexp.Regexp, repl string) {
 		before := line
@@ -89,7 +89,7 @@ func fixR35(line string) (string, bool) {
 
 // fixR36 中文三点省略号转全角（R3.6）：`...` → 「……」。
 // 网址行与纯英文行（无汉字）豁免，避免误改链接/英文内容。
-func fixR36(line string) (string, bool) {
+func fixR36(line string, _ *ManuscriptSpec) (string, bool) {
 	if strings.Contains(line, "://") || !hanRe.MatchString(line) || !ellipsisRe.MatchString(line) {
 		return line, false
 	}
@@ -98,7 +98,7 @@ func fixR36(line string) (string, bool) {
 }
 
 // fixR32 中文上下文直引号转弯引号（R3.2，开合交替配对）。
-func fixR32(line string) (string, bool) {
+func fixR32(line string, _ *ManuscriptSpec) (string, bool) {
 	runes := []rune(line)
 	changed, open := false, true
 	for i, r := range runes {
@@ -121,8 +121,9 @@ func fixR32(line string) (string, bool) {
 }
 
 // fixR21 P 值格式（R2.1）：大写、前导零、小数位、P<0.001。
-func fixR21(line string) (string, bool) {
+func fixR21(line string, spec *ManuscriptSpec) (string, bool) {
 	changed := false
+	decimals := spec.PValueDecimals()
 	out := pValueRe.ReplaceAllStringFunc(line, func(m string) string {
 		sub := pValueRe.FindStringSubmatch(m)
 		op, num := sub[2], sub[3]
@@ -131,13 +132,10 @@ func fixR21(line string) (string, bool) {
 		}
 		val, _ := strconv.ParseFloat(num, 64)
 		var fixed string
-		switch {
-		case val < pThreshold001:
+		if val < pThreshold001 {
 			fixed = "P<0.001"
-		case val < pThreshold01:
-			fixed = "P" + op + strconv.FormatFloat(val, 'f', pDecimalsMid, 64)
-		default:
-			fixed = "P" + op + strconv.FormatFloat(val, 'f', pDecimalsHigh, 64)
+		} else {
+			fixed = "P" + op + strconv.FormatFloat(val, 'f', decimals, 64)
 		}
 		if fixed != m {
 			changed = true
@@ -148,13 +146,13 @@ func fixR21(line string) (string, bool) {
 }
 
 // fixR14 删除加粗标记保留内容（R1.4）。
-func fixR14(line string) (string, bool) {
+func fixR14(line string, _ *ManuscriptSpec) (string, bool) {
 	out := boldContentRe.ReplaceAllString(line, "$1")
 	return out, out != line
 }
 
 // fixR71 删除标题中的冒号（R7.1）。
-func fixR71(line string) (string, bool) {
+func fixR71(line string, _ *ManuscriptSpec) (string, bool) {
 	if !isHeading(strings.TrimSpace(line)) {
 		return line, false
 	}
@@ -164,7 +162,7 @@ func fixR71(line string) (string, bool) {
 }
 
 // fixR12 删除标题末尾标点（R1.2）。
-func fixR12(line string) (string, bool) {
+func fixR12(line string, _ *ManuscriptSpec) (string, bool) {
 	if !isHeading(strings.TrimSpace(line)) {
 		return line, false
 	}
@@ -176,7 +174,7 @@ func fixR12(line string) (string, bool) {
 }
 
 // fixR61 引用移到标点前（R6.1）："结论。[@a]" → "结论[@a]。"。
-func fixR61(line string) (string, bool) {
+func fixR61(line string, _ *ManuscriptSpec) (string, bool) {
 	changed := false
 	out := citePunctMoveRe.ReplaceAllStringFunc(line, func(m string) string {
 		sub := citePunctMoveRe.FindStringSubmatch(m)
@@ -187,7 +185,7 @@ func fixR61(line string) (string, bool) {
 }
 
 // fixR33 数字范围格式（R3.3 可修子集）。
-func fixR33(line string) (string, bool) {
+func fixR33(line string, _ *ManuscriptSpec) (string, bool) {
 	changed := false
 	apply := func(re *regexp.Regexp, repl string) {
 		before := line
@@ -221,8 +219,9 @@ func FixableRules() []Rule {
 
 // ApplyFixes 对内容逐行应用给定规则的 Fix（按传入顺序），返回修正内容与统计。
 // 同一行可被多条规则依次修正；计数按"规则 × 行"。
+// spec 供需要配置的规则（如 R2.1 P 值小数位）读取；单行校验为空时传 DefaultSpec()。
 // BOM（U+FEFF）在开头时先行剥离再逐行处理（否则 isHeading 等判断失效），修复后原样保留。
-func ApplyFixes(content string, rules []Rule) (string, FixReport) {
+func ApplyFixes(content string, spec *ManuscriptSpec, rules []Rule) (string, FixReport) {
 	bom := strings.HasPrefix(content, "\uFEFF")
 	if bom {
 		content = strings.TrimPrefix(content, "\uFEFF")
@@ -234,7 +233,7 @@ func ApplyFixes(content string, rules []Rule) (string, FixReport) {
 			if r.Fix == nil {
 				continue
 			}
-			out, ok := r.Fix(ln)
+			out, ok := r.Fix(ln, spec)
 			if ok {
 				lines[i], ln = out, out
 				applied[r.ID]++

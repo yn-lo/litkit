@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"net/url"
 	"sort"
 	"sync"
 
@@ -72,13 +73,14 @@ const (
 	doajRPS              = 1.0  // DOAJ: 免费公共 API，保守取 1 RPS
 )
 
-// newHTTPClient 构造标准 HTTP 客户端（按 config 注入超时与重试次数）。
+// newHTTPClient 构造标准 HTTP 客户端（按 config 注入超时、重试次数与代理）。
 // 注册表构造时统一调用，保证各源 HTTP 行为一致。
-func newHTTPClient(timeoutMS, retries int) *httpclient.Client {
+func newHTTPClient(timeoutMS, retries int, proxy *url.URL) *httpclient.Client {
 	return httpclient.New(httpclient.Options{
 		TimeoutMS:     timeoutMS,
 		MaxRetries:    retries,
 		BackoffBaseMS: defaultBackoffBaseMS,
+		Proxy:         proxy,
 	})
 }
 
@@ -89,7 +91,8 @@ func newHTTPClient(timeoutMS, retries int) *httpclient.Client {
 // 新增源在此登记。
 //
 // 限速取合规保守值（platform-matrix.md），避免触发上游 429（NFR-PERF-04）。
-func NewDefaultRegistry(cfg *config.Config) *Registry {
+// proxy 为入口层经 httpclient.ParseProxyURL 校验后的显式代理（nil=直连）。
+func NewDefaultRegistry(cfg *config.Config, proxy *url.URL) *Registry {
 	if cfg == nil {
 		// nil cfg 退化为默认值，避免入口层调用方必须构造 cfg
 		cfg = &config.Config{
@@ -98,7 +101,7 @@ func NewDefaultRegistry(cfg *config.Config) *Registry {
 		}
 	}
 	r := NewRegistry()
-	httpc := newHTTPClient(cfg.HTTPTimeoutMS, cfg.HTTPRetries)
+	httpc := newHTTPClient(cfg.HTTPTimeoutMS, cfg.HTTPRetries, proxy)
 
 	// arXiv：1 req/3s ≈ 0.33 RPS, burst 1（官方要求）
 	r.Register(NewArxivSource(httpc, ratelimit.New(arxivRPS, 1)))

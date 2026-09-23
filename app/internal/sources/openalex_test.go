@@ -167,7 +167,7 @@ func TestOpenAlexSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewOpenAlexSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewOpenAlexSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/works"
 
 	papers, err := src.Search(context.Background(), "graph neural", SearchOptions{MaxResults: 5, Year: 2023})
@@ -185,7 +185,7 @@ func TestOpenAlexSource_Search_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewOpenAlexSource(newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewOpenAlexSource(newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/works"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1})

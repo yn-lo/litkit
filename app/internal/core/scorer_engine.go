@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
 	"sync"
 	"time"
 
@@ -67,9 +68,10 @@ type cachedInfo struct {
 //   - baseURL：LITKIT_LLM_BASE_URL（可选，自托管 endpoint）
 //   - timeout：LLM 单次评分超时
 //   - enabled：LITKIT_VERIFY_LINT_LLM 开关
+//   - proxy：入口层校验后的显式代理（nil=直连）
 //
 // 如果 !enabled 或没有可启用的模型（启用但无 key），返回禁用引擎。
-func NewScorerEngine(store *storage.Store, cfg *VerifierModels, apiKey, baseURL string, timeout time.Duration, enabled bool) *ScorerEngine {
+func NewScorerEngine(store *storage.Store, cfg *VerifierModels, apiKey, baseURL string, timeout time.Duration, enabled bool, proxy *url.URL) *ScorerEngine {
 	if !enabled || cfg == nil {
 		return &ScorerEngine{disabled: true}
 	}
@@ -93,7 +95,7 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, apiKey, baseURL 
 			u = baseURL
 		}
 
-		scorers = append(scorers, NewLLMScorer(m.ID, key, u, cfg.PromptVersion, timeout))
+		scorers = append(scorers, NewLLMScorer(m.ID, key, u, cfg.PromptVersion, timeout, proxy))
 	}
 
 	if len(scorers) == 0 {

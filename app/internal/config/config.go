@@ -43,6 +43,7 @@ type Config struct {
 	RecentYears           int    // 默认检索时间范围（最近 N 年），默认 3
 	SearchMode            string // 默认检索等级，tiab|full，默认 tiab
 	SearchTimeoutMS       int    // 整体检索超时（ms），默认 60000
+	ProxyURL              string // 显式代理（http/https/socks5）；空=直连并尊重标准 HTTPS_PROXY 环境变量
 	SemanticScholarAPIKey string
 	IEEEAPIKey            string
 	ACMAPIKey             string
@@ -119,6 +120,7 @@ func loadFrom(envFile string) (*Config, error) {
 		RecentYears:           getenvInt("LITKIT_DEFAULT_RECENT_YEARS", DefaultRecentYears),
 		SearchMode:            getenvDefault("LITKIT_DEFAULT_SEARCH_MODE", DefaultSearchMode),
 		SearchTimeoutMS:       getenvInt("LITKIT_SEARCH_TIMEOUT_MS", DefaultSearchTimeoutMS),
+		ProxyURL:              os.Getenv("LITKIT_PROXY_URL"),
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
 		IEEEAPIKey:            os.Getenv("LITKIT_IEEE_API_KEY"),
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),

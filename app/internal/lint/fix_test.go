@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// fixContent 对内容应用全部可修规则的自动修正。
+// fixContent 对内容应用全部可修规则的自动修正（使用默认规范）。
 func fixContent(content string) (string, FixReport) {
-	return ApplyFixes(content, FixableRules())
+	return ApplyFixes(content, DefaultSpec(), FixableRules())
 }
 
 func TestFix_R31_HalfWidthPunct(t *testing.T) {
@@ -67,10 +67,10 @@ func TestFix_R32_StraightQuote(t *testing.T) {
 
 func TestFix_R21_PValue(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"结果显示 p=.03 显著。\n", "结果显示 P=0.03 显著。\n"},
-		{"结果显示 p=0.3 显著。\n", "结果显示 P=0.30 显著。\n"},
+		{"结果显示 p=.03 显著。\n", "结果显示 P=0.030 显著。\n"},
+		{"结果显示 p=0.3 显著。\n", "结果显示 P=0.300 显著。\n"},
 		{"结果显示 P=0.0003 显著。\n", "结果显示 P<0.001 显著。\n"},
-		{"结果显示 P=0.03 显著。\n", "结果显示 P=0.03 显著。\n"}, // 合规不变
+		{"结果显示 P=0.03 显著。\n", "结果显示 P=0.030 显著。\n"}, // 默认 3 位
 	}
 	for _, c := range cases {
 		got, _ := fixContent(c.in)

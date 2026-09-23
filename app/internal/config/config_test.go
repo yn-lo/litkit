@@ -71,6 +71,7 @@ func TestLoad_defaults(t *testing.T) {
 	t.Setenv("LITKIT_HTTP_TIMEOUT_MS", "")
 	t.Setenv("LITKIT_HTTP_RETRIES", "")
 	t.Setenv("LITKIT_EMBEDDING_PROVIDER", "")
+	t.Setenv("LITKIT_PROXY_URL", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -78,6 +79,9 @@ func TestLoad_defaults(t *testing.T) {
 	}
 	if cfg.Lang != "zh" {
 		t.Errorf("默认 Lang 应为 zh，got %q", cfg.Lang)
+	}
+	if cfg.ProxyURL != "" {
+		t.Errorf("默认 ProxyURL 应为空，got %q", cfg.ProxyURL)
 	}
 	if cfg.HTTPTimeoutMS != 15000 {
 		t.Errorf("默认 HTTPTimeoutMS 应为 15000，got %d", cfg.HTTPTimeoutMS)
@@ -93,6 +97,20 @@ func TestLoad_defaults(t *testing.T) {
 	}
 	if cfg.SearchMode != "tiab" {
 		t.Errorf("默认 SearchMode 应为 tiab，got %q", cfg.SearchMode)
+	}
+}
+
+func TestLoad_proxyURLFromEnv(t *testing.T) {
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_WORK_DIR", "")
+	t.Setenv("LITKIT_PROXY_URL", "http://127.0.0.1:7890")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ProxyURL != "http://127.0.0.1:7890" {
+		t.Errorf("ProxyURL 读取失败：got %q", cfg.ProxyURL)
 	}
 }
 

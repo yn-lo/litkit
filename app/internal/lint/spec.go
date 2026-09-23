@@ -61,8 +61,19 @@ type ManuscriptSpec struct {
 	// RepeatMinLen R4.10 重复句段检测最小长度：正文连续字串 ≥ 该值且出现 ≥2 次判潜在冗余。
 	// 0/缺省=10。调小（如 5）扫描更激进，术语反复出现会多报；调大减少干扰。
 	RepeatMinLen int `yaml:"repeat_min_len"`
+	// PDecimals R2.1 P 值保留小数位：P≥0.001 统一保留该位数（不按区间分档）；
+	// P<0.001 固定写为 "P<0.001"。0/缺省=3，合法范围 1~4。
+	PDecimals int `yaml:"p_decimals"`
 	// SkipRules 永久跳过的规则 ID（等效每次 verify --skip），空=全部启用。
 	SkipRules []string `yaml:"skip_rules"`
+}
+
+// PValueDecimals 返回 R2.1 P 值保留小数位；未配置（0/缺省）时用默认 3。
+func (s *ManuscriptSpec) PValueDecimals() int {
+	if s.PDecimals <= 0 {
+		return defaultPValueDecimals
+	}
+	return s.PDecimals
 }
 
 // ForbiddenTerm 一条自定义正文禁用字词（R7.3）。
@@ -247,6 +258,9 @@ func (s *ManuscriptSpec) validateCitation() error {
 	}
 	if s.RepeatMinLen < 0 {
 		return fmt.Errorf("repeat_min_len 必须 >= 0（0=默认 10），got %d", s.RepeatMinLen)
+	}
+	if s.PDecimals < 0 || s.PDecimals > maxPValueDecimals {
+		return fmt.Errorf("p_decimals 必须为 0(=默认%d) 或 1~%d，got %d", defaultPValueDecimals, maxPValueDecimals, s.PDecimals)
 	}
 	return nil
 }

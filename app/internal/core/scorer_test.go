@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewLLMScorer_Defaults(t *testing.T) {
-	s := NewLLMScorer("gpt-4o", "sk-test", "", "", 0)
+	s := NewLLMScorer("gpt-4o", "sk-test", "", "", 0, nil)
 	if s.ModelID() != "gpt-4o" {
 		t.Fatalf("ModelID 应为 gpt-4o，got %q", s.ModelID())
 	}
@@ -41,7 +41,7 @@ func TestLLMScorer_Score_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := NewLLMScorer("gpt-4o", "sk-test", srv.URL, "v1", 0)
+	s := NewLLMScorer("gpt-4o", "sk-test", srv.URL, "v1", 0, nil)
 	score, rationale, err := s.Score(context.Background(), "引用句", "摘要内容")
 	if err != nil {
 		t.Fatalf("Score: %v", err)
@@ -61,7 +61,7 @@ func TestLLMScorer_Score_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := NewLLMScorer("gpt-4o", "sk-test", srv.URL, "v1", 0)
+	s := NewLLMScorer("gpt-4o", "sk-test", srv.URL, "v1", 0, nil)
 	_, _, err := s.Score(context.Background(), "s", "a")
 	if err == nil {
 		t.Fatal("429 应返回错误")

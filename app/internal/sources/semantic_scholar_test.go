@@ -117,7 +117,7 @@ func TestSemanticScholarSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	papers, err := src.Search(context.Background(), "transformer", SearchOptions{MaxResults: 5})
@@ -137,7 +137,7 @@ func TestSemanticScholarSource_Search_yearFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1, Year: 2023})
@@ -157,7 +157,7 @@ func TestSemanticScholarSource_Search_sinceFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1, Since: 2023})
@@ -186,7 +186,7 @@ func TestSemanticScholarSource_Search_403WithKeyRetriesAnonymous(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("secret-key", newHTTPClient(2000, 0), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("secret-key", newHTTPClient(2000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	papers, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 5})
@@ -214,7 +214,7 @@ func TestSemanticScholarSource_Search_403WithoutKeyReturnsEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("", newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("", newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	papers, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 5})
@@ -234,7 +234,7 @@ func TestSemanticScholarSource_Search_429ReturnsError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewSemanticScholarSource("", newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewSemanticScholarSource("", newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/search"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 5})

@@ -16,6 +16,7 @@ import (
 	"litkit/internal/lint"
 	"litkit/internal/model"
 	"litkit/internal/storage"
+	"litkit/internal/util/httpclient"
 )
 
 // retractionResolverAdapter 将 core.MetadataFetcher 适配为 lint.RetractionResolver（R5.7）。
@@ -167,7 +168,12 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 	}
 
 	timeout := time.Duration(cfg.LLMTimeoutMS) * time.Millisecond
-	engine := core.NewScorerEngine(store, vm, cfg.LLMAPIKey, cfg.LLMBaseURL, timeout, cfg.VerifyLLMEnabled)
+	proxy, perr := httpclient.ParseProxyURL(cfg.ProxyURL)
+	if perr != nil {
+		fmt.Fprintf(os.Stderr, "litkit: LITKIT_PROXY_URL 无效，忽略代理: %v\n", perr)
+		proxy = nil
+	}
+	engine := core.NewScorerEngine(store, vm, cfg.LLMAPIKey, cfg.LLMBaseURL, timeout, cfg.VerifyLLMEnabled, proxy)
 	if engine.IsDisabled() {
 		return cr
 	}

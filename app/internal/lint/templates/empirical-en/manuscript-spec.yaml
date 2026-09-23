@@ -38,6 +38,7 @@ forbidden_terms:            # R7.3 custom forbidden terms in body text (phrase o
   # - term: Ⓡ
   #   note: Avoid the registered-trademark symbol
 repeat_min_len: 10          # R4.10 Min length of a repeated fragment (>=2 occurrences flagged as redundancy); 0=default 10
+p_decimals: 3               # R2.1 Decimal places for P values: P>=0.001 rounded to this; P<0.001 written as "P<0.001"; 0=default 3, range 1-4
 boast_words:
   - revolutionary
   - groundbreaking

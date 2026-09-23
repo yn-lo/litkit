@@ -108,7 +108,7 @@ func TestBiorxivSource_Search_filtersByKeyword(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
 	// 关键词 "CRISPR" 应只命中第一篇
@@ -131,7 +131,7 @@ func TestBiorxivSource_Search_keywordMissSurfacesError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
 	_, err := src.Search(context.Background(), "zzzz-not-a-keyword", SearchOptions{MaxResults: 5})
@@ -150,7 +150,7 @@ func TestBiorxivSource_Search_emptyQueryNoError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
 	papers, err := src.Search(context.Background(), "", SearchOptions{MaxResults: 5})
@@ -168,7 +168,7 @@ func TestBiorxivSource_Search_yearFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
 	// year=2024 + 关键词 "Protein" 应命中第二篇
@@ -185,7 +185,7 @@ func TestBiorxivSource_Search_yearFilter(t *testing.T) {
 }
 
 func TestBiorxivSource_Search_medrxivName(t *testing.T) {
-	src := NewBiorxivSource("medrxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("medrxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	if src.Name() != "medrxiv" {
 		t.Errorf("Name 应为 medrxiv，got %q", src.Name())
 	}
@@ -200,7 +200,7 @@ func TestBiorxivSource_Search_zeroMaxResultsFallsBackTo100(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
 	if _, err := src.Search(context.Background(), "", SearchOptions{}); err != nil {

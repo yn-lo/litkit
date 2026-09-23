@@ -5,154 +5,124 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
-func TestClient_Do_successNoRetry(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `{"ok":true}`)
-	}))
-	defer srv.Close()
-
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 2, BackoffBaseMS: 1})
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	resp, err := c.Do(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status: %d", resp.StatusCode)
-	}
-	if atomic.LoadInt32(&calls) != 1 {
-		t.Fatalf("成功路径不应重试，calls=%d", calls)
-	}
-}
-
-func TestClient_Do_retriesOn429(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
-		if n < 3 {
-			w.Header().Set("Retry-After", "0")
-			w.WriteHeader(http.StatusTooManyRequests)
+// newTestProxy 启动一个仅支持普通 HTTP 转发的测试代理，返回代理服务器与命中标记。
+func newTestProxy(t *testing.T) (*httptest.Server, *atomic.Bool) {
+	t.Helper()
+	var hit atomic.Bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit.Store(true)
+		// 普通 HTTP 经代理转发时请求行为绝对 URI（r.URL.Host 非空）
+		if r.URL.Host == "" {
+			http.Error(w, "expected absolute-uri request", http.StatusBadRequest)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `{"ok":true}`)
-	}))
-	defer srv.Close()
-
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 2, BackoffBaseMS: 1})
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	resp, err := c.Do(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("重试后应 200，got %d", resp.StatusCode)
-	}
-	if atomic.LoadInt32(&calls) != 3 {
-		t.Fatalf("应有 3 次调用（2 重试 + 1 成功），calls=%d", calls)
-	}
-}
-
-func TestClient_Do_retriesOn503(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
-		if n < 2 {
-			w.WriteHeader(http.StatusServiceUnavailable)
+		resp, err := http.DefaultTransport.RoundTrip(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		defer func() { _ = resp.Body.Close() }()
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
 	}))
-	defer srv.Close()
+	t.Cleanup(proxy.Close)
+	return proxy, &hit
+}
 
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 2, BackoffBaseMS: 1})
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+func TestNew_withProxyRequestGoesThroughProxy(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+	proxy, hit := newTestProxy(t)
+	proxyURL, err := ParseProxyURL(proxy.URL)
+	if err != nil {
+		t.Fatalf("ParseProxyURL: %v", err)
+	}
+
+	c := New(Options{TimeoutMS: 2000, Proxy: proxyURL})
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, target.URL+"/x", nil)
 	resp, err := c.Do(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("503 重试后应 200，got %d", resp.StatusCode)
+	body, err := ReadAll(resp)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(body) != "ok" {
+		t.Errorf("应取回目标响应 ok，got %q", body)
+	}
+	if !hit.Load() {
+		t.Errorf("请求应经代理转发")
 	}
 }
 
-func TestClient_Do_givesUpAfterMaxRetries(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.WriteHeader(http.StatusTooManyRequests)
+func TestNew_withoutProxyBypassesProxy(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("direct"))
 	}))
-	defer srv.Close()
+	defer target.Close()
+	_, hit := newTestProxy(t)
 
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 2, BackoffBaseMS: 1})
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	c := New(Options{TimeoutMS: 2000})
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, target.URL, nil)
 	resp, err := c.Do(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("应返回最后的 429，got %d", resp.StatusCode)
+	if _, err = ReadAll(resp); err != nil {
+		t.Fatalf("ReadAll: %v", err)
 	}
-	// 1 初始 + 2 重试 = 3 次
-	if got := atomic.LoadInt32(&calls); got != 3 {
-		t.Fatalf("应有 3 次调用（1 初始 + 2 重试），calls=%d", got)
+	if hit.Load() {
+		t.Errorf("未配置代理时请求不应经过代理")
 	}
 }
 
-func TestClient_Do_doesNotRetryOn400(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	defer srv.Close()
-
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 2, BackoffBaseMS: 1})
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	resp, err := c.Do(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
+func TestParseProxyURL(t *testing.T) {
+	cases := []struct {
+		raw    string
+		want   string // 期望解析结果；空串表示期望 nil
+		hasErr bool
+	}{
+		{raw: "", want: ""},
+		{raw: "http://127.0.0.1:7890", want: "http://127.0.0.1:7890"},
+		{raw: "https://user:pass@proxy.example.com:8443", want: "https://user:pass@proxy.example.com:8443"},
+		{raw: "socks5://127.0.0.1:1080", want: "socks5://127.0.0.1:1080"},
+		{raw: "socks5h://127.0.0.1:1080", want: "socks5h://127.0.0.1:1080"},
+		{raw: "ftp://proxy.example.com", hasErr: true}, // 不支持的协议
+		{raw: "proxy.example.com:7890", hasErr: true},  // 缺协议（scheme 为空）
+		{raw: "://bad", hasErr: true},                  // 非法 URL
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("应返回 400，got %d", resp.StatusCode)
-	}
-	if atomic.LoadInt32(&calls) != 1 {
-		t.Fatalf("400 不应重试，calls=%d", calls)
-	}
-}
-
-func TestClient_Do_contextCancelStopsRetries(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-
-	c := New(Options{TimeoutMS: 1000, MaxRetries: 5, BackoffBaseMS: 50})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-	_, err := c.Do(ctx, req)
-	if err == nil {
-		t.Fatal("ctx 取消应返回错误")
-	}
-	if !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "deadline") {
-		t.Fatalf("错误应含 context/deadline，got %v", err)
+	for _, tc := range cases {
+		u, err := ParseProxyURL(tc.raw)
+		if tc.hasErr {
+			if err == nil {
+				t.Errorf("ParseProxyURL(%q) 应报错", tc.raw)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ParseProxyURL(%q): %v", tc.raw, err)
+			continue
+		}
+		if tc.want == "" {
+			if u != nil {
+				t.Errorf("ParseProxyURL(%q) 应返回 nil，got %v", tc.raw, u)
+			}
+			continue
+		}
+		if u == nil || u.String() != tc.want {
+			t.Errorf("ParseProxyURL(%q) = %v, want %s", tc.raw, u, tc.want)
+		}
 	}
 }

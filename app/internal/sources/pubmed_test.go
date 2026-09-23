@@ -169,7 +169,7 @@ func TestPubmedSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -198,7 +198,7 @@ func TestPubmedSource_Search_yearServerSideFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -241,7 +241,7 @@ func TestPubmedSource_Search_sinceServerSideFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -263,7 +263,7 @@ func TestPubmedSource_Search_emptyIDListReturnsEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 

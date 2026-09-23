@@ -323,6 +323,7 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 | LITKIT_EMBEDDING_API_KEY | api 模式必需 | 阿里百炼 / 硅基流动 embedding key |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
+| LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼（检索源/元数据反查/全文获取/LLM 评分）统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
 
 ## 8. 平台能力矩阵（国内可达性视角）
 

@@ -119,7 +119,7 @@ func TestCrossrefSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewCrossrefSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewCrossrefSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/works"
 
 	papers, err := src.Search(context.Background(), "糖尿病 中医药", SearchOptions{MaxResults: 3, Year: 2020})
@@ -137,7 +137,7 @@ func TestCrossrefSource_Search_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewCrossrefSource(newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewCrossrefSource(newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/works"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1})

@@ -150,7 +150,7 @@ func TestDoajSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewDoajSource(newHTTPClient(2000, 1), ratelimit.New(100, 5))
+	src := NewDoajSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/api/v2"
 
 	papers, err := src.Search(context.Background(), "糖尿病", SearchOptions{MaxResults: 3})
@@ -168,7 +168,7 @@ func TestDoajSource_Search_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewDoajSource(newHTTPClient(1000, 0), ratelimit.New(100, 5))
+	src := NewDoajSource(newHTTPClient(1000, 0, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL + "/api/v2"
 
 	_, err := src.Search(context.Background(), "x", SearchOptions{MaxResults: 1})

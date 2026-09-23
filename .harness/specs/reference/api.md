@@ -249,6 +249,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
+| LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
 | LITKIT_LLM_API_KEY | 引用评分必需（FR-LINT-08） | LLM 评分的 API key |
 | LITKIT_LLM_BASE_URL | 可选 | LLM API base URL（自托管/代理 endpoint） |
 | LITKIT_LLM_TIMEOUT_MS | 可选 | LLM 单次评分超时（默认 30000） |

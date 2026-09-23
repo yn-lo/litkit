@@ -7,11 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"litkit/internal/config"
 	"litkit/internal/lint"
 )
 
 // newFixCmd 构造 `litkit fix <file.md> [file2.md ...]`。
-func newFixCmd() *cobra.Command {
+func newFixCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fix <file.md> [file2.md ...]",
 		Short: "自动修正可修的格式违规（原地覆盖）",
@@ -31,13 +32,15 @@ func newFixCmd() *cobra.Command {
 			if len(rules) == 0 {
 				return &paramError{msg: "fix: 无可用的可修规则（检查 --rule/--skip）"}
 			}
+			// 加载阈值配置（供 R2.1 P 值小数位等规则读取；未配置时自动回落默认）。
+			spec := loadVerifySpec(cfg.WorkDir, "", "")
 			files := map[string]lint.FixReport{}
 			for _, p := range args {
 				data, err := os.ReadFile(p)
 				if err != nil {
 					return fmt.Errorf("fix: 读取 %s 失败: %w", p, err)
 				}
-				fixed, rep := lint.ApplyFixes(string(data), rules)
+				fixed, rep := lint.ApplyFixes(string(data), spec, rules)
 				if rep.Total() == 0 {
 					continue
 				}

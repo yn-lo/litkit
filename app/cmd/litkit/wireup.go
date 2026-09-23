@@ -57,7 +57,13 @@ func loadDeps() *deps {
 		}
 		fmt.Fprintf(os.Stderr, "litkit: 配置加载失败，使用默认值: %v\n", err)
 	}
-	reg := sources.NewDefaultRegistry(cfg)
+	// 显式代理（LITKIT_PROXY_URL）：入口层一次性解析校验，非法时告警并降级直连
+	proxy, perr := httpclient.ParseProxyURL(cfg.ProxyURL)
+	if perr != nil {
+		fmt.Fprintf(os.Stderr, "litkit: LITKIT_PROXY_URL 无效，忽略代理: %v\n", perr)
+		proxy = nil
+	}
+	reg := sources.NewDefaultRegistry(cfg, proxy)
 
 	store := (*storage.Store)(nil)
 	if cfg.WorkDir != "" {
@@ -77,7 +83,7 @@ func loadDeps() *deps {
 		}
 		fulltext = core.NewFulltextFetcher(
 			store,
-			httpclient.New(httpclient.Options{TimeoutMS: cfg.HTTPTimeoutMS, MaxRetries: cfg.HTTPRetries}),
+			httpclient.New(httpclient.Options{TimeoutMS: cfg.HTTPTimeoutMS, MaxRetries: cfg.HTTPRetries, Proxy: proxy}),
 			cfg.UnpaywallEmail,
 			cfg.SciHubURL,
 			downloadDir,
@@ -91,6 +97,7 @@ func loadDeps() *deps {
 		fetcher: core.NewMetadataFetcher(httpclient.New(httpclient.Options{
 			TimeoutMS:  cfg.HTTPTimeoutMS,
 			MaxRetries: cfg.HTTPRetries,
+			Proxy:      proxy,
 		})),
 		fulltext: fulltext,
 	}

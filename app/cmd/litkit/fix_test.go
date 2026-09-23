@@ -6,8 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
+	"litkit/internal/config"
 	"litkit/internal/lint"
 )
+
+func newFixTestCmd() *cobra.Command {
+	return newFixCmd(&config.Config{})
+}
 
 func TestFilterFixRules(t *testing.T) {
 	rules := lint.FixableRules()
@@ -35,7 +42,7 @@ func TestFixCmd_rewritesFile(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newFixCmd()
+	cmd := newFixTestCmd()
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("fix 命令执行失败: %v", err)
@@ -58,7 +65,7 @@ func TestFixCmd_noChangesSkipsRewrite(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newFixCmd()
+	cmd := newFixTestCmd()
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("fix 命令执行失败: %v", err)

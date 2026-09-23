@@ -70,7 +70,7 @@ func insertPaperWithAbstract(t *testing.T, s *storage.Store, citeKey, title, abs
 
 func TestScorerEngine_Disabled_ReturnsNil(t *testing.T) {
 	store := newTestStore(t)
-	engine := NewScorerEngine(store, nil, "", "", 0, false)
+	engine := NewScorerEngine(store, nil, "", "", 0, false, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("禁用模式引擎应返回 IsDisabled=true")
 	}
@@ -90,7 +90,7 @@ func TestScorerEngine_NoEnabledModels_ReturnsNil(t *testing.T) {
 		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: false}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true)
+	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("无启用模型应返回 IsDisabled=true")
 	}
@@ -110,7 +110,7 @@ func TestScorerEngine_EnabledNoKey_ReturnsNil(t *testing.T) {
 		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: true}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true)
+	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("启用但无 key 应返回 IsDisabled=true")
 	}
@@ -362,7 +362,7 @@ func TestScorerEngine_EnabledModels(t *testing.T) {
 		},
 		Scoring: DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true)
+	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
 	ids := engine.EnabledModels()
 	if len(ids) != 2 {
 		t.Fatalf("应返回 2 个启用模型，got %d: %v", len(ids), ids)
@@ -413,7 +413,7 @@ func TestScorerEngine_TimeoutRespected(t *testing.T) {
 		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: true, APIKey: "sk-test", BaseURL: "http://localhost:19999"}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 1*time.Millisecond, true)
+	engine := NewScorerEngine(store, cfg, "", "", 1*time.Millisecond, true, nil)
 	if engine.IsDisabled() {
 		t.Fatal("有 key 模型不应禁用")
 	}

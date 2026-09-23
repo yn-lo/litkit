@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -19,9 +20,10 @@ const maxBackoffShift = 6
 
 // Options HTTP 客户端选项。
 type Options struct {
-	TimeoutMS     int // 单请求超时（毫秒），0 表示无超时
-	MaxRetries    int // 429/503 重试次数（不含首次请求）
-	BackoffBaseMS int // 指数退避基数（毫秒），默认 100
+	TimeoutMS     int      // 单请求超时（毫秒），0 表示无超时
+	MaxRetries    int      // 429/503 重试次数（不含首次请求）
+	BackoffBaseMS int      // 指数退避基数（毫秒），默认 100
+	Proxy         *url.URL // 显式代理；nil=默认 Transport（尊重标准 HTTPS_PROXY 环境变量）
 }
 
 // Client HTTP 客户端，封装 net/http.Client + 重试逻辑。
@@ -41,11 +43,49 @@ func New(opts Options) *Client {
 	if backoffBase == 0 {
 		backoffBase = 100
 	}
+	hc := &http.Client{Timeout: timeout}
+	if tr := ProxyTransport(opts.Proxy); tr != nil {
+		hc.Transport = tr
+	}
 	return &Client{
-		http:        &http.Client{Timeout: timeout},
+		http:        hc,
 		maxRetries:  opts.MaxRetries,
 		backoffBase: backoffBase,
 	}
+}
+
+// ParseProxyURL 解析并校验代理 URL，供入口层将 LITKIT_PROXY_URL 一次性转为 *url.URL。
+// raw 为空返回 (nil, nil)；支持 http/https/socks5/socks5h（socks5h=域名解析也走代理）。
+func ParseProxyURL(raw string) (*url.URL, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("proxy url %q: %w", raw, err)
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+		return u, nil
+	default:
+		return nil, fmt.Errorf("proxy url %q: 不支持的协议 %q（应为 http/https/socks5）", raw, u.Scheme)
+	}
+}
+
+// ProxyTransport 返回显式代理 Transport（克隆 DefaultTransport 保留 HTTP/2 与默认配置）。
+// u 为 nil 返回 nil：调用方保持 nil Transport 即走默认代理规则（标准环境变量）。
+func ProxyTransport(u *url.URL) http.RoundTripper {
+	if u == nil {
+		return nil
+	}
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		// 理论不可达（DefaultTransport 即 *Transport）；退化为默认 Transport 规则
+		return nil
+	}
+	tr := base.Clone()
+	tr.Proxy = http.ProxyURL(u)
+	return tr
 }
 
 // Do 执行 HTTP 请求，对 429/503 进行指数退避重试。

@@ -48,12 +48,11 @@ const (
 // ruleIDHeadingOrder R1.3 标题规范规则的 ID。
 const ruleIDHeadingOrder = "R1.3"
 
-// P 值格式阈值（R2.1）与引用密度阈值（R5.3）。
+// P 值格式阈值（R2.1）：P<0.001 固定写 "P<0.001"，其余统一保留 spec.p_decimals 位。
 const (
-	pThreshold001 = 0.001 // P<0.001 不给出具体数值
-	pThreshold01  = 0.01  // 0.001≤P<0.01 保留 3 位
-	pDecimalsMid  = 3     // 中间区间小数位
-	pDecimalsHigh = 2     // P≥0.01 小数位
+	pThreshold001         = 0.001 // P<0.001 不给出具体数值
+	defaultPValueDecimals = 3     // p_decimals 缺省值（生效位数，1~4 可配）
+	maxPValueDecimals     = 4     // p_decimals 允许的最大位数
 
 	// R0.1 英文占比阈值
 	enWordRatioLimit = 0.40
@@ -135,7 +134,7 @@ type Rule struct {
 	From     Mode // 从该模式起启用
 	Check    func(src *Source, spec *ManuscriptSpec) []Violation
 	// Fix 自动修正：对单行应用确定性替换，返回修正后行与是否修改。nil=不可修。
-	Fix func(line string) (string, bool)
+	Fix func(line string, spec *ManuscriptSpec) (string, bool)
 }
 
 // 预编译正则（mnd：集中管理，避免规则函数内重复编译）。
@@ -974,7 +973,8 @@ func checkR14(src *Source, _ *ManuscriptSpec) []Violation {
 }
 
 // checkR21 P 值格式：大写/前导零/小数位规范。
-func checkR21(src *Source, _ *ManuscriptSpec) []Violation {
+func checkR21(src *Source, spec *ManuscriptSpec) []Violation {
+	decimals := spec.PValueDecimals()
 	var vs []Violation
 	for i, ln := range src.Body {
 		line := src.bodyIdx[i]
@@ -998,33 +998,22 @@ func checkR21(src *Source, _ *ManuscriptSpec) []Violation {
 				continue
 			}
 			val, _ := strconv.ParseFloat(num, 64)
-			decimals := len(num) - strings.Index(num, ".") - 1
-			switch {
-			case val < pThreshold001:
+			if val < pThreshold001 {
 				vs = append(vs, Violation{
 					RuleID:     ruleR21,
 					Line:       line,
 					Problem:    "P<0.001 不应给出具体数值",
 					Suggestion: "写为 P<0.001",
 				})
-			case val < pThreshold01:
-				if decimals != pDecimalsMid {
-					vs = append(vs, Violation{
-						RuleID:     ruleR21,
-						Line:       line,
-						Problem:    fmt.Sprintf("0.001≤P<0.01 应保留 3 位小数，got %s", num),
-						Suggestion: "保留 3 位小数",
-					})
-				}
-			default: // val >= 0.01
-				if decimals != pDecimalsHigh {
-					vs = append(vs, Violation{
-						RuleID:     ruleR21,
-						Line:       line,
-						Problem:    fmt.Sprintf("P≥0.01 应保留 2 位小数，got %s", num),
-						Suggestion: "保留 2 位小数",
-					})
-				}
+				continue
+			}
+			if got := len(num) - strings.Index(num, ".") - 1; got != decimals {
+				vs = append(vs, Violation{
+					RuleID:     ruleR21,
+					Line:       line,
+					Problem:    fmt.Sprintf("P 应保留 %d 位小数，got %s", decimals, num),
+					Suggestion: fmt.Sprintf("写为 %d 位小数", decimals),
+				})
 			}
 		}
 	}
