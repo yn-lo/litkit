@@ -8,8 +8,10 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +22,17 @@ import (
 
 	"litkit/internal/util/httpclient"
 )
+
+// LLM 评分请求默认采样参数（verifier_models.json 未显式配置时生效）。
+const (
+	DefaultScoreTemperature = 0.1
+	DefaultScoreMaxTokens   = 150
+)
+
+// reservedBodyKeys extra_body 禁止覆盖的协议字段（防配置破坏请求结构）。
+var reservedBodyKeys = map[string]bool{
+	"model": true, "messages": true, "temperature": true, "max_tokens": true,
+}
 
 // Scorer 引用相关性评分接口（FR-LINT-08）。
 //
@@ -33,14 +46,18 @@ type Scorer interface {
 }
 
 // ModelConfig 对应 verifier_models.json 中 models[] 项的运行时形态。
-// API key 不在 JSON 中，由 config.ModelID 查 LITKIT_LLM_API_KEY。
+// 凭据可直接明文写入本文件（仅限工作目录副本，勿提交 git）；
+// 未填写时按 env 命名约定回落（见 config.LLMCredentials）。
 type ModelConfig struct {
-	ID       string  `json:"id"`
-	Provider string  `json:"provider"`
-	Enabled  bool    `json:"enabled"`
-	Weight   float64 `json:"weight"`
-	APIKey   string  // 运行时注入，不走 JSON
-	BaseURL  string  // 运行时注入，LITKIT_LLM_BASE_URL
+	ID          string         `json:"id"`
+	Provider    string         `json:"provider"`
+	Enabled     bool           `json:"enabled"`
+	Weight      float64        `json:"weight"`
+	APIKey      string         `json:"api_key,omitempty"`     // 明文 key（优先）；空则回落 env
+	BaseURL     string         `json:"base_url,omitempty"`    // 明文 endpoint（优先）；空则回落 env
+	Temperature *float64       `json:"temperature,omitempty"` // 采样温度（nil=0.1）
+	MaxTokens   *int           `json:"max_tokens,omitempty"`  // 输出 token 上限（nil=150）
+	ExtraBody   map[string]any `json:"extra_body,omitempty"`  // 透传请求体顶层（reasoning_effort / enable_thinking 等）
 }
 
 // ScoringConfig 对应 verifier_models.json 的 scoring 段。
@@ -53,6 +70,8 @@ type ScoringConfig struct {
 
 // VerifierModels 对应 verifier_models.json 顶层结构。
 type VerifierModels struct {
+	Comment            string        `json:"_comment,omitempty"`  // 模板文档字段，严格解码需显式映射
+	Comment2           string        `json:"_comment2,omitempty"` // 同上
 	PromptVersion      string        `json:"prompt_version"`
 	ConsensusThreshold float64       `json:"consensus_threshold"`
 	Models             []ModelConfig `json:"models"`
@@ -61,6 +80,7 @@ type VerifierModels struct {
 
 // LoadVerifierModels 从指定路径加载 verifier_models.json。
 // path 为空时返回 nil（禁用模式）。
+// 严格解码：未知字段直接报错（抓拼写/废弃键）；解码后做语义校验。
 func LoadVerifierModels(path string) (*VerifierModels, error) {
 	if path == "" {
 		return nil, nil
@@ -70,13 +90,75 @@ func LoadVerifierModels(path string) (*VerifierModels, error) {
 		return nil, fmt.Errorf("verifier_models: %w", err)
 	}
 	var vm VerifierModels
-	if err := json.Unmarshal(data, &vm); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&vm); err != nil {
 		return nil, fmt.Errorf("verifier_models: %w", err)
 	}
 	if vm.Scoring.MinModels == 0 {
 		vm.Scoring = DefaultScoringConfig()
 	}
+	if err := vm.Validate(); err != nil {
+		return nil, fmt.Errorf("verifier_models: %w", err)
+	}
 	return &vm, nil
+}
+
+// Validate 校验配置语义：模型 id 唯一、参数范围、透传键合法性。
+func (vm *VerifierModels) Validate() error {
+	if vm.PromptVersion == "" {
+		return errors.New("prompt_version 不能为空")
+	}
+	if err := vm.validateModels(); err != nil {
+		return err
+	}
+	return vm.validateScoring()
+}
+
+// validateModels 校验 models[] 各项（id 唯一、采样参数范围、透传键）。
+func (vm *VerifierModels) validateModels() error {
+	seen := map[string]bool{}
+	for _, m := range vm.Models {
+		if m.ID == "" {
+			return errors.New("models[] 存在空 id")
+		}
+		if seen[m.ID] {
+			return fmt.Errorf("模型 id 重复: %s", m.ID)
+		}
+		seen[m.ID] = true
+		if m.Temperature != nil && (*m.Temperature < 0 || *m.Temperature > 2) {
+			return fmt.Errorf("模型 %s temperature 越界 [0,2]: %v", m.ID, *m.Temperature)
+		}
+		if m.MaxTokens != nil && *m.MaxTokens <= 0 {
+			return fmt.Errorf("模型 %s max_tokens 必须为正数: %d", m.ID, *m.MaxTokens)
+		}
+		for k := range m.ExtraBody {
+			if reservedBodyKeys[k] {
+				return fmt.Errorf("模型 %s extra_body 含保留键 %q（协议字段不可透传覆盖）", m.ID, k)
+			}
+		}
+	}
+	return nil
+}
+
+// validateScoring 校验 scoring 段与 consensus_threshold 范围。
+func (vm *VerifierModels) validateScoring() error {
+	s := vm.Scoring
+	if s.MinModels < 1 {
+		return fmt.Errorf("scoring.min_models 必须 >= 1: %d", s.MinModels)
+	}
+	if s.AgreementRatio <= 0 || s.AgreementRatio > 1 {
+		return fmt.Errorf("scoring.agreement_ratio 越界 (0,1]: %v", s.AgreementRatio)
+	}
+	if s.LowScoreThreshold < 0 || s.LowScoreThreshold > 1 ||
+		s.MediumScoreThreshold < 0 || s.MediumScoreThreshold > 1 ||
+		s.LowScoreThreshold >= s.MediumScoreThreshold {
+		return fmt.Errorf("scoring 阈值非法: low=%v medium=%v（需 0<=low<medium<=1）", s.LowScoreThreshold, s.MediumScoreThreshold)
+	}
+	if vm.ConsensusThreshold < 0 || vm.ConsensusThreshold > 1 {
+		return fmt.Errorf("consensus_threshold 越界 [0,1]: %v", vm.ConsensusThreshold)
+	}
+	return nil
 }
 
 // DefaultScoringConfig 默认评分阈值（对应 verifier_models.json 模板值）。
@@ -129,6 +211,9 @@ type LLMScorer struct {
 	promptVersion string
 	apiKey        string
 	baseURL       string
+	temperature   float64
+	maxTokens     int
+	extraBody     map[string]any
 	httpClient    *http.Client
 }
 
@@ -137,7 +222,7 @@ type LLMScorer struct {
 // baseURL 为空时默认使用 OpenAI 官方 endpoint。
 // timeout 为 0 时使用默认 30s 超时。
 // proxy 为入口层校验后的显式代理（nil=直连，尊重标准 HTTPS_PROXY 环境变量）。
-func NewLLMScorer(modelID, apiKey, baseURL, promptVersion string, timeout time.Duration, proxy *url.URL) *LLMScorer {
+func NewLLMScorer(m ModelConfig, baseURL, promptVersion string, timeout time.Duration, proxy *url.URL) *LLMScorer {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -151,11 +236,22 @@ func NewLLMScorer(modelID, apiKey, baseURL, promptVersion string, timeout time.D
 	if tr := httpclient.ProxyTransport(proxy); tr != nil {
 		hc.Transport = tr
 	}
+	temp := DefaultScoreTemperature
+	if m.Temperature != nil {
+		temp = *m.Temperature
+	}
+	tok := DefaultScoreMaxTokens
+	if m.MaxTokens != nil {
+		tok = *m.MaxTokens
+	}
 	return &LLMScorer{
-		modelID:       modelID,
+		modelID:       m.ID,
 		promptVersion: promptVersion,
-		apiKey:        apiKey,
+		apiKey:        m.APIKey,
 		baseURL:       strings.TrimRight(baseURL, "/"),
+		temperature:   temp,
+		maxTokens:     tok,
+		extraBody:     m.ExtraBody,
 		httpClient:    hc,
 	}
 }
@@ -171,14 +267,22 @@ func (s *LLMScorer) Score(ctx context.Context, sentence, abstract string) (float
 	prompt := strings.ReplaceAll(ScorePrompt, "{{sentence}}", sentence)
 	prompt = strings.ReplaceAll(prompt, "{{abstract}}", abstract)
 
-	body := fmt.Sprintf(`{
-		"model": %q,
-		"messages": [{"role": "user", "content": %q}],
-		"temperature": 0.1,
-		"max_tokens": 150
-	}`, s.modelID, prompt)
+	// 结构化请求体：extra_body 原样透传到顶层，协议字段不可被覆盖（Validate 已校验）。
+	body := map[string]any{
+		"model":       s.modelID,
+		"temperature": s.temperature,
+		"max_tokens":  s.maxTokens,
+		"messages":    []map[string]string{{"role": "user", "content": prompt}},
+	}
+	for k, v := range s.extraBody {
+		body[k] = v
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return 0, "", fmt.Errorf("scorer: 编码请求: %w", err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/chat/completions", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/chat/completions", bytes.NewReader(buf))
 	if err != nil {
 		return 0, "", fmt.Errorf("scorer: 构造请求: %w", err)
 	}

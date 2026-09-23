@@ -248,10 +248,11 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
 | LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
-| LITKIT_LLM_API_KEY | 引用评分必需（FR-LINT-08） | LLM 评分的 API key |
-| LITKIT_LLM_BASE_URL | 可选 | LLM API base URL（自托管/代理 endpoint） |
+| LITKIT_LLM_API_KEY | 引用评分必需（FR-LINT-08） | LLM 评分的全局 API key（回落值）。推荐直接在 .litkit/verifier_models.json 每模型 api_key/base_url 明文配置（工作目录副本勿提交 git），JSON 优先于 env |
+| LITKIT_LLM_BASE_URL | 可选 | 全局 LLM API base URL（回落值；JSON 每模型 base_url 优先） |
+| LITKIT_LLM_API_KEY_<模型ID> | 可选 | 按模型 env 回落 key；命名约定：模型 id 大写、非字母数字转下划线（如 deepseek-chat → LITKIT_LLM_API_KEY_DEEPSEEK_CHAT）；优先级：JSON api_key > 按模型 env > 全局 env |
+| LITKIT_LLM_BASE_URL_<模型ID> | 可选 | 按模型 env 回落 base URL（JSON base_url 优先） |
 | LITKIT_LLM_TIMEOUT_MS | 可选 | LLM 单次评分超时（默认 30000） |
-| LITKIT_VERIFY_LINT_LLM | 可选 | 启用 LLM 引用评分，默认 false（避免意外远程调用） |
 
 ### .env 发现顺序
 

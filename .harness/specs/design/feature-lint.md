@@ -93,7 +93,7 @@ skills/（litkit + references、academic-style、manuscript-format + references�
   - 两层漏斗：Layer 0 数字集合规则（免费确定性）→ Layer 1 LLM 多模型评分
     （原 embedding 语义预筛层已砍除：引用对由 `[@citeKey]` 锚点显式确定，无召回问题；
     预筛只能"跳过"不能"确认"，阈值偏松会静默漏报错引，而评分成本经缓存后可忽略）
-  - 禁用模式：LITKIT_VERIFY_LINT_LLM=false 或无可启用模型时静默跳过，不报错
+  - 禁用模式：无可启用的模型（全 disabled 或全无 key）时静默跳过，不报错
   - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API
   - 优雅降级：部分模型失败（401/超时）不影响其他模型评分
 - **能力边界（缺引用检测）**：`ExtractCiteSentences` 锚点驱动，只对**已含 `[@citeKey]` 的句子**

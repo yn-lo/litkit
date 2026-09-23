@@ -1,6 +1,6 @@
 {
-  "_comment": "LLM 引用相关性评分模型清单（FR-LINT-08）。",
-  "_comment2": "API key 不进此文件，每模型按 model_id 去 config 查 LITKIT_LLM_API_KEY。",
+  "_comment": "LLM 引用相关性评分模型清单（FR-LINT-08）。提示词改动须 bump prompt_version 以失效旧评分缓存。",
+  "_comment2": "凭据二选一：本文件每模型 api_key/base_url 直接明文配置（推荐，注意：本模板在 git 仓库内必须保持空串；工作目录副本含真实 key 时勿提交 git）；或走 env 命名约定回落（模型 id 大写、非字母数字转下划线，如 deepseek-chat → LITKIT_LLM_API_KEY_DEEPSEEK_CHAT）。优先级：JSON > env。extra_body 原样并入请求体顶层（如 enable_thinking / reasoning_effort），禁覆盖 model/messages/temperature/max_tokens。",
   "prompt_version": "v1",
   "consensus_threshold": 0.7,
   "models": [
@@ -8,19 +8,32 @@
       "id": "gpt-4o",
       "provider": "openai",
       "enabled": false,
-      "weight": 1.0
+      "weight": 1.0,
+      "api_key": "",
+      "base_url": "",
+      "temperature": 0.1,
+      "max_tokens": 150
     },
     {
       "id": "deepseek-chat",
       "provider": "deepseek",
       "enabled": false,
-      "weight": 1.0
+      "weight": 1.0,
+      "api_key": "",
+      "base_url": "",
+      "temperature": 0.1,
+      "max_tokens": 150
     },
     {
       "id": "qwen-plus",
       "provider": "alibaba",
       "enabled": false,
-      "weight": 1.0
+      "weight": 1.0,
+      "api_key": "",
+      "base_url": "",
+      "temperature": 0.1,
+      "max_tokens": 150,
+      "extra_body": { "enable_thinking": false }
     }
   ],
   "scoring": {

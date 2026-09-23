@@ -201,7 +201,6 @@ func TestLoad_llmConfig(t *testing.T) {
 	t.Setenv("LITKIT_LLM_API_KEY", "sk-abc123")
 	t.Setenv("LITKIT_LLM_BASE_URL", "https://llm.example.com/v1")
 	t.Setenv("LITKIT_LLM_TIMEOUT_MS", "60000")
-	t.Setenv("LITKIT_VERIFY_LINT_LLM", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -215,9 +214,6 @@ func TestLoad_llmConfig(t *testing.T) {
 	}
 	if cfg.LLMTimeoutMS != 60000 {
 		t.Errorf("LLMTimeoutMS 应为 60000，got %d", cfg.LLMTimeoutMS)
-	}
-	if !cfg.VerifyLLMEnabled {
-		t.Errorf("VerifyLLMEnabled 应为 true")
 	}
 }
 
@@ -240,7 +236,37 @@ func TestLoad_llmDefaults(t *testing.T) {
 	if cfg.LLMTimeoutMS != 30000 {
 		t.Errorf("LLMTimeoutMS 默认应为 30000，got %d", cfg.LLMTimeoutMS)
 	}
-	if cfg.VerifyLLMEnabled {
-		t.Errorf("VerifyLLMEnabled 默认应为 false")
+}
+
+func TestConfig_LLMCredentials(t *testing.T) {
+	cfg := &Config{LLMAPIKey: "global-key", LLMBaseURL: "https://global.example.com/v1"}
+
+	// 无按模型变量 → 回落全局
+	key, base := cfg.LLMCredentials("deepseek-chat")
+	if key != "global-key" || base != "https://global.example.com/v1" {
+		t.Fatalf("无按模型变量应回落全局：key=%q base=%q", key, base)
+	}
+
+	// 按模型变量优先（deepseek-chat → DEEPSEEK_CHAT）
+	t.Setenv("LITKIT_LLM_API_KEY_DEEPSEEK_CHAT", "sk-ds")
+	t.Setenv("LITKIT_LLM_BASE_URL_DEEPSEEK_CHAT", "https://api.deepseek.com/v1")
+	key, base = cfg.LLMCredentials("deepseek-chat")
+	if key != "sk-ds" || base != "https://api.deepseek.com/v1" {
+		t.Fatalf("按模型变量应优先：key=%q base=%q", key, base)
+	}
+
+	// 归一化：gpt-4o → GPT_4O（仅 key 覆盖，base 回落全局）
+	t.Setenv("LITKIT_LLM_API_KEY_GPT_4O", "sk-oai")
+	key, base = cfg.LLMCredentials("gpt-4o")
+	if key != "sk-oai" {
+		t.Fatalf("gpt-4o 应命中 LITKIT_LLM_API_KEY_GPT_4O，got %q", key)
+	}
+	if base != "https://global.example.com/v1" {
+		t.Fatalf("base 未设置按模型变量应回落全局，got %q", base)
+	}
+
+	// 其他模型不受按模型变量影响
+	if key, _ := cfg.LLMCredentials("qwen-plus"); key != "global-key" {
+		t.Fatalf("qwen-plus 应回落全局，got %q", key)
 	}
 }

@@ -53,9 +53,8 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 | `LITKIT_SCI_HUB_URL`                               | 可选，Sci-Hub 镜像地址（默认 sci-hub.se）               |
 | `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | 可选，网络超时与重试                                    |
 | `LITKIT_PROXY_URL`                                 | 可选，显式代理（http/https/socks5）；设置后全部外呼走代理 |
-| `LITKIT_LLM_API_KEY`                               | 可选，LLM 引用评分 key                                  |
-| `LITKIT_LLM_BASE_URL`                              | 可选，LLM 自托管 endpoint                               |
-| `LITKIT_VERIFY_LINT_LLM`                           | 可选，启用 LLM 引用评分（默认 false，避免意外远程调用） |
+| `LITKIT_LLM_API_KEY`                               | 可选，LLM 引用评分 key（全局回落；推荐在 `.litkit/verifier_models.json` 每模型 `api_key` 配置） |
+| `LITKIT_LLM_BASE_URL`                              | 可选，LLM 自托管 endpoint（全局回落；JSON 每模型 `base_url` 优先）                              |
 
 ## 安装
 

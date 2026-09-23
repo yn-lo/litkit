@@ -27,7 +27,17 @@ const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-C
 	"# 默认检索等级：tiab（题目+摘要+关键词）| full（全文，FR-SEARCH-12）\n" +
 	"LITKIT_DEFAULT_SEARCH_MODE=tiab\n" +
 	"# 可选：Semantic Scholar API key（配置后提速，避免共享池 429）\n" +
-	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n"
+	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n" +
+	"\n" +
+	"# LLM 引用评分（可选）\n" +
+	"# 推荐直接在 .litkit/verifier_models.json 每模型 api_key/base_url 配置（该副本勿提交 git）\n" +
+	"# 启用条件：models[].enabled=true 且有 api_key 即自动生效，无需总开关\n" +
+	"# 以下为 env 回落方式（JSON 未填时生效；按模型变量优先于全局）\n" +
+	"# LITKIT_LLM_API_KEY=sk-xxx\n" +
+	"# LITKIT_LLM_BASE_URL=https://api.openai.com/v1\n" +
+	"# 按模型命名约定：模型 id 大写、非字母数字转下划线（如 deepseek-chat → DEEPSEEK_CHAT）\n" +
+	"# LITKIT_LLM_API_KEY_DEEPSEEK_CHAT=sk-xxx\n" +
+	"# LITKIT_LLM_BASE_URL_DEEPSEEK_CHAT=https://api.deepseek.com/v1\n"
 
 // 文件权限常量（mnd：避免魔法值）。
 const (

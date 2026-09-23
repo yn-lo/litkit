@@ -20,15 +20,14 @@ import (
 
 // Defaults 默认值常量。
 const (
-	DefaultLang             = "zh"
-	DefaultHTTPTimeoutMS    = 15000
-	DefaultHTTPRetries      = 2
-	DefaultMaxResults       = 5      // 每源默认检索条数
-	DefaultRecentYears      = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
-	DefaultSearchMode       = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
-	DefaultSearchTimeoutMS  = 60000  // 默认整体检索超时（含全部源并发 + 重试）
-	DefaultLLMTimeoutMS     = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
-	DefaultVerifyLLMEnabled = false  // LLM 评分默认关闭（避免意外远程调用）
+	DefaultLang            = "zh"
+	DefaultHTTPTimeoutMS   = 15000
+	DefaultHTTPRetries     = 2
+	DefaultMaxResults      = 5      // 每源默认检索条数
+	DefaultRecentYears     = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
+	DefaultSearchMode      = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
+	DefaultSearchTimeoutMS = 60000  // 默认整体检索超时（含全部源并发 + 重试）
+	DefaultLLMTimeoutMS    = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
 )
 
 // Config litkit 运行配置。全部经环境变量读取（FR-CONFIG-01）。
@@ -49,10 +48,9 @@ type Config struct {
 	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
 	SciHubURL             string // Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03）
 	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads）
-	LLMAPIKey             string // LLM 评分 API key（FR-LINT-08）
-	LLMBaseURL            string // LLM API base URL（自托管 / 代理 endpoint）
+	LLMAPIKey             string // LLM 评分 API key（FR-LINT-08，全局回落）
+	LLMBaseURL            string // LLM API base URL（自托管 / 代理 endpoint，全局回落）
 	LLMTimeoutMS          int    // LLM 单次评分超时，默认 30000
-	VerifyLLMEnabled      bool   // LLM 评分开关，默认关闭（LITKIT_VERIFY_LINT_LLM）
 }
 
 // Load 发现并加载 .env，返回填充好的 Config。
@@ -127,7 +125,6 @@ func loadFrom(envFile string) (*Config, error) {
 		LLMAPIKey:             os.Getenv("LITKIT_LLM_API_KEY"),
 		LLMBaseURL:            os.Getenv("LITKIT_LLM_BASE_URL"),
 		LLMTimeoutMS:          getenvInt("LITKIT_LLM_TIMEOUT_MS", DefaultLLMTimeoutMS),
-		VerifyLLMEnabled:      getenvBool("LITKIT_VERIFY_LINT_LLM", DefaultVerifyLLMEnabled),
 	}
 	// 负数/零值下界钳制：负重试次数会使 httpclient 重试循环不执行而返回 nil 响应；
 	// 非正超时会退化为无超时
@@ -143,6 +140,37 @@ func loadFrom(envFile string) (*Config, error) {
 func fileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+// LLMCredentials 按模型 ID 解析该模型的 API key 与 base URL（FR-LINT-08）。
+//
+// 命名约定：模型 ID 归一化（大写、非字母数字转下划线）后查
+// LITKIT_LLM_API_KEY_<ID> / LITKIT_LLM_BASE_URL_<ID>；
+// 未设置时回落全局 LITKIT_LLM_API_KEY / LITKIT_LLM_BASE_URL。
+// 例：deepseek-chat → LITKIT_LLM_API_KEY_DEEPSEEK_CHAT。
+func (c *Config) LLMCredentials(modelID string) (apiKey, baseURL string) {
+	norm := normalizeModelID(modelID)
+	apiKey = os.Getenv("LITKIT_LLM_API_KEY_" + norm)
+	if apiKey == "" {
+		apiKey = c.LLMAPIKey
+	}
+	baseURL = os.Getenv("LITKIT_LLM_BASE_URL_" + norm)
+	if baseURL == "" {
+		baseURL = c.LLMBaseURL
+	}
+	return apiKey, baseURL
+}
+
+// normalizeModelID 模型 ID → env 变量后缀（大写，非字母数字转下划线）。
+// 例：gpt-4o → GPT_4O；qwen-plus → QWEN_PLUS。
+func normalizeModelID(id string) string {
+	up := strings.ToUpper(id)
+	return strings.Map(func(r rune) rune {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '_'
+	}, up)
 }
 
 func getCwd() string {
@@ -170,17 +198,4 @@ func getenvInt(key string, def int) int {
 		return def
 	}
 	return n
-}
-
-func getenvBool(key string, def bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	switch strings.ToLower(v) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }

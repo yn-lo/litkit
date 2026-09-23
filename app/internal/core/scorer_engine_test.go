@@ -70,7 +70,7 @@ func insertPaperWithAbstract(t *testing.T, s *storage.Store, citeKey, title, abs
 
 func TestScorerEngine_Disabled_ReturnsNil(t *testing.T) {
 	store := newTestStore(t)
-	engine := NewScorerEngine(store, nil, "", "", 0, false, nil)
+	engine := NewScorerEngine(store, nil, nil, 0, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("禁用模式引擎应返回 IsDisabled=true")
 	}
@@ -90,7 +90,7 @@ func TestScorerEngine_NoEnabledModels_ReturnsNil(t *testing.T) {
 		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: false}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
+	engine := NewScorerEngine(store, cfg, nil, 0, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("无启用模型应返回 IsDisabled=true")
 	}
@@ -110,7 +110,9 @@ func TestScorerEngine_EnabledNoKey_ReturnsNil(t *testing.T) {
 		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: true}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
+	// creds 返回空 key → 启用但无凭据，跳过
+	noCreds := func(string) (string, string) { return "", "" }
+	engine := NewScorerEngine(store, cfg, noCreds, 0, nil)
 	if !engine.IsDisabled() {
 		t.Fatal("启用但无 key 应返回 IsDisabled=true")
 	}
@@ -356,13 +358,20 @@ func TestScorerEngine_EnabledModels(t *testing.T) {
 	cfg := &VerifierModels{
 		PromptVersion: "v1",
 		Models: []ModelConfig{
-			{ID: "model-a", Enabled: true, APIKey: "key-a"},
-			{ID: "model-b", Enabled: true, APIKey: "key-b"},
+			{ID: "model-a", Enabled: true, APIKey: "key-a"}, // JSON 明文 key
+			{ID: "model-b", Enabled: true},                  // 依赖 env 回落
 			{ID: "model-c", Enabled: false},
 		},
 		Scoring: DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 0, true, nil)
+	// creds 仅对未填 JSON api_key 的模型提供回落
+	keyCreds := func(id string) (string, string) {
+		if id == "model-b" {
+			return "key-b", ""
+		}
+		return "", ""
+	}
+	engine := NewScorerEngine(store, cfg, keyCreds, 0, nil)
 	ids := engine.EnabledModels()
 	if len(ids) != 2 {
 		t.Fatalf("应返回 2 个启用模型，got %d: %v", len(ids), ids)
@@ -410,10 +419,11 @@ func TestScorerEngine_TimeoutRespected(t *testing.T) {
 	// 创建一个超时极短的引擎
 	cfg := &VerifierModels{
 		PromptVersion: "v1",
-		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: true, APIKey: "sk-test", BaseURL: "http://localhost:19999"}},
+		Models:        []ModelConfig{{ID: "gpt-4o", Enabled: true}},
 		Scoring:       DefaultScoringConfig(),
 	}
-	engine := NewScorerEngine(store, cfg, "", "", 1*time.Millisecond, true, nil)
+	deadCreds := func(string) (string, string) { return "sk-test", "http://localhost:19999" }
+	engine := NewScorerEngine(store, cfg, deadCreds, 1*time.Millisecond, nil)
 	if engine.IsDisabled() {
 		t.Fatal("有 key 模型不应禁用")
 	}

@@ -4,7 +4,7 @@
 //   - 缓存优先：查 citation_scores 表，全命中直接返回聚合结果
 //   - 扇出并发：未命中模型用 errgroup 并行调用 LLMScorer
 //   - 优雅降级：部分模型失败不影响其他模型，只看剩余模型的一致率
-//   - 禁用模式：LITKIT_VERIFY_LINT_LLM=false 或全部模型无 key 时静默跳过
+//   - 禁用模式：无可启用的模型（全 disabled 或全无 key）时静默跳过
 //
 // 调用方（verify pipeline）只需检查 ScoreResult == nil 决定是否跳过报告。
 
@@ -46,7 +46,7 @@ type ScoreResult struct {
 
 // ScorerEngine 多模型扇出评分引擎。
 type ScorerEngine struct {
-	disabled      bool // 禁用模式（LITKIT_VERIFY_LINT_LLM=false 或无可启用的模型）
+	disabled      bool // 禁用模式（无可启用的模型）
 	store         *storage.Store
 	scorers       []Scorer // 启用的模型评分器
 	config        ScoringConfig
@@ -59,20 +59,23 @@ type cachedInfo struct {
 	rationale string
 }
 
+// CredentialsFn 按模型 ID 解析 env 回落凭据（key, baseURL）。
+// 由入口层注入（config.LLMCredentials），core 不直接依赖 config。
+// 优先级：JSON 明文 api_key/base_url > env 回落。
+type CredentialsFn func(modelID string) (apiKey, baseURL string)
+
 // NewScorerEngine 创建扇出评分引擎。
 //
 // 参数：
 //   - store：存储层（缓存读写）
 //   - cfg：verifier_models.json 解析后的配置
-//   - apiKey：LITKIT_LLM_API_KEY（所有模型共用）
-//   - baseURL：LITKIT_LLM_BASE_URL（可选，自托管 endpoint）
+//   - creds：env 回落凭据解析（JSON 未填 api_key 时使用；key 仍为空则跳过该模型）
 //   - timeout：LLM 单次评分超时
-//   - enabled：LITKIT_VERIFY_LINT_LLM 开关
 //   - proxy：入口层校验后的显式代理（nil=直连）
 //
-// 如果 !enabled 或没有可启用的模型（启用但无 key），返回禁用引擎。
-func NewScorerEngine(store *storage.Store, cfg *VerifierModels, apiKey, baseURL string, timeout time.Duration, enabled bool, proxy *url.URL) *ScorerEngine {
-	if !enabled || cfg == nil {
+// 无可启用的模型（全 disabled 或全无 key）时返回禁用引擎。
+func NewScorerEngine(store *storage.Store, cfg *VerifierModels, creds CredentialsFn, timeout time.Duration, proxy *url.URL) *ScorerEngine {
+	if cfg == nil {
 		return &ScorerEngine{disabled: true}
 	}
 
@@ -81,21 +84,20 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, apiKey, baseURL 
 		if !m.Enabled {
 			continue
 		}
-
+		envKey, envBase := creds(m.ID)
 		key := m.APIKey
 		if key == "" {
-			key = apiKey
+			key = envKey
 		}
 		if key == "" {
 			continue // 启用但无 key，跳过该模型
 		}
-
-		u := m.BaseURL
-		if u == "" {
-			u = baseURL
+		base := m.BaseURL
+		if base == "" {
+			base = envBase
 		}
-
-		scorers = append(scorers, NewLLMScorer(m.ID, key, u, cfg.PromptVersion, timeout, proxy))
+		m.APIKey, m.BaseURL = key, base
+		scorers = append(scorers, NewLLMScorer(m, m.BaseURL, cfg.PromptVersion, timeout, proxy))
 	}
 
 	if len(scorers) == 0 {

@@ -61,9 +61,8 @@ All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`); **no
 | `LITKIT_SCI_HUB_URL`                               | Optional; Sci-Hub mirror URL (default sci-hub.se)                                     |
 | `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | Optional; network timeout and retries                                                 |
 | `LITKIT_PROXY_URL`                                 | Optional; explicit proxy (http/https/socks5); all outbound calls go through it when set |
-| `LITKIT_LLM_API_KEY`                               | Optional; LLM citation-scoring key                                                    |
-| `LITKIT_LLM_BASE_URL`                              | Optional; self-hosted LLM endpoint                                                    |
-| `LITKIT_VERIFY_LINT_LLM`                           | Optional; enable LLM citation scoring (default false, avoids unexpected remote calls) |
+| `LITKIT_LLM_API_KEY`                               | Optional; LLM citation-scoring key (global fallback; prefer per-model `api_key` in `.litkit/verifier_models.json`) |
+| `LITKIT_LLM_BASE_URL`                              | Optional; self-hosted LLM endpoint (global fallback; per-model `base_url` in JSON takes precedence)                |
 
 ## Installation
 

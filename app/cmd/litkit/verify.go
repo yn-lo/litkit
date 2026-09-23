@@ -54,7 +54,7 @@ func newVerifyCmd(cfg *config.Config, store *storage.Store, fetcher *core.Metada
 使用 --check 可仅运行指定检查类别（逗号分隔），如 --check citation,word_counts。
 可用类别：language, structure, statistics, punctuation, style, citation, heading, boast_words, word_counts, todo
 
-使用 --report citation-refs 可额外输出引用相关性评分（需 LITKIT_VERIFY_LINT_LLM=true）。
+使用 --report citation-refs 可额外输出引用相关性评分（需在 .litkit/verifier_models.json 启用模型并配置凭据）。
 
 退出码：0=通过或仅需人工复核；1=有 A 类违规需修复。
 AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
@@ -155,10 +155,6 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Config) *lint.CitationRelevanceReport {
 	cr := &lint.CitationRelevanceReport{Enabled: false}
 
-	if !cfg.VerifyLLMEnabled {
-		return cr
-	}
-
 	// 加载 verifier_models.json
 	vmPath := filepath.Join(cfg.WorkDir, ".litkit", "verifier_models.json")
 	vm, err := core.LoadVerifierModels(vmPath)
@@ -166,6 +162,7 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 		fmt.Fprintf(os.Stderr, "litkit: 加载 verifier_models.json 失败: %v（跳过引用评分）\n", err)
 		return cr
 	}
+	warnPlainKeyModels(vm)
 
 	timeout := time.Duration(cfg.LLMTimeoutMS) * time.Millisecond
 	proxy, perr := httpclient.ParseProxyURL(cfg.ProxyURL)
@@ -173,7 +170,7 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 		fmt.Fprintf(os.Stderr, "litkit: LITKIT_PROXY_URL 无效，忽略代理: %v\n", perr)
 		proxy = nil
 	}
-	engine := core.NewScorerEngine(store, vm, cfg.LLMAPIKey, cfg.LLMBaseURL, timeout, cfg.VerifyLLMEnabled, proxy)
+	engine := core.NewScorerEngine(store, vm, cfg.LLMCredentials, timeout, proxy)
 	if engine.IsDisabled() {
 		return cr
 	}
@@ -246,6 +243,20 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 		}
 	}
 	return cr
+}
+
+// warnPlainKeyModels 对 JSON 中明文 api_key 的模型数量打印入库风险提示。
+// api_key 仅应出现在工作目录副本，勿提交 git。
+func warnPlainKeyModels(vm *core.VerifierModels) {
+	n := 0
+	for _, m := range vm.Models {
+		if m.APIKey != "" {
+			n++
+		}
+	}
+	if n > 0 {
+		fmt.Fprintf(os.Stderr, "litkit: 提示: %d 个模型的 api_key 明文存于 verifier_models.json，请确认该文件不会被提交到 git\n", n)
+	}
 }
 
 // relativePath 将绝对路径转为相对工作目录的路径。

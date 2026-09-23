@@ -101,8 +101,10 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --mode final --report 
 ```
 
 - 作用：逐句评"引用句 ↔ 该文献摘要"的**吻合度**（0~1），能抓结论不符、数字编造、过度归因
-- 前置：`.env` 设 `LITKIT_VERIFY_LINT_LLM=true` 与 `LITKIT_LLM_API_KEY`；
-  `.litkit/verifier_models.json` **至少启用 2 个模型**（`enabled: true`，多模型共识 `min_models: 2`）
+- 前置：凭据推荐直接写 `.litkit/verifier_models.json` 每模型 `api_key`/`base_url`（该副本勿提交 git，运行时有明文提示），
+  也可走 env 回落：全局 `LITKIT_LLM_API_KEY`/`LITKIT_LLM_BASE_URL` 或按模型 `LITKIT_LLM_API_KEY_<模型ID大写>`（如 `deepseek-chat` → `LITKIT_LLM_API_KEY_DEEPSEEK_CHAT`）；优先级 JSON > 按模型 env > 全局 env；
+  启用条件：`models[].enabled=true` 且有 `api_key` 即自动生效（无总开关，全禁用 = 不发远程调用）；
+  `.litkit/verifier_models.json` **至少启用 2 个模型**（`enabled: true`，多模型共识 `min_models: 2`），每模型可调 `temperature`/`max_tokens`/`extra_body`（透传请求体，如 `enable_thinking`/`reasoning_effort`）
 - 默认全禁用（避免意外远程调用）；未配置时静默跳过，不报错。被引文献须有摘要才参与评分
 - **边界**：锚点驱动，只评**已含 `[@citeKey]` 的句子**——检不出"该引而没引"；
   输入是摘要而非全文，仅存于全文的结论会被判低分
