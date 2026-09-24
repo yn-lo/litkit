@@ -229,17 +229,8 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 			if r.Line > 0 && r.Line <= len(lineNos) {
 				origLine = lineNos[r.Line-1]
 			}
-			cr.Results = append(cr.Results, lint.CitationRelevanceItem{
-				File:         rel,
-				Line:         origLine,
-				CiteKey:      r.CiteKey,
-				Sentence:     truncate(r.Sentence, 80), //nolint: mnd
-				MeanScore:    result.MeanScore,
-				Consensus:    result.Consensus,
-				Cached:       result.Cached,
-				LowScore:     result.MeanScore < 0.3, //nolint: mnd
-				LowConsensus: result.Consensus < 0.5, //nolint: mnd
-			})
+			item := buildRelevanceItem(rel, origLine, r.CiteKey, r.Sentence, result)
+			cr.Results = append(cr.Results, item)
 		}
 	}
 	return cr
@@ -269,6 +260,44 @@ func relativePath(path, workDir string) string {
 		return path
 	}
 	return rel
+}
+
+// buildRelevanceItem 由多模型评分结果构造报告条目。
+//
+// 保留失败明细：全部模型失败时该条仍在 results 中（不再静默消失），便于排查解析/限流问题；
+// 且无成功模型时不置低分/低一致率标记，避免把"没评上"误报成"评分低"。
+func buildRelevanceItem(rel string, line int, citeKey, sentence string, result *core.ScoreResult) lint.CitationRelevanceItem {
+	item := lint.CitationRelevanceItem{
+		File:         rel,
+		Line:         line,
+		CiteKey:      citeKey,
+		Sentence:     truncate(sentence, 80), //nolint: mnd
+		MeanScore:    result.MeanScore,
+		Consensus:    result.Consensus,
+		Cached:       result.Cached,
+		ScoredModels: scoredModelCount(result),
+	}
+	for _, ms := range result.PerModel {
+		if ms.Failed {
+			item.Failed = append(item.Failed, lint.ModelFailure{Model: ms.ModelID, Error: ms.Error})
+		}
+	}
+	if item.ScoredModels > 0 {
+		item.LowScore = result.MeanScore < 0.3
+		item.LowConsensus = result.Consensus < 0.5
+	}
+	return item
+}
+
+// scoredModelCount 统计成功出分的模型数（0=全部模型失败）。
+func scoredModelCount(r *core.ScoreResult) int {
+	n := 0
+	for _, ms := range r.PerModel {
+		if !ms.Failed {
+			n++
+		}
+	}
+	return n
 }
 
 // truncate 截断字符串到指定最大长度（中文按一个字符计）。

@@ -96,6 +96,10 @@ skills/（litkit + references、academic-style、manuscript-format + references�
   - 禁用模式：无可启用的模型（全 disabled 或全无 key）时静默跳过，不报错
   - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API
   - 优雅降级：部分模型失败（401/超时）不影响其他模型评分
+  - 失败可见：全部模型失败时该条仍保留在 `results` 中，`scoredModels` 记成功模型数、
+    `failed[]` 记各模型失败原因；`lowScore`/`lowConsensus` 仅在 `scoredModels>0` 时置位
+    （避免把"没评上"误报成"评分低"）。解析层容忍 markdown 代码块围栏与前后说明文字
+    （部分 OpenAI 兼容模型习惯返回 ```json 围栏，严格 Unmarshal 会整条丢弃）
 - **能力边界（缺引用检测）**：`ExtractCiteSentences` 锚点驱动，只对**已含 `[@citeKey]` 的句子**
   生成评分项。因此 citation-refs 检不出"该有引用而无引用"，且"无引用句"不会出现在评分结果里
   （不要把它当作漏报 bug）。间接兜底见「不包含」

@@ -282,7 +282,7 @@ func TestScorerEngine_PartialFailure_DegradesGracefully(t *testing.T) {
 
 // ---- 全部模型失败 ----
 
-func TestScorerEngine_AllFail_ReturnsNil(t *testing.T) {
+func TestScorerEngine_AllFail_ReturnsFailureDetail(t *testing.T) {
 	store := newTestStore(t)
 	k := insertPaperWithAbstract(t, store, "Kxq", "论文", "摘要")
 
@@ -299,8 +299,19 @@ func TestScorerEngine_AllFail_ReturnsNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
-	if result != nil {
-		t.Fatal("全部模型失败应返回 nil")
+	if result == nil {
+		t.Fatal("全部模型失败仍应返回结果（携带失败明细），不得返回 nil 而让条目静默消失")
+	}
+	if result.MeanScore != 0 {
+		t.Errorf("全部失败时 MeanScore 应为 0，got %v", result.MeanScore)
+	}
+	if len(result.PerModel) != 2 {
+		t.Fatalf("应保留 2 条失败明细，got %d", len(result.PerModel))
+	}
+	for _, ms := range result.PerModel {
+		if !ms.Failed || ms.Error == "" {
+			t.Errorf("模型 %s 应标记失败并带错误信息，got %+v", ms.ModelID, ms)
+		}
 	}
 }
 
@@ -432,8 +443,14 @@ func TestScorerEngine_TimeoutRespected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
-	// 连接超时导致模型失败，但应降级返回 nil（只有一个模型）
-	if result != nil {
-		t.Fatal("超时导致全部模型失败应返回 nil")
+	// 连接超时导致模型失败：应降级返回带失败明细的结果（不再返回 nil 而静默丢弃）
+	if result == nil {
+		t.Fatal("超时导致全部模型失败仍应返回结果（携带失败明细）")
+	}
+	if result.MeanScore != 0 {
+		t.Errorf("全部失败时 MeanScore 应为 0，got %v", result.MeanScore)
+	}
+	if len(result.PerModel) != 1 || !result.PerModel[0].Failed || result.PerModel[0].Error == "" {
+		t.Fatalf("应保留 1 条带错误的失败明细，got %+v", result.PerModel)
 	}
 }

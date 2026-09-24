@@ -63,6 +63,58 @@ func TestLLMScorer_Score_Success(t *testing.T) {
 	}
 }
 
+// TestLLMScorer_Score_TolerantContent 模型回复被 markdown 围栏或说明文字包裹时仍应解析出分数。
+// 实测 gemini/agnes 系模型习惯返回 ```json 围栏，严格 Unmarshal 会整条丢弃评分。
+func TestLLMScorer_Score_TolerantContent(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    float64
+	}{
+		{"裸 JSON", `{"score": 0.85, "rationale": "ok"}`, 0.85},
+		{"json 围栏", "```json\n{\"score\": 0.7, \"rationale\": \"ok\"}\n```", 0.7},
+		{"无语言围栏", "```\n{\"score\": 0.6, \"rationale\": \"ok\"}\n```", 0.6},
+		{"围栏前有说明", "好的，结果如下：\n```json\n{\"score\": 0.4, \"rationale\": \"ok\"}\n```", 0.4},
+		{"围栏后有说明", "```json\n{\"score\": 0.2, \"rationale\": \"ok\"}\n```\n如需调整请告知。", 0.2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := map[string]any{
+					"choices": []any{map[string]any{"message": map[string]any{"content": tc.content}}},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			defer srv.Close()
+
+			s := NewLLMScorer(ModelConfig{ID: "m", APIKey: "sk-test"}, srv.URL, "v1", 0, nil)
+			score, _, err := s.Score(context.Background(), "引用句", "摘要")
+			if err != nil {
+				t.Fatalf("Score: %v", err)
+			}
+			if score != tc.want {
+				t.Fatalf("score 应为 %v，got %v", tc.want, score)
+			}
+		})
+	}
+}
+
+// TestLLMScorer_Score_NonJSONStillFails 非 JSON 回复仍应报错（容忍逻辑不得把错误吞掉）。
+func TestLLMScorer_Score_NonJSONStillFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"content": "我不知道该怎么打分。"}}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	s := NewLLMScorer(ModelConfig{ID: "m", APIKey: "sk-test"}, srv.URL, "v1", 0, nil)
+	if _, _, err := s.Score(context.Background(), "引用句", "摘要"); err == nil {
+		t.Fatal("非 JSON 回复应报错")
+	}
+}
+
 func TestLLMScorer_Score_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

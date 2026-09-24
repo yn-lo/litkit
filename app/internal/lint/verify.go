@@ -51,17 +51,25 @@ type CitationRelevanceReport struct {
 	Results []CitationRelevanceItem `json:"results,omitempty"`
 }
 
+// ModelFailure 单模型评分失败明细（定位解析/网络问题用）。
+type ModelFailure struct {
+	Model string `json:"model"`
+	Error string `json:"error"`
+}
+
 // CitationRelevanceItem 单条引用的相关性评分结果。
 type CitationRelevanceItem struct {
-	File         string  `json:"file"`
-	Line         int     `json:"line"`
-	CiteKey      string  `json:"citeKey"`
-	Sentence     string  `json:"sentence"`
-	MeanScore    float64 `json:"meanScore"`
-	Consensus    float64 `json:"consensus"`
-	Cached       bool    `json:"cached"`
-	LowScore     bool    `json:"lowScore"`     // meanScore < 0.3}
-	LowConsensus bool    `json:"lowConsensus"` // consensus < 0.5
+	File         string         `json:"file"`
+	Line         int            `json:"line"`
+	CiteKey      string         `json:"citeKey"`
+	Sentence     string         `json:"sentence"`
+	MeanScore    float64        `json:"meanScore"`
+	Consensus    float64        `json:"consensus"`
+	Cached       bool           `json:"cached"`
+	LowScore     bool           `json:"lowScore"`         // meanScore < 0.3（无成功模型时不置位）
+	LowConsensus bool           `json:"lowConsensus"`     // consensus < 0.5（无成功模型时不置位）
+	ScoredModels int            `json:"scoredModels"`     // 成功出分的模型数（0=全部失败）
+	Failed       []ModelFailure `json:"failed,omitempty"` // 失败模型及原因（全部失败时该条仍保留在 results 中）
 }
 
 // FileReport 单文件验证结果。

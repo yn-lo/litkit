@@ -309,12 +309,12 @@ func (s *LLMScorer) Score(ctx context.Context, sentence, abstract string) (float
 	}
 
 	content := strings.TrimSpace(llmResp.Choices[0].Message.Content)
-	// 尝试解析 JSON 响应
+	// 尝试解析 JSON 响应（容忍 markdown 代码块围栏与前后说明文字）
 	var scoreResult struct {
 		Score     float64 `json:"score"`
 		Rationale string  `json:"rationale"`
 	}
-	if err := json.Unmarshal([]byte(content), &scoreResult); err != nil {
+	if err := json.Unmarshal([]byte(extractJSONObject(content)), &scoreResult); err != nil {
 		return 0, "", fmt.Errorf("scorer: 解析评分 JSON: %w (content=%q)", err, content)
 	}
 
@@ -322,4 +322,17 @@ func (s *LLMScorer) Score(ctx context.Context, sentence, abstract string) (float
 		return 0, "", fmt.Errorf("scorer: 分数越界 %f", scoreResult.Score)
 	}
 	return scoreResult.Score, scoreResult.Rationale, nil
+}
+
+// extractJSONObject 截取回复中的首个 JSON 对象，容忍 markdown 代码块围栏（```json）与前后说明文字。
+//
+// 部分 OpenAI 兼容模型习惯把 JSON 包进代码块（实测 gemini/agnes 系），直接 Unmarshal 会整条丢弃。
+// 未找到成对 { } 时原样返回，交由 json.Unmarshal 报错（错误信息保留原文便于排查）。
+func extractJSONObject(content string) string {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return content
+	}
+	return content[start : end+1]
 }

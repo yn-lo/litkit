@@ -114,7 +114,8 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, creds Credential
 
 // Score 对一句话与其引用文献的摘要做多模型交叉评分。
 //
-// 返回 (nil, nil) 表示禁用模式或全部模型失败——调用方静默跳过即可。
+// 返回 (nil, nil) 仅表示禁用模式——调用方静默跳过即可。
+// 全部模型失败时返回非 nil 结果（MeanScore=0，PerModel 携带各模型失败原因），由调用方决定是否上报。
 func (e *ScorerEngine) Score(ctx context.Context, citeKey, sentenceHash, sentence, abstract string) (*ScoreResult, error) {
 	if e.disabled {
 		return nil, nil
@@ -188,6 +189,16 @@ func (e *ScorerEngine) Score(ctx context.Context, citeKey, sentenceHash, sentenc
 		}
 	}
 	result := e.aggregate(citeKey, sentenceHash, all, perModel)
+	if result == nil {
+		// 全部模型失败：仍返回带 PerModel 明细的空结果（MeanScore=0），供调用方上报失败原因。
+		// 返回 nil 会让失败条目在报告中静默消失，无法排查（解析失败/限流/超时混在一起）。
+		result = &ScoreResult{
+			CiteKey:       citeKey,
+			SentenceHash:  sentenceHash,
+			PerModel:      perModel,
+			PromptVersion: e.promptVersion,
+		}
+	}
 	return result, nil
 }
 
