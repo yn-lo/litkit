@@ -307,7 +307,15 @@ func formattedContent(res *ManuscriptResult, style Style) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return res.Text + "\n\n# 参考文献\n\n" + refs, nil
+	return res.Text + "\n\n# " + refListHeading(style) + "\n\n" + refs, nil
+}
+
+// refListHeading 按样式返回文末文献节标题：英文样式（APA/IEEE）用 References。
+func refListHeading(style Style) string {
+	if style == StyleAPA || style == StyleIEEE {
+		return "References"
+	}
+	return "参考文献"
 }
 
 // WriteManuscriptOutputs 落盘 {base}_{ts}.md（正文+文末引用列表）/ {base}_{ts}.bib / {base}_{ts}.ris。

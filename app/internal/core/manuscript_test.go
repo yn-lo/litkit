@@ -199,6 +199,31 @@ func TestWriteManuscriptOutputs_AllStylesGetReferenceList(t *testing.T) {
 	}
 }
 
+// 英文样式（APA/IEEE）的文末文献节标题应为 References 而非中文标题。
+func TestFormattedHeadingEnglishStyles(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+
+	for _, style := range []Style{StyleAPA, StyleIEEE} {
+		res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 后文。", style)
+		if err != nil {
+			t.Fatalf("%s: ProcessManuscript err = %v", style, err)
+		}
+		files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", "20260924_120000", res, style)
+		if err != nil {
+			t.Fatalf("%s: WriteManuscriptOutputs err = %v", style, err)
+		}
+		b, _ := os.ReadFile(files[ManuscriptFormatted])
+		content := string(b)
+		if !strings.Contains(content, "# References") {
+			t.Errorf("%s: formatted.md 应含 # References 标题，got:\n%s", style, content)
+		}
+		if strings.Contains(content, "参考文献") {
+			t.Errorf("%s: 英文样式不应出现中文标题“参考文献”", style)
+		}
+	}
+}
+
 func TestWritePreviewOutput(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
