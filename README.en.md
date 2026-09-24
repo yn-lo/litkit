@@ -13,7 +13,7 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 - **Full-text fetch**: by citeKey / DOI — Unpaywall OA first → Sci-Hub fallback; PDF saved to disk + full text cached (zero network on re-fetch).
 - **Standards-compliant citations**: export BibTeX / RIS / text in GB/T 7714—2025 / APA / IEEE styles.
 - **Manuscript typesetting**: `[@citeKey]` placeholders resolved to citation numbers; `--preview` emits a self-describing review copy, `--docx` converts to Word.
-- **Compliance gate**: mechanical rule checks (language / structure / statistics / punctuation / citations / prose / word counts) across three `verify` modes.
+- **Compliance gate**: mechanical rule checks (language / structure / statistics / punctuation / citations / prose / word counts) across three `verify` modes; `fix` auto-corrects the fixable ones.
 
 **AI-first**: responses default to the minimal field set AI needs (citeKey / title / firstAuthor / year / abstract); full metadata is fetched on demand; the CLI outputs JSON consumable by AI shells.
 
@@ -29,13 +29,15 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 
 | Capability             | Description                                                                                                               |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Cross-source search    | 8 sources, concurrent + dedup;`-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N`              |
+| Cross-source search    | 8 sources, concurrent + dedup;`-s` filter / `-n` per-source count / `--mode tiab\|full` / `--years N` / `--since YEAR` / `-y YEAR` / `--exclude` |
+| Source list            | `sources` lists the registered search sources and their rate limits                                                       |
 | Metadata lookup        | `metadata doi\|pmid\|arxiv\|title <id>` (query only); `lib add --doi <DOI>` resolve and store                            |
-| Full-text fetch        | Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch)                                |
-| Citations              | `export -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE                                                        |
-| Manuscript typesetting | `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o`                                                         |
-| Compliance gate        | `lint init` scaffolds a harness; `verify --mode draft\|chapter\|final`; `--report citation-refs` LLM citation scoring |
-| Library management     | `lib add\|search\|list\|rm\|stats\|path`                                                                                     |
+| Full-text fetch        | `fetch <citeKey\|doi>`: Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch)         |
+| Citations              | `export <papers.json> -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE                                           |
+| Manuscript typesetting | `manuscript <draft.md>`: `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o`                                            |
+| Compliance gate        | `lint init` scaffolds constraints; `verify --mode chapter\|draft\|final` (lang × type × mode filtering); `--report citation-refs` LLM citation scoring; `fix` auto-corrects fixable rules |
+| Rule inspection        | `rules` lists all rules (ID / category / langs and paper types / verification method A·S·M)                                |
+| Library management     | `lib add\|get\|list\|search\|rm\|stats\|path`                                                                              |
 
 ## Sources
 
@@ -48,21 +50,24 @@ No single search engine — combine public open sources by role:
 
 All sources provide abstracts (FR-SEARCH-03). Known upstream limitations: Semantic Scholar anonymous rate limiting (429); Sci-Hub mirrors are unstable and may disappear anytime — enabling it is the user's own call.
 
-## Configuration
+## Environment Variables
 
-All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`); **no API key is required**:
+All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`; discovery order is `LITKIT_WORK_DIR/.env` > upward search from the current directory, with process environment variables taking precedence); **no API key is required**:
 
 | Variable                                             | Description                                                                           |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `LITKIT_WORK_DIR`                                  | Working directory (library and config are initialized here)                           |
-| `LITKIT_LANG`                                      | Default language (zh / en)                                                            |
+| `LITKIT_ENV_FILE`                                  | Optional; explicit `.env` path                                                        |
+| `LITKIT_LANG`                                      | Default writing language (zh / en, default zh)                                        |
+| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | Optional; per-request timeout (default 15000 ms) / retries on 429 and 5xx (default 2)  |
+| `LITKIT_PROXY_URL`                                 | Optional; explicit proxy (http/https/socks5); when set, all outbound calls (search / metadata / full text / LLM scoring) go through it |
 | `LITKIT_SEMANTIC_SCHOLAR_API_KEY`                  | Optional; raises Semantic Scholar rate limits                                         |
+| `LITKIT_DEFAULT_MAX_RESULTS` / `LITKIT_DEFAULT_RECENT_YEARS` / `LITKIT_DEFAULT_SEARCH_MODE` / `LITKIT_SEARCH_TIMEOUT_MS` | Optional; search defaults: per-source count (5) / recent years (3) / search mode (tiab) / search timeout |
 | `LITKIT_UNPAYWALL_EMAIL`                           | Optional; Unpaywall requires an email (OA channel is skipped without it)              |
-| `LITKIT_SCI_HUB_URL`                               | Optional; Sci-Hub mirror URL (default sci-hub.se)                                     |
-| `LITKIT_HTTP_TIMEOUT_MS` / `LITKIT_HTTP_RETRIES` | Optional; network timeout and retries                                                 |
-| `LITKIT_PROXY_URL`                                 | Optional; explicit proxy (http/https/socks5); all outbound calls go through it when set |
-| `LITKIT_LLM_API_KEY`                               | Optional; LLM citation-scoring key (global fallback; prefer per-model `api_key` in `.litkit/verifier_models.json`) |
-| `LITKIT_LLM_BASE_URL`                              | Optional; self-hosted LLM endpoint (global fallback; per-model `base_url` in JSON takes precedence)                |
+| `LITKIT_SCI_HUB_URL` / `LITKIT_FETCH_DOWNLOAD_DIR` | Optional; Sci-Hub mirror (default sci-hub.se) / PDF download directory (default `WORK_DIR/downloads`) |
+| `LITKIT_LLM_API_KEY` / `LITKIT_LLM_BASE_URL` / `LITKIT_LLM_TIMEOUT_MS` | Optional; LLM citation-scoring credentials, endpoint and per-call timeout (default 30000 ms). Global fallback; prefer per-model `api_key`/`base_url` in `.litkit/verifier_models.json` (JSON wins), and `LITKIT_LLM_API_KEY_<MODEL_ID_UPPERCASE>` per-model naming is also supported |
+
+See [`app/.env.example`](app/.env.example) for the full list with inline comments.
 
 ## Installation
 
@@ -79,14 +84,16 @@ cd app && go build -o litkit ./cmd/litkit
 ```powershell
 $env:LITKIT_WORK_DIR = "$HOME\litkit-workspace"   # Linux/macOS: export LITKIT_WORK_DIR=...
 
-litkit init --type empirical --lang zh                 # 1. Init (review | empirical)
+litkit init --type empirical --lang zh                 # 1. Init (review | empirical | book | proposal)
 litkit search "retrieval augmented generation" -n 3    # 2. Cross-source search (JSON out)
 litkit lib add --doi 10.5555/3295222.3295349           # 3. Resolve DOI and store
 litkit fetch <citeKey>                                 # 4. Fetch full text (Unpaywall → Sci-Hub)
 litkit manuscript draft.md --lang zh                   # 5. Typeset manuscript ([@citeKey] → [1][2])
 litkit manuscript draft.md --preview                   # 5b. Preview copy for human review
-litkit lint init --type empirical --lang zh            # 6. Scaffold writing constraints
+litkit lint init --type empirical --lang zh            # 6. Scaffold writing constraints (for an existing work dir)
 litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
+litkit fix chapter1.md                                 # 6c. Auto-fix fixable rules (in place)
+litkit verify chapter1.md --report citation-refs       # 6d. LLM citation-relevance scoring (needs model credentials)
 ```
 
 ## Interface & Documentation
@@ -104,7 +111,7 @@ litkit verify chapter1.md --mode draft                 # 6b. Compliance gate
 
 ## Future Plan
 
-> See [roadmap.md](.harness/specs/plans/roadmap.md) for detailed milestones. Directions beyond the released (M1–M6) and in-progress (M7 semantic search, M8 LLM citation scoring) milestones:
+> See [roadmap.md](.harness/specs/plans/roadmap.md) for detailed milestones. M1–M6 are released; M7 (local-library Chinese retrieval and phase-2 sources) and M8 (LLM citation-relevance scoring) are in progress — M8's core has landed (Scorer / ScorerEngine multi-model fan-out / cite-sentence extraction / `citation_scores` cache / `verify --report citation-refs`), with multi-model selection POC and human-labelled threshold calibration remaining. Directions beyond that:
 
 - **Chart generation**: emit SVG directly (forest plots / PRISMA flow diagram / included-literature stats) from the local library.
 - **Systematic review `litkit review`**: PRISMA workflow (search → dedup → screening → inclusion list → forest-plot data).
