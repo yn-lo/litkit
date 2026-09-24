@@ -45,7 +45,7 @@ func (a retractionResolverAdapter) Resolve(ctx context.Context, doi string) (lin
 func newVerifyCmd(cfg *config.Config, store *storage.Store, fetcher *core.MetadataFetcher) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify <file.md> [file2.md ...] --type review|empirical|book --lang zh|en",
-		Short: "验证文稿合规性（A/S 类规则自动检查）",
+		Short: "验证文稿合规性（A/S 规则 + 引用吻合度评分）",
 		Long: `litkit verify —— 事后合规验证
 
 对 Markdown 文稿执行规则检查，输出 JSON 报告。
