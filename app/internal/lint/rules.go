@@ -1606,6 +1606,9 @@ func repeatCandidates(text []rune, minLen int) []repeatCand {
 				for i+e < len(text) && j+e < len(text) && text[i+e] == text[j+e] {
 					e++
 				}
+				if j-i < e {
+					continue // 两次出现相互重叠：单串自身周期重复（如连续同字符排线），非冗余
+				}
 				sp := [2]int{i, i + e}
 				if idx, ok := bySpan[sp]; ok {
 					cands[idx].occ = append(cands[idx].occ, [2]int{j, j + e})
@@ -1661,6 +1664,7 @@ func longestRepeats(cands []repeatCand) []repeatCand {
 
 // checkR410 重复句段：正文任意连续 ≥spec.repeat_min_len 字片段出现 ≥2 次判潜在冗余（S 类）。
 // 只报最长重复段：某片段每次出现均包含于更长重复段的出现内时不单独报，避免同段碎片刷屏。
+// 违规文案列出各次出现的行号，AI 据此定位（片段不足一行时给行区间）。
 func checkR410(src *Source, spec *ManuscriptSpec) []Violation {
 	minLen := spec.RepeatLen()
 	if minLen < 2 {
@@ -1691,11 +1695,40 @@ func checkR410(src *Source, spec *ManuscriptSpec) []Violation {
 		vs = append(vs, Violation{
 			RuleID:     ruleR410,
 			Line:       lineOf[c.start],
-			Problem:    fmt.Sprintf("连续 %d 字片段 %q 重复出现 %d 次（潜在冗余）", c.end-c.start, snippet, len(c.occ)),
+			Problem:    fmt.Sprintf("连续 %d 字片段 %q 重复出现 %d 次（%s，潜在冗余）", c.end-c.start, snippet, len(c.occ), occLines(c.occ, lineOf)),
 			Suggestion: "删减或改写重复表述，同一论述保留一处",
 		})
 	}
 	return vs
+}
+
+// occLineMax 违规文案中列出的出现位置上限（超出只列前若干处，附总数）。
+const occLineMax = 5
+
+// occLines 把重复片段的各次出现位置格式化为行号列表，供 AI 直接定位：
+// 单个片段未跨行写作 "第 3 行"，跨行写作 "第 3-4 行"，多处用顿号连接；
+// 同一行的多次出现只列一次（次数已在问题描述里）。
+func occLines(occ [][2]int, lineOf []int) string {
+	locs := make([]string, 0, min(len(occ), occLineMax))
+	for _, iv := range occ {
+		lo, hi := lineOf[iv[0]], lineOf[iv[1]-1]
+		loc := strconv.Itoa(lo)
+		if lo != hi {
+			loc = fmt.Sprintf("%d-%d", lo, hi)
+		}
+		if len(locs) > 0 && locs[len(locs)-1] == loc {
+			continue
+		}
+		if len(locs) == occLineMax {
+			break
+		}
+		locs = append(locs, loc)
+	}
+	s := "第 " + strings.Join(locs, "、") + " 行"
+	if len(occ) > occLineMax {
+		s += fmt.Sprintf(" 等 %d 处", len(occ))
+	}
+	return s
 }
 
 // checkR53 引用密度：引用聚集程度 + 全文引用篇数区间。

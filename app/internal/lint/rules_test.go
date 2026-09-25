@@ -145,3 +145,35 @@ func TestCheckR410_TripleOccurrence(t *testing.T) {
 		t.Fatalf("应报出现次数 3，got %q", vs[0].Problem)
 	}
 }
+
+func TestCheckR410_OccurrenceLines(t *testing.T) {
+	// 违规文案须列出各次出现的行号（AI 据此定位，无需全文搜片段）
+	src := mustParse(t, "# 1 引言\n\n本研究采用术后疼痛恐惧面部评估工具进行测量。\n\n# 2 讨论\n\n如前所述，本研究采用术后疼痛恐惧面部评估工具进行测量。\n")
+	vs := checkR410(src, mustSpec(LangZH))
+	if len(vs) != 1 {
+		t.Fatalf("应报 1 条，got %d: %+v", len(vs), vs)
+	}
+	if !strings.Contains(vs[0].Problem, "第 3、7 行") {
+		t.Fatalf("应列出现行号 3、7，got %q", vs[0].Problem)
+	}
+}
+
+func TestCheckR410_CrossLineSpan(t *testing.T) {
+	// 硬换行文稿：片段跨行时给行区间，AI 才不会只在一行里找不到该片段
+	src := mustParse(t, "医疗器械临床试验质量管理规范\n要求记录器械信息。\n\n医疗器械临床试验质量管理规范要求记录器械信息。\n")
+	vs := checkR410(src, mustSpec(LangZH))
+	if len(vs) != 1 {
+		t.Fatalf("应报 1 条，got %d: %+v", len(vs), vs)
+	}
+	if !strings.Contains(vs[0].Problem, "第 1-2、4 行") {
+		t.Fatalf("跨行片段应给行区间，got %q", vs[0].Problem)
+	}
+}
+
+func TestCheckR410_NoSelfOverlap(t *testing.T) {
+	// 单串自身周期重复（连续同字符分割线）不是重复表述，不应报
+	src := mustParse(t, "# 1 引言\n\n术后疼痛恐惧面部评估工具。\n\n————————————\n")
+	if vs := checkR410(src, mustSpec(LangZH)); len(vs) != 0 {
+		t.Fatalf("单串自重叠不应报重复，got %+v", vs)
+	}
+}
