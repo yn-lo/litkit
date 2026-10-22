@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"litkit/internal/model"
@@ -26,6 +27,134 @@ func paper(title, doi string, authors ...string) model.Paper {
 	}
 	p.ID = p.ComputeID()
 	return p
+}
+
+func TestUpsertPaper_SparseUpdatePreservesMetadata(t *testing.T) {
+	s := newTestStore(t)
+	p := paper("Metadata", "10.1/metadata", "Smith")
+	p.Year, p.Citations = 2024, 42
+	key, _, err := s.UpsertPaper(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.UpsertPaper(model.Paper{DOI: p.DOI, Abstract: "Updated abstract"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetByCiteKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Year != p.Year || got.Citations != p.Citations || got.ID != p.ID || got.Title != p.Title || got.Source != p.Source || len(got.Authors) != 1 || got.Authors[0] != p.Authors[0] || got.Abstract != "Updated abstract" {
+		t.Fatalf("缺失字段应保留，摘要应更新: %+v", got)
+	}
+}
+
+func TestUpsertPaper_IdentityUpgrade(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "add_doi", true: "missing_doi"}[reverse], func(t *testing.T) {
+			s := newTestStore(t)
+			first, second := paper("Same  Paper", ""), paper("same paper", "10.1/upgrade")
+			if reverse {
+				first, second = second, first
+			}
+			key, _, err := s.UpsertPaper(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref := model.PaperRef{CiteKey: key, SentenceHash: "identity", Manuscript: "doc.md", Sentence: "Original citation"}
+			if err := s.AddRef(ref); err != nil {
+				t.Fatal(err)
+			}
+			gotKey, inserted, err := s.UpsertPaper(second)
+			if err != nil || inserted || gotKey != key {
+				t.Fatalf("身份补全应保留 citeKey: key=%q inserted=%v err=%v", gotKey, inserted, err)
+			}
+			got, err := s.GetByDOI("10.1/upgrade")
+			if err != nil || got == nil || got.CiteKey != key {
+				t.Fatalf("DOI 应关联原记录: %+v, err=%v", got, err)
+			}
+			stats, err := s.Stats()
+			if err != nil || stats.Total != 1 {
+				t.Fatalf("不应重复入库: %+v, err=%v", stats, err)
+			}
+			refs, err := s.GetRefsByCiteKey(key)
+			if err != nil || len(refs) != 1 || refs[0] != ref {
+				t.Fatalf("身份补全不得破坏引用关系: %+v, err=%v", refs, err)
+			}
+			if k, inserted, err := s.UpsertPaper(paper("Renamed", "10.1/upgrade")); err != nil || inserted || k != key {
+				t.Fatalf("后续更新: key=%q inserted=%v err=%v", k, inserted, err)
+			}
+		})
+	}
+}
+
+func TestUpsertPaper_ConflictingDOIsRemainSeparate(t *testing.T) {
+	s := newTestStore(t)
+	first, _, err := s.UpsertPaper(paper("Same paper", "10.1/one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, inserted, err := s.UpsertPaper(paper("Same paper", "10.1/two"))
+	if err != nil || !inserted || first == second {
+		t.Fatalf("冲突 DOI 不得合并: key=%q inserted=%v err=%v", second, inserted, err)
+	}
+	if _, _, err := s.UpsertPaper(paper("Same paper", "")); err == nil {
+		t.Fatal("无 DOI 的同标题输入不得任意覆盖多个候选之一")
+	}
+	if key, inserted, err := s.UpsertPaper(paper("Updated title", "10.1/one")); err != nil || inserted || key != first {
+		t.Fatalf("拒绝歧义输入后应释放事务，允许 DOI 更新: key=%q inserted=%v err=%v", key, inserted, err)
+	}
+}
+
+func TestUpsertPaper_ConcurrentConnections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultDBName)
+	var stores []*Store
+	for range 2 {
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.Close() })
+		stores = append(stores, s)
+	}
+	type result struct {
+		key      string
+		inserted bool
+		err      error
+	}
+	const count = 32
+	results := make(chan result, count)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Go(func() {
+			<-start
+			key, inserted, err := stores[i%len(stores)].UpsertPaper(paper("Concurrent", "10.1/concurrent"))
+			results <- result{key, inserted, err}
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	key, added := "", 0
+	for r := range results {
+		if r.err != nil {
+			t.Fatalf("并发入库失败: %v", r.err)
+		}
+		if key == "" {
+			key = r.key
+		}
+		if key != r.key {
+			t.Fatalf("citeKey 不一致: %q vs %q", key, r.key)
+		}
+		if r.inserted {
+			added++
+		}
+	}
+	if added != 1 {
+		t.Fatalf("应仅插入一次: %d", added)
+	}
 }
 
 // ---- Open / 迁移 ----

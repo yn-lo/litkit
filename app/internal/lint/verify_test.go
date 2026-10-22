@@ -887,8 +887,33 @@ func TestRunFilesWithStore_NilStore_NoR56(t *testing.T) {
 	}
 }
 
-// 附加检查（R5.6–R5.9，注册表外）须遵循与注册表规则相同的 --rule/--skip 筛选：
+// 附加检查（R5.6–R5.9，需 IO）须遵循与纯规则相同的 --rule/--skip 筛选：
 // 局部验证（如 --rule R3.1）不应被缺失引用阻断。
+func TestRunFilesWithStore_CitationCategories(t *testing.T) {
+	s := newTestStore(t)
+	src := mustParse(t, "结论[@AAA]。\n")
+	for _, tc := range []struct {
+		name string
+		opts Options
+		want bool
+	}{
+		{"punctuation_only", Options{Lang: "zh", Mode: ModeDraft, OnlyCategories: []Category{CatPunctuation}}, false},
+		{"skip_citation", Options{Lang: "zh", Mode: ModeDraft, SkipCategories: []Category{CatCitation}}, false},
+		{"citation_only", Options{Lang: "zh", Mode: ModeDraft, OnlyCategories: []Category{CatCitation}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report, err := RunFilesWithStore([]string{src.Path}, DefaultSpec(), tc.opts, s, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := violationsOf(report.Files[0], ruleCiteExists)
+			if (len(got) > 0) != tc.want {
+				t.Fatalf("R5.6 类别筛选失败: %v", got)
+			}
+		})
+	}
+}
+
 func TestRunFilesWithStore_ExtraChecksFollowFilters(t *testing.T) {
 	s := newTestStore(t)
 	dir := t.TempDir()

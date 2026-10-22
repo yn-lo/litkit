@@ -28,7 +28,7 @@ type CiteSentence struct {
 
 // bodyCiteRe 匹配正文中的裸 [@citeKey] 占位符（与 manuscript.go placeholderRe 一致）。
 // 3-5 字母以支持 cite_key 空间耗尽升 4/5。
-var bodyCiteRe = regexp.MustCompile(`\[@([a-zA-Z]{3,5})\]`)
+var bodyCiteRe = regexp.MustCompile(`\[@([a-zA-Z]{3,5}(?:\s*,\s*[a-zA-Z]{3,5})*)\]`)
 
 // codeBlockRe 匹配 Markdown 代码块（``` 或 ~~~），排除其中内容。
 var codeBlockRe = regexp.MustCompile("(?s)```.*?```|~~~.*?~~~")
@@ -70,7 +70,7 @@ func ExtractCiteSentences(body string) []CiteSentence {
 	seen := map[string]bool{} // "citeKey:hash" 去重
 
 	for _, m := range matches {
-		citeKey := body[m[2]:m[3]] // 第二个捕获组 = citeKey
+		citeKeys := strings.Split(body[m[2]:m[3]], ",")
 
 		// 向前找句末标点（字节偏移）
 		sentStart := 0
@@ -101,12 +101,6 @@ func ExtractCiteSentences(body string) []CiteSentence {
 		sum := sha256.Sum256([]byte(hashInput))
 		hash := hex.EncodeToString(sum[:])[:16]
 
-		key := citeKey + ":" + hash
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
 		// 计算行号：统计锚点前的换行数
 		lineNo := 1
 		for _, b := range body[:m[0]] {
@@ -115,12 +109,14 @@ func ExtractCiteSentences(body string) []CiteSentence {
 			}
 		}
 
-		result = append(result, CiteSentence{
-			CiteKey:      citeKey,
-			SentenceHash: hash,
-			Sentence:     sentence,
-			Line:         lineNo,
-		})
+		for _, citeKey := range citeKeys {
+			citeKey = strings.TrimSpace(citeKey)
+			key := citeKey + ":" + hash
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, CiteSentence{CiteKey: citeKey, SentenceHash: hash, Sentence: sentence, Line: lineNo})
+			}
+		}
 	}
 	return result
 }

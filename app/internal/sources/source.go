@@ -96,8 +96,8 @@ func (b BaseSource) HTTPClient() *httpclient.Client { return b.http }
 // 流程：限速器取令牌（Wait）→ HTTP 客户端执行（含 429/503 退避重试）。
 // ctx 取消会同时中断限速等待与重试等待。
 func (b BaseSource) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
-	if !b.limiter.Allow(ctx) {
-		return nil, ctx.Err()
+	if err := b.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("%s rate limit: %w", b.name, err)
 	}
 	return b.http.Do(ctx, req)
 }

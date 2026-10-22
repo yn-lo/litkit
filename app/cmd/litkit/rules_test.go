@@ -17,10 +17,19 @@ func TestBuildRulesOutput(t *testing.T) {
 		ids[r.ID] = true
 	}
 	// 关键规则（含本次新增的 R3.3/R3.4）必须可查
-	for _, id := range []string{"R1.3", "R3.3", "R3.4", "R2.1", "R7.2"} {
+	for _, id := range []string{"R1.3", "R3.3", "R3.4", "R2.1", "R7.2", "R5.6", "R5.7", "R5.8", "R5.9"} {
 		if !ids[id] {
 			t.Errorf("规则 %s 应在注册表输出中", id)
 		}
+	}
+}
+
+func TestValidateRuleIDs_IncludesCitationChecks(t *testing.T) {
+	if err := validateRuleIDs("R5.6,R5.7,R5.8,R5.9"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRuleIDs("R5.10"); err == nil {
+		t.Fatal("未知规则应拒绝")
 	}
 }
 
@@ -47,7 +56,7 @@ func TestRulesCmd(t *testing.T) {
 	}
 }
 
-// TestAllRules_registryIntegrity 注册表完整性：ID 唯一、字段非空、Check 必填。
+// TestAllRules_registryIntegrity 注册表完整性：只有查库/联网规则无纯函数 Check。
 func TestAllRules_registryIntegrity(t *testing.T) {
 	rules := lint.AllRules()
 	seen := map[string]bool{}
@@ -59,7 +68,7 @@ func TestAllRules_registryIntegrity(t *testing.T) {
 			t.Errorf("规则 ID 重复：%s", r.ID)
 		}
 		seen[r.ID] = true
-		if r.Check == nil {
+		if r.Check == nil && r.ID != "R5.6" && r.ID != "R5.7" && r.ID != "R5.8" && r.ID != "R5.9" {
 			t.Errorf("规则 %s 缺 Check", r.ID)
 		}
 		if len(r.Langs) == 0 {

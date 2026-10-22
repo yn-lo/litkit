@@ -61,6 +61,8 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 	}
 
 	res := &ManuscriptResult{CitationMap: make(map[string]string)}
+	// 只拆裸句柄组；doi/title 等反查 token 内的逗号必须保留。
+	src = expandCiteGroups(src, style)
 	seen := make(map[string]int)    // paper.ID → Papers 下标
 	unseen := make(map[string]bool) // 已记入 Unresolved 的 token（去重）
 
@@ -144,6 +146,23 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 	b.WriteString(src[pos:])
 	res.Text = b.String()
 	return res, nil
+}
+
+func expandCiteGroups(src string, style Style) string {
+	return bodyCiteRe.ReplaceAllStringFunc(src, func(raw string) string {
+		parts := strings.Split(raw[2:len(raw)-1], ",")
+		if len(parts) == 1 {
+			return raw
+		}
+		var b strings.Builder
+		for i, part := range parts {
+			if i > 0 && style == StyleAPA {
+				b.WriteByte(' ')
+			}
+			b.WriteString("[@" + strings.TrimSpace(part) + "]")
+		}
+		return b.String()
+	})
 }
 
 // collapseNumbers 将升序去重编号列表折叠为范围字符串。

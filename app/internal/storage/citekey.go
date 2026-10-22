@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -18,12 +19,12 @@ const citeKeyAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 // newCiteKey 生成库内唯一的 cite_key。
 //
 // 每轮先查库去重再返回；3 字母空间耗尽时升 4/5 字母。
-func (s *Store) newCiteKey() (string, error) {
+func newCiteKey(tx *sql.Tx) (string, error) {
 	for length := citeKeyMinLen; length <= citeKeyMaxLen; length++ {
 		for range citeKeyAttempts {
 			k := randomKey(length)
 			var n int
-			if err := s.db.QueryRow("SELECT COUNT(*) FROM papers WHERE cite_key = ?", k).Scan(&n); err != nil {
+			if err := tx.QueryRow("SELECT COUNT(*) FROM papers WHERE cite_key = ?", k).Scan(&n); err != nil {
 				return "", fmt.Errorf("storage cite key check: %w", err)
 			}
 			if n == 0 {

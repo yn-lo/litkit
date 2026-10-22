@@ -151,7 +151,7 @@ func TestFormatReference_APA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormatReference err = %v", err)
 	}
-	for _, want := range []string{"Vaswani, A., Shazeer, N., Parmar, N., et al.", "(2017)", "Attention Is All You Need.", "*Advances in Neural Information Processing Systems*", "*30*, 5998-6008.", "https://doi.org/10.5555/3295222.3295349"} {
+	for _, want := range []string{"Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., & Jones, L.", "(2017)", "Attention Is All You Need.", "*Advances in Neural Information Processing Systems*", "*30*, 5998-6008.", "https://doi.org/10.5555/3295222.3295349"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("APA 条目缺少 %q：\n%s", want, got)
 		}
@@ -225,7 +225,7 @@ func TestAuthors_MaxThree(t *testing.T) {
 		}
 		return out
 	}
-	for _, style := range []Style{StyleGB7714, StyleAPA, StyleIEEE} {
+	for _, style := range []Style{StyleGB7714, StyleIEEE} {
 		if got, err := FormatReference(model.Paper{Authors: authors(3), Title: "T", Year: 2020}, style, 0); err != nil {
 			t.Fatalf("%s err = %v", style, err)
 		} else if strings.Contains(got, "et al") || strings.Contains(got, "等") {

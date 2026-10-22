@@ -1,7 +1,7 @@
 # 接口规范 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-10-09
 status: active
 owner: litkit-core
 ---
@@ -106,6 +106,8 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 
 产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`；`--preview` 时额外产出 `{base}_{ts}.preview.md`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
 
+裸句柄支持单引 `[@AAA]` 和组合 `[@AAA,BBB]`；组合中的各句柄分别查库，编号样式沿用相邻引用的折叠规则（如 `[1-2]`）。带前缀的 `[@title:...]` 等标识符中的逗号保留原义。
+
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]
 litkit lib add <metadata.json>
@@ -127,7 +129,8 @@ litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
 > `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`。
 > **模式 2：`--doi <DOI>` 反查入库**（CrossRef）。摘要缺失默认 soft（告警并仍入库，stderr 提示）；
 > `--require-abstract` 时缺失则拒绝入库（退出码 2）。
-> 同一 DOI（无 DOI 按标题）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
+> 同一 DOI（无 DOI 按归一化标题或源 ID）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
+> 缺失元数据保留已有值；无 DOI 条目补充 DOI 时沿用原 citeKey。题名或源 ID 更新时同步更新有效去重键。不同 DOI 不合并，标题回退匹配多条记录时拒绝更新，需提供 DOI 明确身份。
 > 手动录入 `source=manual`；DOI 反查 `source=crossref`，可用 `lib list --source` / `lib stats` 区分。
 > 输出：`{ added, papers: [{ citeKey, title, inserted }] }`（`--doi` 单条为 `{ citeKey, title, inserted }`）。
 
@@ -169,9 +172,10 @@ litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
 | `--rule` | 仅修正指定规则（逗号分隔） | 全部可修规则 |
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
-> 仅修正"字符级确定性"规则：全半角（R3.1）、直引号（R3.2）、数字范围（R3.3，仅两端单位相同的范围合并）、中文括号（R3.5）、中文省略号（R3.6）、P 值格式（R2.1，大于类比较 P>0.0001 保留原语义不折叠为 P<0.001）、
+> 仅修正"字符级确定性"规则：全半角（R3.1）、直引号（R3.2）、数字范围（R3.3，仅两端单位大小写完全相同的范围合并）、中文括号（R3.5）、中文省略号（R3.6）、P 值格式（R2.1，大于类比较 P>0.0001 保留原语义不折叠为 P<0.001）、
 > 加粗标记（R1.4）、标题冒号（R7.1）、标题末尾标点（R1.2）、引用位置（R6.1）。
-> 语义/结构类规则不可自动修（`litkit rules` 可查全部规则，`fix` 字段非空才可修）。
+> 保留反引号/波浪号代码围栏、缩进代码块、行内代码（含跨行跨度）、URL、链接目标、引用式链接定义和 HTML 标签；仅修正这些区域之外的正文。
+> 语义/结构类规则不可自动修（`litkit rules` 可查全部规则，`fixable=true` 才可修）。
 > 输出：`{ files: { "<path>": { applied: { "R3.1": 1, ... } } } }`（applied = 规则 ID → 修正行数）。
 
 ```
@@ -187,9 +191,9 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
-> 需要 `LITKIT_WORK_DIR`（读取 `.litkit/specs/manuscript-spec.yaml` 阈值配置）。
-> 查库类附加检查（R5.6 引用存在 / R5.7 撤稿 / R5.8 时效 / R5.9 自引）同样遵循 `--rule`/`--skip` 筛选：局部验证（如 `--rule R3.1`）不会被缺失引用阻断。
-> 42 条规则（28 A 类自动判定 + 14 S 类半自动）；S 类命中仅提示人工确认，不判 fail。
+> 需要 `LITKIT_WORK_DIR`（读取 `.litkit/<type-lang>/manuscript-spec.yaml` 阈值配置）。显式类型/语言不会被自动检测覆盖；文件缺失时使用匹配预设，无可用预设（如 book/en）或规范文件无效时返回错误。
+> 查库类附加检查（R5.6 引用存在 / R5.7 撤稿 / R5.8 时效 / R5.9 自引）已纳入规则列表，归属 citation 类别，draft 起启用；同样遵循 `--rule`/`--skip` 和 `--check`/`--skip-check` 筛选：局部验证（如 `--rule R3.1` 或 `--check punctuation`）不会被缺失引用阻断。
+> 46 条规则（30 A 类自动判定 + 16 S 类半自动）；S 类命中仅提示人工确认，不判 fail。
 > spec 的 `skip_rules` 字段可永久跳过指定规则（等效每次 `--skip`）。
 > 模式递增：chapter → draft → final，高模式包含低模式全部规则。
 > R5.2（`[待引证]` 占位符）仅在 final 模式判违规：chapter/draft 阶段为"证据不足待补文献"的合法中间态；

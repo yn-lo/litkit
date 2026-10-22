@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,7 +87,10 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			}
 
 			// 加载阈值配置
-			spec := loadVerifySpec(cfg.WorkDir, paperType, lang)
+			spec, err := loadVerifySpec(cfg.WorkDir, paperType, lang)
+			if err != nil {
+				return err
+			}
 
 			onlyCats, err := parseCategories(checkFlag)
 			if err != nil {
@@ -98,9 +102,9 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			}
 
 			opts := lint.Options{
-				Lang:           lang,
+				Lang:           spec.Lang,
 				Mode:           mode,
-				PaperType:      paperType,
+				PaperType:      spec.PaperType,
 				Only:           splitCSV(ruleFlag),
 				Skip:           splitCSV(skipFlag),
 				OnlyCategories: onlyCats,
@@ -190,34 +194,48 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 		body := src.BodyContent()
 		lineNos := src.BodyLineNumbers()
 		refs := core.ExtractCiteSentences(body)
-		if len(refs) == 0 {
-			continue
-		}
-
-		// 重建 paper_refs（先删旧引用，再插新）
+		// 先解析有效引用，再事务内替换；空集合也必须清掉旧关系。
 		rel := relativePath(p, cfg.WorkDir)
-		_ = store.RemoveRefsByManuscript(rel)
-		refModels := make([]model.PaperRef, len(refs))
-		for i, r := range refs {
+		refModels := make([]model.PaperRef, 0, len(refs))
+		papers := make(map[string]*model.Paper)
+		lookupFailed := false
+		for _, r := range refs {
+			paper, err := store.GetByCiteKey(r.CiteKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "litkit: 查询引用 %s 失败: %v（保留旧引用关系）\n", r.CiteKey, err)
+				lookupFailed = true
+				break
+			}
+			if paper == nil {
+				fmt.Fprintf(os.Stderr, "litkit: %s 引用 %s 未入库，跳过该引用\n", rel, r.CiteKey)
+				continue
+			}
+			papers[r.CiteKey] = paper
 			// 映射到原始行号
 			origLine := r.Line
 			if r.Line > 0 && r.Line <= len(lineNos) {
 				origLine = lineNos[r.Line-1]
 			}
-			refModels[i] = model.PaperRef{
+			refModels = append(refModels, model.PaperRef{
 				CiteKey:      r.CiteKey,
 				SentenceHash: r.SentenceHash,
 				Manuscript:   rel,
 				Sentence:     r.Sentence,
 				Line:         origLine,
-			}
+			})
 		}
-		_ = store.AddRefs(refModels)
+		if lookupFailed {
+			continue
+		}
+		if err := store.ReplaceRefsByManuscript(rel, refModels); err != nil {
+			fmt.Fprintf(os.Stderr, "litkit: 重建 %s 引用关系失败: %v（跳过引用评分）\n", rel, err)
+			continue
+		}
 
 		// 逐个评分
 		for _, r := range refs {
-			paper, err := store.GetByCiteKey(r.CiteKey)
-			if err != nil || paper == nil || paper.Abstract == "" {
+			paper := papers[r.CiteKey]
+			if paper == nil || paper.Abstract == "" {
 				continue
 			}
 			result, err := engine.Score(ctx, r.CiteKey, r.SentenceHash, r.Sentence, paper.Abstract)
@@ -229,7 +247,7 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 			if r.Line > 0 && r.Line <= len(lineNos) {
 				origLine = lineNos[r.Line-1]
 			}
-			item := buildRelevanceItem(rel, origLine, r.CiteKey, r.Sentence, result)
+			item := buildRelevanceItem(rel, origLine, r.CiteKey, r.Sentence, result, vm)
 			cr.Results = append(cr.Results, item)
 		}
 	}
@@ -266,7 +284,7 @@ func relativePath(path, workDir string) string {
 //
 // 保留失败明细：全部模型失败时该条仍在 results 中（不再静默消失），便于排查解析/限流问题；
 // 且无成功模型时不置低分/低一致率标记，避免把"没评上"误报成"评分低"。
-func buildRelevanceItem(rel string, line int, citeKey, sentence string, result *core.ScoreResult) lint.CitationRelevanceItem {
+func buildRelevanceItem(rel string, line int, citeKey, sentence string, result *core.ScoreResult, vm *core.VerifierModels) lint.CitationRelevanceItem {
 	item := lint.CitationRelevanceItem{
 		File:         rel,
 		Line:         line,
@@ -283,8 +301,8 @@ func buildRelevanceItem(rel string, line int, citeKey, sentence string, result *
 		}
 	}
 	if item.ScoredModels > 0 {
-		item.LowScore = result.MeanScore < 0.3
-		item.LowConsensus = result.Consensus < 0.5
+		item.LowScore = result.MeanScore < vm.Scoring.LowScoreThreshold
+		item.LowConsensus = result.Consensus < vm.ConsensusThreshold
 	}
 	return item
 }
@@ -309,28 +327,61 @@ func truncate(s string, max int) string {
 	return string(runes[:max]) + "..."
 }
 
-// loadVerifySpec 从工作目录加载 manuscript-spec.yaml。
-// paperType/lang 为空时自动检测（仅一个类型时使用）。
-func loadVerifySpec(workDir, paperType, lang string) *lint.ManuscriptSpec {
+// inferVerifySpec 只推断未指定的维度，显式类型/语言不被自动发现覆盖。
+func inferVerifySpec(workDir, paperType, lang string) (string, string) {
 	if paperType == "" || lang == "" {
 		types, err := lint.ListPaperTypes(workDir)
-		if err == nil && len(types) == 1 {
-			p := lint.TypeSpecPath(workDir, types[0])
-			spec, err := lint.LoadSpec(p)
-			if err == nil {
-				return spec
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "litkit: 自动检测规范失败: %v，使用匹配类型/语言的预设\n", err)
+		}
+		var candidates []string
+		for _, dir := range types {
+			typ, lng, ok := strings.Cut(dir, "-")
+			if ok && (paperType == "" || typ == paperType) && (lang == "" || lng == lang) {
+				candidates = append(candidates, dir)
 			}
 		}
-		fmt.Fprintln(os.Stderr, "litkit: 未指定 --type/--lang 且无法自动检测，使用默认阈值")
-		return lint.DefaultSpec()
+		switch {
+		case len(candidates) == 1:
+			typ, lng, _ := strings.Cut(candidates[0], "-")
+			if paperType == "" {
+				paperType = typ
+			}
+			if lang == "" {
+				lang = lng
+			}
+		case paperType == "" && len(types) == 1:
+			// 唯一类型可推断，但不能覆盖显式语言。
+			paperType, _, _ = strings.Cut(types[0], "-")
+		case len(candidates) > 1:
+			fmt.Fprintln(os.Stderr, "litkit: 多份规范无法唯一匹配，请指定 --type/--lang；使用匹配类型/语言的预设")
+		}
+	}
+	return paperType, lang
+}
+
+// loadVerifySpec 从工作目录加载 manuscript-spec.yaml；缺失时使用匹配预设。
+func loadVerifySpec(workDir, paperType, lang string) (*lint.ManuscriptSpec, error) {
+	paperType, lang = inferVerifySpec(workDir, paperType, lang)
+	if paperType == "" {
+		paperType = lint.PaperTypeEmpirical
+	}
+	if lang == "" {
+		lang = lint.LangZH
 	}
 	p := lint.SpecPath(workDir, paperType, lang)
 	spec, err := lint.LoadSpec(p)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "litkit: 未找到 %s，使用默认阈值（可 litkit init 生成）\n", p)
-		return lint.DefaultSpec()
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		// 不存在时使用匹配预设；不支持的组合返回错误，不能调用会 panic 的 SpecForType。
+		return lint.LoadDefaultSpec(paperType, lang)
 	}
-	return spec
+	if spec.PaperType != paperType || spec.Lang != lang {
+		return nil, fmt.Errorf("litkit: %s 类型/语言与选择 %s/%s 不一致", p, paperType, lang)
+	}
+	return spec, nil
 }
 
 // validateRuleIDs 校验 --rule 中的规则 ID 均存在于已注册规则中。

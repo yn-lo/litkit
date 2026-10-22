@@ -14,13 +14,48 @@ import (
 type fakeResolver struct {
 	byDOI map[string]RetractionStatus
 	err   error
+	calls *int
 }
 
 func (f fakeResolver) Resolve(_ context.Context, doi string) (RetractionStatus, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
 	if f.err != nil {
 		return RetractionStatus{}, f.err
 	}
 	return f.byDOI[doi], nil
+}
+
+func TestRunFilesWithStore_RetractionFiltersAvoidNetwork(t *testing.T) {
+	s := newTestStore(t)
+	key, _, err := s.UpsertPaper(model.Paper{Title: "Retracted", DOI: "10.1/retracted", Abstract: "abstract"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := mustParse(t, "本文引用[@"+key+"]。\n")
+	for _, tc := range []struct {
+		name string
+		opts Options
+		want int
+	}{
+		{"punctuation_only", Options{Lang: "zh", Mode: ModeDraft, OnlyCategories: []Category{CatPunctuation}}, 0},
+		{"skip_citation", Options{Lang: "zh", Mode: ModeDraft, SkipCategories: []Category{CatCitation}}, 0},
+		{"chapter", Options{Lang: "zh", Mode: ModeChapter}, 0},
+		{"explicit_rule", Options{Lang: "zh", Mode: ModeDraft, Only: []string{ruleRetracted}}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			resolver := fakeResolver{calls: &calls, byDOI: map[string]RetractionStatus{"10.1/retracted": {Retracted: true}}}
+			report, err := RunFilesWithStore([]string{src.Path}, DefaultSpec(), tc.opts, s, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != tc.want || len(violationsOf(report.Files[0], ruleRetracted)) != tc.want {
+				t.Fatalf("撤稿筛选应控制实际请求和报告: calls=%d, report=%+v", calls, report)
+			}
+		})
+	}
 }
 
 // ---- R5.7 撤稿校验 ----

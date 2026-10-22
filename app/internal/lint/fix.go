@@ -35,11 +35,13 @@ var (
 	fixParenRRe  = regexp.MustCompile(`\)([\x{4e00}-\x{9fff}])`)               // 右半角括号紧邻汉字
 
 	// R3.3 数字范围子模式
-	fixPctRangeRe  = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)%`)                                // 10-16% → 10%～16%
-	fixUnitRangeRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)\s*[～~]\s*(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)`) // 10kg～15kg → 10～15kg
-	fixYearRangeRe = regexp.MustCompile(`(\d{4})年\s*[～~]\s*(\d{4})年`)                                               // 1988年～1998年 → 1988—1998年
-	fixHourRangeRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*—\s*(\d+(?:\.\d+)?)\s*(小时|分钟|天|周)`)                      // 24—48小时 → 24～48小时
-	fixSlashUnitRe = regexp.MustCompile(`([a-zA-Z℃°]+)\s*/\s*([a-zA-Z℃°]+)\s*/\s*([a-zA-Z℃°]+)`)                    // mg/kg/d → mg/(kg·d)
+	fixPctRangeRe     = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)%`)                                // 10-16% → 10%～16%
+	fixUnitRangeRe    = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)\s*[～~]\s*(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)`) // 10kg～15kg → 10～15kg
+	fixYearRangeRe    = regexp.MustCompile(`(\d{4})年\s*[～~]\s*(\d{4})年`)                                               // 1988年～1998年 → 1988—1998年
+	fixHourRangeRe    = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*—\s*(\d+(?:\.\d+)?)\s*(小时|分钟|天|周)`)                      // 24—48小时 → 24～48小时
+	fixSlashUnitRe    = regexp.MustCompile(`(\d+(?:\.\d+)?\s*)([a-zA-Z℃°]+)\s*/\s*([a-zA-Z℃°]+)\s*/\s*([a-zA-Z℃°]+)`)  // 5 mg/kg/d → 5 mg/(kg·d)
+	protectedInlineRe = regexp.MustCompile("[`]+|\\]\\(|[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s<>\\[\\]]+|<[^>\\n]+>")
+	linkDefinitionRe  = regexp.MustCompile(`^\s{0,3}\[[^\]]+\]:`)
 )
 
 // fixR31 中文后半角标点转全角（R3.1）。
@@ -216,12 +218,12 @@ func fixR33(line string, _ *ManuscriptSpec) (string, bool) {
 		}
 	}
 	// 替换模板用 ${n} 显式边界：$n 后紧跟汉字时会被 Go 解析为命名组导致替换为空
-	apply(fixSlashUnitRe, "${1}/(${2}·${3})") // 先处理复合单位（避免 kg 被误当单位两端）
+	apply(fixSlashUnitRe, "${1}${2}/(${3}·${4})") // 先处理复合单位（避免 kg 被误当单位两端）
 	apply(fixPctRangeRe, "${1}%～${2}%")
 	applyFn(fixUnitRangeRe, func(m string) string {
 		sub := fixUnitRangeRe.FindStringSubmatch(m)
 		// 仅两端单位相同时才可省略重复单位；不同单位（10mg～1g）语义独立，不可合并
-		if !strings.EqualFold(sub[2], sub[4]) {
+		if sub[2] != sub[4] {
 			return m
 		}
 		return sub[1] + "～" + sub[3] + sub[4]
@@ -245,6 +247,118 @@ func FixableRules() []Rule {
 	return out
 }
 
+// markdownFence 识别反引号/波浪号围栏；关闭围栏须同字符、长度不短于开启围栏。
+const minFenceLength = 3
+
+func markdownFence(line string) (char byte, length int, tail string) {
+	const maxFenceIndent = 3
+	indent := len(line) - len(strings.TrimLeft(line, " "))
+	if indent > maxFenceIndent {
+		return 0, 0, ""
+	}
+	line = line[indent:]
+	if len(line) == 0 || (line[0] != '`' && line[0] != '~') {
+		return 0, 0, ""
+	}
+	for length < len(line) && line[length] == line[0] {
+		length++
+	}
+	if length < minFenceLength {
+		return 0, 0, ""
+	}
+	if line[0] == '`' && strings.Contains(line[length:], "`") {
+		return 0, 0, ""
+	}
+	return line[0], length, strings.TrimSpace(line[length:])
+}
+
+// inlineCodeEnd 寻找与开启反引号串等长的关闭串，较长串不提前关闭。
+func inlineCodeEnd(line string, start, length int) int {
+	delim := strings.Repeat("`", length)
+	for pos := start; pos < len(line); {
+		offset := strings.Index(line[pos:], delim)
+		if offset < 0 {
+			break
+		}
+		i := pos + offset
+		end := i + length
+		if (i == 0 || line[i-1] != '`') && (end == len(line) || line[end] != '`') {
+			return end
+		}
+		pos = end
+	}
+	return -1
+}
+
+// linkDestinationEnd 保留嵌套括号、转义和可选标题，避免修正 Markdown 链接目标。
+func linkDestinationEnd(line string, start int) int {
+	depth, quote := 1, byte(0)
+	for i := start; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case c == '\\':
+			i++
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(line)
+}
+
+// maskInlineMarkdown 用不参与格式规则的标记保护代码、URL、HTML 标签和链接目标。
+func maskInlineMarkdown(line string) (string, []string) {
+	hold := "\x00"
+	for strings.Contains(line, hold) {
+		hold += "\x00"
+	}
+	var b strings.Builder
+	var restore []string
+	pos := 0
+	for scan := 0; scan < len(line); {
+		m := protectedInlineRe.FindStringIndex(line[scan:])
+		if m == nil {
+			break
+		}
+		start, end := scan+m[0], scan+m[1]
+		switch line[start] {
+		case '`':
+			if closeAt := inlineCodeEnd(line, end, end-start); closeAt >= 0 {
+				end = closeAt
+			} else {
+				scan = end
+				continue
+			}
+		case ']':
+			start++ // 保留标签的右方括号，只保护目标及其括号。
+			end = linkDestinationEnd(line, end)
+		}
+		b.WriteString(line[pos:start])
+		// 保留换行，使跨行代码跨度受到保护且修复统计仍按原始行计算。
+		for i, part := range strings.Split(line[start:end], "\n") {
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			token := hold + strconv.Itoa(len(restore)) + hold
+			b.WriteString(token)
+			restore = append(restore, token, part)
+		}
+		pos, scan = end, end
+	}
+	b.WriteString(line[pos:])
+	return b.String(), restore
+}
+
 // ApplyFixes 对内容逐行应用给定规则的 Fix（按传入顺序），返回修正内容与统计。
 // 同一行可被多条规则依次修正；计数按"规则 × 行"。
 // spec 供需要配置的规则（如 R2.1 P 值小数位）读取；单行校验为空时传 DefaultSpec()。
@@ -256,17 +370,41 @@ func ApplyFixes(content string, spec *ManuscriptSpec, rules []Rule) (string, Fix
 	}
 	lines := strings.Split(content, "\n")
 	applied := map[string]int{}
+	protected := markdownCodeLines(lines)
 	for i, ln := range lines {
-		for _, r := range rules {
-			if r.Fix == nil {
-				continue
-			}
-			out, ok := r.Fix(ln, spec)
-			if ok {
-				lines[i], ln = out, out
-				applied[r.ID]++
-			}
+		if linkDefinitionRe.MatchString(ln) {
+			protected[i] = true
 		}
+	}
+	for start := 0; start < len(lines); {
+		if protected[start] {
+			start++
+			continue
+		}
+		end := start + 1
+		for end < len(lines) && !protected[end] {
+			end++
+		}
+		masked, restore := maskInlineMarkdown(strings.Join(lines[start:end], "\n"))
+		block := strings.Split(masked, "\n")
+		for i, ln := range block {
+			for _, r := range rules {
+				if r.Fix == nil {
+					continue
+				}
+				if out, ok := r.Fix(ln, spec); ok {
+					ln = out
+					applied[r.ID]++
+				}
+			}
+			block[i] = ln
+		}
+		fixed := strings.Join(block, "\n")
+		if len(restore) > 0 {
+			fixed = strings.NewReplacer(restore...).Replace(fixed)
+		}
+		copy(lines[start:end], strings.Split(fixed, "\n"))
+		start = end
 	}
 	out := strings.Join(lines, "\n")
 	if bom {

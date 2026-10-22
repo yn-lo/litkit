@@ -166,21 +166,18 @@ func SpecForType(paperType, lang string) *ManuscriptSpec {
 	return spec
 }
 
-// LoadSpec 从 yaml 文件加载撰写规范；文件不存在时返回默认模板值。
+// LoadSpec 从 yaml 文件加载撰写规范；调用方按明确的类型/语言处理缺失文件。
 func LoadSpec(path string) (*ManuscriptSpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return DefaultSpec(), nil
-		}
-		return DefaultSpec(), fmt.Errorf("lint: read spec %s: %w", path, err)
+		return nil, fmt.Errorf("lint: read spec %s: %w", path, err)
 	}
 	var spec ManuscriptSpec
 	if err := yaml.Unmarshal(data, &spec); err != nil {
-		return DefaultSpec(), fmt.Errorf("lint: parse spec %s: %w", path, err)
+		return nil, fmt.Errorf("lint: parse spec %s: %w", path, err)
 	}
 	if err := spec.Validate(); err != nil {
-		return DefaultSpec(), fmt.Errorf("lint: invalid spec %s: %w", path, err)
+		return nil, fmt.Errorf("lint: invalid spec %s: %w", path, err)
 	}
 	return &spec, nil
 }

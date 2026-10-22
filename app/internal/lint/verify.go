@@ -119,29 +119,20 @@ func typeOK(rule Rule, paperType string) bool {
 	return false
 }
 
+// ruleEnabled 统一纯规则与查库/联网规则的筛选条件。
+func ruleEnabled(rule Rule, opts Options) bool {
+	return langOK(rule, opts.Lang) && typeOK(rule, opts.PaperType) &&
+		modeRank(rule.From) <= modeRank(opts.Mode) &&
+		(len(opts.Only) == 0 || contains(opts.Only, rule.ID)) && !contains(opts.Skip, rule.ID) &&
+		(len(opts.OnlyCategories) == 0 || categoryIn(opts.OnlyCategories, rule.Category)) &&
+		!categoryIn(opts.SkipCategories, rule.Category)
+}
+
 // Run 对单个 Source 执行验证（纯函数，无 IO）。
 func Run(src *Source, spec *ManuscriptSpec, opts Options) FileReport {
 	rep := FileReport{Path: src.Path, Violations: []Violation{}}
 	for _, rule := range AllRules() {
-		if !langOK(rule, opts.Lang) {
-			continue
-		}
-		if !typeOK(rule, opts.PaperType) {
-			continue
-		}
-		if modeRank(rule.From) > modeRank(opts.Mode) {
-			continue
-		}
-		if len(opts.Only) > 0 && !contains(opts.Only, rule.ID) {
-			continue
-		}
-		if contains(opts.Skip, rule.ID) {
-			continue
-		}
-		if len(opts.OnlyCategories) > 0 && !categoryIn(opts.OnlyCategories, rule.Category) {
-			continue
-		}
-		if categoryIn(opts.SkipCategories, rule.Category) {
+		if rule.Check == nil || !ruleEnabled(rule, opts) {
 			continue
 		}
 		rep.Violations = append(rep.Violations, rule.Check(src, spec)...)
@@ -196,7 +187,7 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 
 // CheckCiteKeys 校验文件正文中 [@citeKey] 是否存在于本地文献库（引用防伪，R5.6）。
 //
-// 纯函数 lint.Run 无 IO；此校验需查库，故独立于规则注册表，由入口层在 RunFiles 后调用。
+// 纯函数 lint.Run 无 IO；此校验在注册表声明筛选元数据，由 RunFilesWithStore 执行。
 // store 为 nil 时跳过（无库场景）。返回缺失 / 查询失败的违规。
 func CheckCiteKeys(src *Source, store *storage.Store) []Violation {
 	if store == nil {
@@ -241,7 +232,7 @@ func CheckCiteKeys(src *Source, store *storage.Store) []Violation {
 // RunFilesWithStore 对文件执行规则验证 + 引用完整性附加校验。
 //
 // 在纯规则 RunFiles 之上叠加 R5.6 查库 + R5.7 撤稿（联网）+ R5.8 时效 + R5.9 自引；
-// 附加检查与注册表规则遵循同一 --rule/--skip 筛选（见 extraCheckEnabled）。
+// 附加检查与纯规则遵循同一规则、类别、语言、类型和模式筛选（见 extraCheckEnabled）。
 // store 为 nil 时退化为纯规则验证，resolver 为 nil 时跳过撤稿。
 // 追加违规后按 A/S 方法重算 exitHint（R5.6/R5.7 属 A 类，R5.8/R5.9 属 S 类）。
 func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store *storage.Store, resolver RetractionResolver) (Report, error) {
@@ -258,7 +249,7 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	if store != nil {
 		srcs = make([]*Source, 0, len(paths))
 		for i := range report.Files {
-			src, perr := ParseSource(report.Files[i].Path)
+			src, perr := parseSourceWithSpec(report.Files[i].Path, spec)
 			if perr != nil {
 				return report, perr
 			}
@@ -275,18 +266,19 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 		}
 		currencyOn := extraCheckEnabled(ruleCurrency, opts)
 		selfCiteOn := extraCheckEnabled(ruleSelfCite, opts)
-		health, recency := checkCitationHealth(srcs, store, spec, time.Now().Year())
-		for _, h := range health {
-			if (h.v.RuleID == ruleCurrency && currencyOn) || (h.v.RuleID == ruleSelfCite && selfCiteOn) {
-				report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
+		if currencyOn || selfCiteOn {
+			health, recency := checkCitationHealth(srcs, store, spec, time.Now().Year())
+			for _, h := range health {
+				if (h.v.RuleID == ruleCurrency && currencyOn) || (h.v.RuleID == ruleSelfCite && selfCiteOn) {
+					report.Files[h.file].Violations = append(report.Files[h.file].Violations, h.v)
+				}
+			}
+			if currencyOn {
+				report.Recency = recency
 			}
 		}
-		if currencyOn {
-			report.Recency = recency
-		}
 	}
-	hasA, hasS := recomputeExitHint(method, report,
-		[]string{ruleCiteExists, ruleRetracted}, []string{ruleCurrency, ruleSelfCite})
+	hasA, hasS := recomputeExitHint(method, report)
 	switch {
 	case hasA:
 		report.ExitHint = "fix_and_rerun"
@@ -299,38 +291,24 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	return report, nil
 }
 
-// extraCheckEnabled 注册表外附加检查（R5.6–R5.9，不在 AllRules 中）是否运行：
-// 遵循与注册表规则相同的 --rule(Only)/--skip(Skip) 筛选；类别筛选不适用
-// （这些规则不在注册表，无类别归属）。
+// extraCheckEnabled 查库/联网检查同样遵循注册表的规则、类别、语言、类型和模式筛选。
 func extraCheckEnabled(ruleID string, opts Options) bool {
-	if len(opts.Only) > 0 && !contains(opts.Only, ruleID) {
-		return false
+	for _, rule := range AllRules() {
+		if rule.ID == ruleID {
+			return ruleEnabled(rule, opts)
+		}
 	}
-	return !contains(opts.Skip, ruleID)
+	return false
 }
 
 // recomputeExitHint 遍历报告违规，按方法分类重算 A/S 命中。
-// notInRegistryA / notInRegistryS 为不在注册表中、需强制归类的规则 ID 白名单（如查库/联网类引用校验）。
-// 其余按规则注册表里的 Method 判定；未注册且不在白名单的违规不参与 A/S 归类。
-func recomputeExitHint(method map[string]Method, report Report, notInRegistryA, notInRegistryS []string) (hasA, hasS bool) {
-	isIn := func(id string, ids []string) bool {
-		for _, r := range ids {
-			if r == id {
-				return true
-			}
-		}
-		return false
-	}
+func recomputeExitHint(method map[string]Method, report Report) (hasA, hasS bool) {
 	for i := range report.Files {
 		for _, v := range report.Files[i].Violations {
-			switch {
-			case isIn(v.RuleID, notInRegistryA):
+			switch method[v.RuleID] {
+			case MethodA:
 				hasA = true
-			case isIn(v.RuleID, notInRegistryS):
-				hasS = true
-			case method[v.RuleID] == MethodA:
-				hasA = true
-			case method[v.RuleID] == MethodS:
+			case MethodS:
 				hasS = true
 			}
 		}

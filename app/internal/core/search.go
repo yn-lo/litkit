@@ -265,6 +265,7 @@ func dedupPapers(papers []model.Paper) []model.Paper {
 	}
 
 	for _, p := range papers {
+		p.DOI = strings.ToLower(strings.TrimSpace(p.DOI))
 		if p.ID == "" {
 			p.ID = p.ComputeID()
 		}
@@ -278,14 +279,14 @@ func dedupPapers(papers []model.Paper) []model.Paper {
 		// 2. 归一化标题
 		tk := textutil.NormalizeTitle(p.Title)
 		if tk != "" {
-			if s, ok := byTitle[tk]; ok {
+			if s, ok := byTitle[tk]; ok && !conflictingDOI(out[s.idx], p) {
 				mergeInto(s.idx, p)
 				continue
 			}
 		}
 		// 3. ID
 		if p.ID != "" {
-			if s, ok := byID[p.ID]; ok {
+			if s, ok := byID[p.ID]; ok && !conflictingDOI(out[s.idx], p) {
 				mergeInto(s.idx, p)
 				continue
 			}
@@ -304,6 +305,10 @@ func dedupPapers(papers []model.Paper) []model.Paper {
 		}
 	}
 	return out
+}
+
+func conflictingDOI(a, b model.Paper) bool {
+	return a.DOI != "" && b.DOI != "" && a.DOI != b.DOI
 }
 
 // mergePapers 合并两篇同源/异源论文：取非空字段；冲突时保留已有值。

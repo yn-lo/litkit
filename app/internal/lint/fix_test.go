@@ -118,13 +118,49 @@ func TestFix_R33_NumberRange(t *testing.T) {
 		{"1988年～1998年。\n", "1988—1998年。\n"},
 		{"创伤后24—48小时。\n", "创伤后24～48小时。\n"},
 		{"剂量为5 mg/kg/d。\n", "剂量为5 mg/(kg·d)。\n"},
-		{"剂量为10mg～1g。\n", "剂量为10mg～1g。\n"}, // 两端单位不同：语义独立，不合并
+		{"剂量为10mg～1g。\n", "剂量为10mg～1g。\n"},             // 两端单位不同：语义独立，不合并
+		{"功率为10mW～15MW。\n", "功率为10mW～15MW。\n"},         // SI 前缀大小写不可忽略
+		{"文件路径 foo/bar/baz。\n", "文件路径 foo/bar/baz。\n"}, // 斜线路径不是复合单位
 	}
 	for _, c := range cases {
 		got, _ := fixContent(c.in)
 		if got != c.want {
 			t.Errorf("%q → %q，期望 %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestFix_PreservesMarkdownSyntax(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"fence", "```json\n{\"中文\":\"内容\"}\n```\n中文,正文。\n", "```json\n{\"中文\":\"内容\"}\n```\n中文，正文。\n"},
+		{"tilde", "~~~text\n中文,原样。\n~~~\n中文,正文。\n", "~~~text\n中文,原样。\n~~~\n中文，正文。\n"},
+		{"long_fence", "````text\n```\n中文,原样。\n````\n中文,正文。\n", "````text\n```\n中文,原样。\n````\n中文，正文。\n"},
+		{"inline", "中文,`\"内容\" mg/kg/d`。\n", "中文，`\"内容\" mg/kg/d`。\n"},
+		{"double_backtick", "中文,``中文,`内容`。``。\n", "中文，``中文,`内容`。``。\n"},
+		{"url", "中文,见 https://example.com/foo/bar/baz。\n", "中文，见 https://example.com/foo/bar/baz。\n"},
+		{"link", "中文,[文字](../foo/bar/baz \"中文标题\")。\n", "中文，[文字](../foo/bar/baz \"中文标题\")。\n"},
+		{"nested_link", "中文,[文字](../foo/bar/baz(1))。\n", "中文，[文字](../foo/bar/baz(1))。\n"},
+		{"reference", "[链接]: ../foo/bar/baz \"中文标题\"\n中文,正文。\n", "[链接]: ../foo/bar/baz \"中文标题\"\n中文，正文。\n"},
+		{"html", "中文,<img src=\"../foo/bar/baz\" alt=\"内容\">。\n", "中文，<img src=\"../foo/bar/baz\" alt=\"内容\">。\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := fixContent(tc.in)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			again, rep := fixContent(got)
+			if again != got || rep.Total() != 0 {
+				t.Fatalf("重复修复应幂等: %q, applied=%v", again, rep.Applied)
+			}
+		})
+	}
+}
+
+func TestRule_R33_UnitCase(t *testing.T) {
+	fr := runContent(t, "功率为10mW～15MW。\n", DefaultSpec(), zhDraft())
+	if got := violationsOf(fr, "R3.3"); len(got) != 0 {
+		t.Fatalf("不同大小写单位不应视为重复: %v", got)
 	}
 }
 

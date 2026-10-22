@@ -85,7 +85,7 @@ func (p Paper) HasAbstract() bool { return strings.TrimSpace(p.Abstract) != "" }
 
 // PaperRef 手稿引用标记（FR-LIB-07）。
 // 记录"哪句话引用哪篇文献"——verify 流程全量扫描手稿落此表，
-// LLM 评分以 sentence_hash 为键取用。
+// LLM 评分另以完整句子和摘要生成缓存输入指纹。
 type PaperRef struct {
 	CiteKey      string `json:"citeKey"`      // 被引论文 cite_key
 	SentenceHash string `json:"sentenceHash"` // 引用句 sha256 前缀指纹
@@ -95,7 +95,7 @@ type PaperRef struct {
 }
 
 // CitationScore LLM 引用相关性评分结果（FR-LINT-08）。
-// 主键天然适配"增量缓存"：sentence_hash 变了（句子改了）→ 自动不命中；
+// 主键天然适配"增量缓存"：sentence_hash 为完整句子和摘要的输入指纹→输入变更自动不命中；
 // prompt_version 变了（Prompt 升级）→ 自动不命中；model_id 变了 → 自动不命中。
 type CitationScore struct {
 	CiteKey       string  `json:"citeKey"`

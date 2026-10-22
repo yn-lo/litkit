@@ -311,17 +311,20 @@ func (s *LLMScorer) Score(ctx context.Context, sentence, abstract string) (float
 	content := strings.TrimSpace(llmResp.Choices[0].Message.Content)
 	// 尝试解析 JSON 响应（容忍 markdown 代码块围栏与前后说明文字）
 	var scoreResult struct {
-		Score     float64 `json:"score"`
-		Rationale string  `json:"rationale"`
+		Score     *float64 `json:"score"`
+		Rationale string   `json:"rationale"`
 	}
 	if err := json.Unmarshal([]byte(extractJSONObject(content)), &scoreResult); err != nil {
 		return 0, "", fmt.Errorf("scorer: 解析评分 JSON: %w (content=%q)", err, content)
 	}
 
-	if scoreResult.Score < 0 || scoreResult.Score > 1 {
-		return 0, "", fmt.Errorf("scorer: 分数越界 %f", scoreResult.Score)
+	if scoreResult.Score == nil {
+		return 0, "", errors.New("scorer: score 必须是非 null 的数值")
 	}
-	return scoreResult.Score, scoreResult.Rationale, nil
+	if *scoreResult.Score < 0 || *scoreResult.Score > 1 {
+		return 0, "", fmt.Errorf("scorer: 分数越界 %f", *scoreResult.Score)
+	}
+	return *scoreResult.Score, scoreResult.Rationale, nil
 }
 
 // extractJSONObject 截取回复中的首个 JSON 对象，容忍 markdown 代码块围栏（```json）与前后说明文字。

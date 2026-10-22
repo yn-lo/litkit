@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +45,27 @@ const semanticScholarSample = `{
     }
   ]
 }`
+
+func TestSemanticScholarSource_AnonymousFallbackErrors(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("x-api-key") != "" {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			s := NewSemanticScholarSource("test-key", newHTTPClient(1000, 0, nil), nil)
+			s.BaseURL = srv.URL
+			_, err := s.Search(context.Background(), "test", SearchOptions{})
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", status)) {
+				t.Fatalf("匿名降级失败须保留状态码: %v", err)
+			}
+		})
+	}
+}
 
 func TestParseSemanticScholarJSON(t *testing.T) {
 	papers, err := parseSemanticScholarJSON([]byte(semanticScholarSample))

@@ -29,7 +29,7 @@ func isRefsHeading(trimmed string) bool {
 
 // ParseSource 从文件路径解析 Source（无 spec，全部行参与分段）。
 // 分段逻辑：
-//   - 代码块：``` 到 ``` 之间的行排除
+//   - 代码块：匹配的反引号/波浪号围栏及缩进代码行排除
 //   - 参考文献：从参考文献标题行开始到文件末尾排除
 //   - 表格：以 | 开头的连续行排除
 //   - 其余为 Body
@@ -53,17 +53,12 @@ func parseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
 	coverEnd := firstSectionLine(lines, spec)
 
 	src := &Source{Path: path, Lines: lines}
-	inCode := false
+	codeLines := markdownCodeLines(lines)
 	inRefs := false
 	for i, ln := range lines {
 		lineNo := i + 1
 		trimmed := strings.TrimSpace(ln)
-		// 代码块围栏切换（围栏行本身排除）
-		if strings.HasPrefix(trimmed, "```") {
-			inCode = !inCode
-			continue
-		}
-		if inCode {
+		if codeLines[i] {
 			continue
 		}
 		// 封面区（首个 section 标题之前）：标题行保留，其余排除
@@ -87,6 +82,52 @@ func parseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
 		src.bodyIdx = append(src.bodyIdx, lineNo)
 	}
 	return src, nil
+}
+
+// markdownCodeLines 为验证和修复提供相同的代码块范围（含围栏行）。
+// ponytail: 仅按顶层块分段；嵌套列表/引用的精确范围需升级为 CommonMark 块解析器。
+func markdownCodeLines(lines []string) []bool {
+	const codeIndentWidth = 4
+	protected := make([]bool, len(lines))
+	var fence byte
+	fenceLen := 0
+	paragraph := false
+	for i, line := range lines {
+		char, length, tail := markdownFence(line)
+		if fence != 0 {
+			protected[i] = true
+			if char == fence && length >= fenceLen && tail == "" {
+				fence = 0
+			}
+			continue
+		}
+		indent := 0
+	indentLoop:
+		for _, c := range line {
+			switch c {
+			case ' ':
+				indent++
+			case '\t':
+				indent += codeIndentWidth - indent%codeIndentWidth
+			default:
+				break indentLoop
+			}
+		}
+		if indent >= codeIndentWidth && !paragraph {
+			protected[i] = true
+			continue
+		}
+		if char != 0 {
+			protected[i] = true
+			fence, fenceLen = char, length
+			paragraph = false
+			continue
+		}
+		// 缩进代码不能中断已开始的段落，跨行代码跨度可含缩进续行。
+		trimmed := strings.TrimSpace(line)
+		paragraph = trimmed != "" && !isHeading(trimmed)
+	}
+	return protected
 }
 
 // firstSectionLine 返回首个命中 spec.Sections 的标题行号（1 起）；

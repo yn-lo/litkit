@@ -1,7 +1,7 @@
 # 功能设计：撰写约束验证（lint / harness）
 
 ---
-last_updated: 2026-09-16
+last_updated: 2026-10-09
 status: active
 owner: litkit-core
 ---
@@ -81,7 +81,7 @@ skills/（litkit + references、academic-style、manuscript-format + references�
 
 ## verify 实现要点（已落地）
 
-- **42 条规则**：28 A 类（自动判定）+ 14 S 类（半自动）；S 类命中仅提示人工确认，不计入 fail 判定
+- **46 条规则**：30 A 类（自动判定）+ 16 S 类（半自动），含 R5.6–R5.9 查库/联网检查；全部按规则和类别统一筛选，S 类命中仅提示人工确认，不计入 fail 判定
 - **模式递增**：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文），高模式包含低模式全部规则
 - **证据不足的显式出口**：R5.2 `[待引证]` 仅 final 模式判违规，chapter/draft 视为"待人工补文献"的
   合法中间态（写作中不得因占位判 fail，否则模型会删论断或改写空话规避）；
@@ -94,11 +94,13 @@ skills/（litkit + references、academic-style、manuscript-format + references�
     （原 embedding 语义预筛层已砍除：引用对由 `[@citeKey]` 锚点显式确定，无召回问题；
     预筛只能"跳过"不能"确认"，阈值偏松会静默漏报错引，而评分成本经缓存后可忽略）
   - 禁用模式：无可启用的模型（全 disabled 或全无 key）时静默跳过，不报错
-  - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API
+  - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API；缓存输入指纹同时包含原始引用句和摘要，摘要变化自动不命中
+  - 引用关系：每份手稿事务替换 paper_refs，空引用集清空旧关系；不存在的句柄单独提示，数据库失败回滚
+  - 输出阈值：lowScore 使用 scoring.low_score_threshold，lowConsensus 使用 consensus_threshold
   - 优雅降级：部分模型失败（401/超时）不影响其他模型评分
   - 失败可见：全部模型失败时该条仍保留在 `results` 中，`scoredModels` 记成功模型数、
     `failed[]` 记各模型失败原因；`lowScore`/`lowConsensus` 仅在 `scoredModels>0` 时置位
-    （避免把"没评上"误报成"评分低"）。解析层容忍 markdown 代码块围栏与前后说明文字
+    （避免把"没评上"误报成"评分低"）。score 缺失或 null 记为模型失败，显式 0 是有效评分。解析层容忍 markdown 代码块围栏与前后说明文字
     （部分 OpenAI 兼容模型习惯返回 ```json 围栏，严格 Unmarshal 会整条丢弃）
 - **能力边界（缺引用检测）**：`ExtractCiteSentences` 锚点驱动，只对**已含 `[@citeKey]` 的句子**
   生成评分项。因此 citation-refs 检不出"该有引用而无引用"，且"无引用句"不会出现在评分结果里

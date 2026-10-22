@@ -267,6 +267,8 @@ func formatAPA(p model.Paper) string {
 	b.WriteString("(")
 	if p.Year > 0 {
 		b.WriteString(strconv.Itoa(p.Year))
+	} else {
+		b.WriteString("n.d.")
 	}
 	b.WriteString("). ")
 	b.WriteString(cleanTitle(p.Title))
@@ -318,9 +320,22 @@ func joinAuthors(as []model.Author, render func(model.Author) string, andSep str
 	return strings.Join(parts[:len(parts)-1], ", ") + ", " + andSep + " " + parts[len(parts)-1]
 }
 
-// authorsAPA 渲染作者（APA：Family, G.；最多只列前 3 位，>3 名省略为前 3 名 + et al.）。
+// authorsAPA 按 APA 7 列至多 20 位作者；超过时列前 19 位、省略号和末位。
 func authorsAPA(as []model.Author) string {
-	return joinAuthors(as, authorAPA, "&")
+	const maxAuthors = 20
+	parts := make([]string, 0, len(as))
+	for _, a := range as {
+		if name := authorAPA(a); name != "" {
+			parts = append(parts, name)
+		}
+	}
+	if len(parts) > maxAuthors {
+		return strings.Join(parts[:maxAuthors-1], ", ") + ", … " + parts[len(parts)-1]
+	}
+	if len(parts) <= 1 {
+		return strings.Join(parts, "")
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + ", & " + parts[len(parts)-1]
 }
 
 // authorAPA 单作者：Family, G. M.
@@ -570,7 +585,35 @@ func escapeBibText(s string) string {
 		"\\", `\textbackslash{}`, "&", `\&`, "%", `\%`, "#", `\#`,
 		"_", `\_`, "$", `\$`, "~", `\textasciitilde{}`, "^", `\textasciicircum{}`,
 	)
-	return repl.Replace(strings.Join(strings.Fields(s), " "))
+	s = repl.Replace(strings.Join(strings.Fields(s), " "))
+	// BibTeX 连反斜杠转义的花括号也计入结构；保留成对的大小写保护组，
+	// 仅把未配对括号改为不含裸括号的 TeX 命令。
+	paired := make([]bool, len(s))
+	var opens []int
+	for i := range len(s) {
+		switch s[i] {
+		case '{':
+			opens = append(opens, i)
+		case '}':
+			if len(opens) > 0 {
+				j := opens[len(opens)-1]
+				opens = opens[:len(opens)-1]
+				paired[i], paired[j] = true, true
+			}
+		}
+	}
+	var b strings.Builder
+	for i := range len(s) {
+		switch {
+		case s[i] == '{' && !paired[i]:
+			b.WriteString(`\textbraceleft{}`)
+		case s[i] == '}' && !paired[i]:
+			b.WriteString(`\textbraceright{}`)
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 // FormatBibTeX 渲染单条 BibTeX 条目（FR-REF-05）。
@@ -582,7 +625,7 @@ func FormatBibTeX(p model.Paper) string {
 	b.WriteString("{")
 	b.WriteString(bibKey(p))
 	b.WriteString(",\n")
-	writeBibField(&b, "author", bibAuthors(p.Authors))
+	writeBibField(&b, "author", escapeBibText(bibAuthors(p.Authors)))
 	writeBibField(&b, "title", escapeBibText(p.Title))
 	writeBibField(&b, "journal", escapeBibText(p.Venue))
 	if p.Year > 0 {

@@ -12,6 +12,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"net/url"
@@ -122,11 +123,13 @@ func (e *ScorerEngine) Score(ctx context.Context, citeKey, sentenceHash, sentenc
 	}
 
 	// 1. 查缓存——按模型逐个查，标记已缓存的
+	// 句子和摘要共同决定输入身份，旧摘要的并发评分写回也不能污染新输入。
+	cacheHash := scoringInputHash(sentence, abstract)
 	cached := make(map[string]cachedInfo, len(e.scorers))
 	var uncached []Scorer // 未命中的模型
 
 	for _, s := range e.scorers {
-		cs, err := e.store.GetCitationScore(citeKey, sentenceHash, s.ModelID(), s.PromptVersion())
+		cs, err := e.store.GetCitationScore(citeKey, cacheHash, s.ModelID(), s.PromptVersion())
 		if err != nil || cs == nil {
 			uncached = append(uncached, s)
 			continue
@@ -162,7 +165,7 @@ func (e *ScorerEngine) Score(ctx context.Context, citeKey, sentenceHash, sentenc
 				// 落缓存
 				_ = e.store.SaveCitationScore(model.CitationScore{
 					CiteKey:       citeKey,
-					SentenceHash:  sentenceHash,
+					SentenceHash:  cacheHash,
 					ModelID:       s.ModelID(),
 					PromptVersion: s.PromptVersion(),
 					Score:         score,
@@ -200,6 +203,11 @@ func (e *ScorerEngine) Score(ctx context.Context, citeKey, sentenceHash, sentenc
 		}
 	}
 	return result, nil
+}
+
+// scoringInputHash 对完整评分输入生成无歧义缓存键；外部 sentenceHash 保持不变。
+func scoringInputHash(sentence, abstract string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%d:%s%s", len(sentence), sentence, abstract))))
 }
 
 // aggregate 从成功模型评分聚合出最终结果。

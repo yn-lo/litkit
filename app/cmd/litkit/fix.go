@@ -33,7 +33,10 @@ func newFixCmd(cfg *config.Config) *cobra.Command {
 				return &paramError{msg: "fix: 无可用的可修规则（检查 --rule/--skip）"}
 			}
 			// 加载阈值配置（供 R2.1 P 值小数位等规则读取；未配置时自动回落默认）。
-			spec := loadVerifySpec(cfg.WorkDir, "", "")
+			spec, err := loadVerifySpec(cfg.WorkDir, "", "")
+			if err != nil {
+				return err
+			}
 			files := map[string]lint.FixReport{}
 			for _, p := range args {
 				data, err := os.ReadFile(p)

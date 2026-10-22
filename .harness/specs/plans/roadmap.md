@@ -1,7 +1,7 @@
 # 开发计划 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-10-09
 status: active
 owner: litkit-core
 ---
@@ -72,7 +72,7 @@ owner: litkit-core
 | `litkit init`：--type review/empirical/book/proposal（preset 阈值）、--lang zh/en、--journal NAME（目标期刊）、--force | FR-LINT-01/09 |
 | zh 规则集实现（全半角/引号/句式冗余/的地得/AI 痕迹） | FR-LINT-02/04 |
 | en 规则集实现（语法/时态/冠词/措辞/AI 痕迹） | FR-LINT-03/04 |
-| `litkit verify`：--lang/--type/--mode/--rule/--skip，42 条规则（28A+14S），三维过滤（lang x type x mode），三值 exitHint | FR-LINT-05 |
+| `litkit verify`：--lang/--type/--mode/--rule/--skip，46 条规则（30A+16S），三维过滤（lang x type x mode），三值 exitHint | FR-LINT-05 |
 
 > 已落地（M4 一期前段）：internal/lint 服务层 + `.litkit/` 基础设施 + skills 分发 + init 全参数。
 > 已落地（M4 一期后段）：verify 规则函数注册表（A/S/M 分类执行，规则单套按 langs x types 过滤）；

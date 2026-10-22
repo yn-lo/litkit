@@ -415,20 +415,20 @@ func TestMetadataFetch_HTTPError(t *testing.T) {
 	}
 }
 
-// crossrefRetractedSample 含 update-to: retraction 的 works/{doi} 片段（R5.7）。
+// crossrefRetractedSample 原论文通过 updated-by 指向撤稿声明（R5.7）。
 const crossrefRetractedSample = `{
   "status": "ok",
   "message": {
     "title": ["Retracted paper"],
     "DOI": "10.1000/retracted",
     "type": "journal-article",
-    "update-to": [
+    "updated-by": [
       {"DOI": "10.1000/retraction-1", "type": "retraction", "source": "retraction-watch", "label": "Retraction"}
     ]
   }
 }`
 
-// crossrefCleanSample 无 update-to（未撤稿）。
+// crossrefCleanSample 无 updated-by（未撤稿）。
 const crossrefCleanSample = `{
   "status": "ok",
   "message": {
@@ -479,5 +479,18 @@ func TestCheckRetraction_Clean(t *testing.T) {
 	}
 	if info.Retracted {
 		t.Fatal("未撤稿文献不应判为已撤稿")
+	}
+}
+
+func TestCheckRetraction_NoticeIsNotRetracted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"DOI":"10.1000/notice","update-to":[{"DOI":"10.1000/original","type":"retraction"}],"updated-by":[{"DOI":"10.1000/correction","type":"correction"}]}}`))
+	}))
+	defer srv.Close()
+	f := newMetadataFetcher()
+	f.crossrefBase = srv.URL
+	info, err := f.CheckRetraction(context.Background(), "10.1000/notice")
+	if err != nil || info.Retracted {
+		t.Fatalf("撤稿声明不等于声明本身已撤稿: %+v, err=%v", info, err)
 	}
 }

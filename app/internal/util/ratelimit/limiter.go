@@ -27,11 +27,16 @@ func New(rps float64, burst int) *Limiter {
 }
 
 // Allow 等待直到获取令牌或 ctx 取消。
-// 返回 true 表示获取成功，false 表示 ctx 取消。
+// 返回 true 表示获取成功，false 表示等待失败（取消或剩余时间不足）。
 // nil Limiter 视作无限制，直接返回 true。
 func (l *Limiter) Allow(ctx context.Context) bool {
+	return l.Wait(ctx) == nil
+}
+
+// Wait 等待令牌，保留取消或等待时间超过 deadline 的原始错误。
+func (l *Limiter) Wait(ctx context.Context) error {
 	if l == nil || l.limiter == nil {
-		return true
+		return nil
 	}
-	return l.limiter.Wait(ctx) == nil
+	return l.limiter.Wait(ctx)
 }

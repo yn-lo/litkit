@@ -191,6 +191,12 @@ func LoadDefaultSpec(paperType, lang string) (*ManuscriptSpec, error) {
 	if err := yaml.Unmarshal(data, &spec); err != nil {
 		return nil, fmt.Errorf("lint: 解析默认模板 %s: %w", tmpl, err)
 	}
+	if spec.PaperType != paperType || spec.Lang != lang {
+		return nil, fmt.Errorf("lint: 默认模板 %s 类型/语言与路径不一致", tmpl)
+	}
+	if err := spec.Validate(); err != nil {
+		return nil, fmt.Errorf("lint: 默认模板 %s 无效: %w", tmpl, err)
+	}
 	return &spec, nil
 }
 

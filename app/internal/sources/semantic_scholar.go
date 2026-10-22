@@ -64,11 +64,10 @@ func (s *SemanticScholarSource) Search(ctx context.Context, query string, opts S
 	}
 	// 403 + 有 key → 降级匿名重试
 	if status == http.StatusForbidden && s.APIKey != "" {
-		papers, _, err = s.doSearch(ctx, query, opts, false)
+		papers, status, err = s.doSearch(ctx, query, opts, false)
 		if err != nil {
 			return nil, fmt.Errorf("semantic_scholar search: %w", err)
 		}
-		return papers, nil
 	}
 	// 403 + 无 key → 优雅返回空（共享池限速）
 	if status == http.StatusForbidden {

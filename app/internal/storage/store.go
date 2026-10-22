@@ -68,12 +68,12 @@ func Open(dbPath string) (*Store, error) {
 	if err := os.MkdirAll(dir, dbDirPerm); err != nil {
 		return nil, fmt.Errorf("storage open: mkdir %s: %w", dir, err)
 	}
-	db, err := sql.Open("sqlite", filepath.ToSlash(dbPath))
+	db, err := sql.Open("sqlite", filepath.ToSlash(dbPath)+"?_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("storage open: %w", err)
 	}
 	// PRAGMA 是 per-connection 的，连接池新连接不继承；限制单连接保证
-	// PRAGMA 始终生效，同时串行化全部操作，消除 check-then-act 竞态。
+	// PRAGMA 始终生效；查后写的原子性另由 IMMEDIATE 事务保证。
 	// SQLite 写入本就要串行，读并发由 WAL 保证。
 	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
@@ -185,6 +185,46 @@ func dedupKey(p model.Paper) string {
 	return "id:" + strings.ToLower(strings.TrimSpace(p.ID))
 }
 
+// findPaper 在写事务内按强标识、归一化标题回退匹配；冲突 DOI 不合并。
+// ponytail: 精确键未命中时 O(n) 扫描，适用于 ≤1 万条本地库；更大库升级为索引化标题键。
+func findPaper(tx *sql.Tx, p model.Paper) (id int64, citeKey string, err error) {
+	err = tx.QueryRow("SELECT id, cite_key FROM papers WHERE dedup_key = ?", dedupKey(p)).Scan(&id, &citeKey)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return id, citeKey, err
+	}
+	rows, err := tx.Query("SELECT id, cite_key, title, paper_id FROM papers WHERE ? = '' OR doi = '' OR doi = ?", p.DOI, p.DOI)
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() { _ = rows.Close() }()
+	title := textutil.NormalizeTitle(p.Title)
+	matches := 0
+	for rows.Next() {
+		var candidateID int64
+		var candidateKey, candidateTitle, paperID string
+		if err := rows.Scan(&candidateID, &candidateKey, &candidateTitle, &paperID); err != nil {
+			return 0, "", err
+		}
+		if p.ID != "" && p.ID == paperID {
+			return candidateID, candidateKey, nil
+		}
+		if title != "" && title == textutil.NormalizeTitle(candidateTitle) {
+			id, citeKey = candidateID, candidateKey
+			matches++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, "", err
+	}
+	if matches > 1 {
+		return 0, "", errors.New("storage: 标题匹配多个条目，请提供 DOI 明确身份")
+	}
+	if matches == 0 {
+		return 0, "", sql.ErrNoRows
+	}
+	return id, citeKey, nil
+}
+
 // UpsertPaper 插入或更新一篇论文（FR-LIB-01/02/06）。
 //
 // 返回 (citeKey, inserted, error)：首次入库生成 3 字母 cite_key 且 inserted=true；
@@ -195,9 +235,13 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 	p.DOI = strings.ToLower(strings.TrimSpace(p.DOI))
 	now := time.Now().Format(time.RFC3339)
 
-	var id int64
-	var citeKey string
-	err := s.db.QueryRow("SELECT id, cite_key FROM papers WHERE dedup_key = ?", key).Scan(&id, &citeKey)
+	// 在首次 SELECT 前获取写锁，避免并发进程同时认定条目/引用键不存在。
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", false, fmt.Errorf("storage upsert begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 已提交时为 ErrTxDone；错误路径释放写锁。
+	id, citeKey, err := findPaper(tx, p)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, fmt.Errorf("storage upsert select: %w", err)
 	}
@@ -208,11 +252,11 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 	}
 
 	if errors.Is(err, sql.ErrNoRows) {
-		citeKey, err = s.newCiteKey()
+		citeKey, err = newCiteKey(tx)
 		if err != nil {
 			return "", false, err
 		}
-		_, err = s.db.Exec(`INSERT INTO papers
+		_, err = tx.Exec(`INSERT INTO papers
 			(dedup_key, cite_key, doi, paper_id, title, authors, abstract, year, venue,
 			 source, doc_type, url, pdf_url, pmid, arxiv_id, volume, number, pages, citations, fetched_at,
 			 publisher, city, institution, access_date)
@@ -223,16 +267,35 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		if err != nil {
 			return "", false, fmt.Errorf("storage upsert insert: %w", err)
 		}
+		if err := tx.Commit(); err != nil {
+			return "", false, fmt.Errorf("storage upsert commit: %w", err)
+		}
 		return citeKey, true, nil
 	}
 
-	// 已存在：以最新数据覆盖字段，cite_key 保持不变；
-	// abstract/venue/doi/pmid/arxiv_id/url/doc_type 新值为空时保留旧值，
-	// 防止部分字段的再次入库擦除已有数据（NULLIF 空串转 NULL，COALESCE 回退旧值）
-	_, err = s.db.Exec(`UPDATE papers SET
-		doi=COALESCE(NULLIF(?, ''), doi), paper_id=?, title=?, authors=?,
-		abstract=COALESCE(NULLIF(?, ''), abstract), year=?,
-		venue=COALESCE(NULLIF(?, ''), venue), source=?,
+	// 使用合并后的身份生成键：题名更新时不能留下旧键，稀疏更新也不能降级 DOI。
+	identity := p
+	var oldDOI, oldTitle, oldID string
+	if err := tx.QueryRow("SELECT doi, title, paper_id FROM papers WHERE id = ?", id).Scan(&oldDOI, &oldTitle, &oldID); err != nil {
+		return "", false, fmt.Errorf("storage upsert identity: %w", err)
+	}
+	if identity.DOI == "" {
+		identity.DOI = oldDOI
+	}
+	if identity.Title == "" {
+		identity.Title = oldTitle
+	}
+	if identity.ID == "" {
+		identity.ID = oldID
+	}
+	key = dedupKey(identity)
+	// 缺失值保留原数据，保留原 citeKey 和引用关系。
+	_, err = tx.Exec(`UPDATE papers SET
+		dedup_key=?,
+		doi=COALESCE(NULLIF(?, ''), doi), paper_id=COALESCE(NULLIF(?, ''), paper_id),
+		title=COALESCE(NULLIF(?, ''), title), authors=CASE WHEN ? > 0 THEN ? ELSE authors END,
+		abstract=COALESCE(NULLIF(?, ''), abstract), year=COALESCE(NULLIF(?, 0), year),
+		venue=COALESCE(NULLIF(?, ''), venue), source=COALESCE(NULLIF(?, ''), source),
 		doc_type=COALESCE(NULLIF(?, ''), doc_type), url=COALESCE(NULLIF(?, ''), url),
 		pdf_url=COALESCE(NULLIF(?, ''), pdf_url),
 		pmid=COALESCE(NULLIF(?, ''), pmid), arxiv_id=COALESCE(NULLIF(?, ''), arxiv_id),
@@ -243,9 +306,9 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		city=COALESCE(NULLIF(?, ''), city),
 		institution=COALESCE(NULLIF(?, ''), institution),
 		access_date=COALESCE(NULLIF(?, ''), access_date),
-		citations=?, fetched_at=?
+		citations=COALESCE(NULLIF(?, 0), citations), fetched_at=?
 		WHERE id=?`,
-		p.DOI, p.ID, p.Title, string(authorsJSON),
+		key, p.DOI, p.ID, p.Title, len(p.Authors), string(authorsJSON),
 		p.Abstract, p.Year, p.Venue, p.Source,
 		p.DocType, p.URL, p.PdfURL, p.PMID, p.ArXivID,
 		p.Volume, p.Number, p.Pages,
@@ -253,6 +316,9 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		p.Citations, now, id)
 	if err != nil {
 		return "", false, fmt.Errorf("storage upsert update: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", false, fmt.Errorf("storage upsert commit: %w", err)
 	}
 	return citeKey, false, nil
 }
@@ -495,22 +561,56 @@ func (s *Store) Stats() (Stats, error) {
 // AddRef 记录一条引用标记（FR-LIB-07）。
 // (cite_key, sentence_hash, manuscript) 唯一约束确保同句幂等。
 func (s *Store) AddRef(ref model.PaperRef) error {
-	now := time.Now().Format(time.RFC3339)
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO paper_refs
-		(cite_key, sentence_hash, manuscript, sentence, created_at)
-		VALUES (?,?,?,?,?)`,
-		ref.CiteKey, ref.SentenceHash, ref.Manuscript, ref.Sentence, now)
-	if err != nil {
-		return fmt.Errorf("storage add ref: %w", err)
-	}
-	return nil
+	return s.AddRefs([]model.PaperRef{ref})
 }
 
 // AddRefs 批量写入引用标记（同句幂等）。
 func (s *Store) AddRefs(refs []model.PaperRef) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("storage add refs begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 已提交时为 ErrTxDone。
+	if err := writeRefs(tx, refs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("storage add refs commit: %w", err)
+	}
+	return nil
+}
+
+// ReplaceRefsByManuscript 原子替换手稿引用；空集合清空，写入失败保留旧关系。
+func (s *Store) ReplaceRefsByManuscript(manuscript string, refs []model.PaperRef) error {
 	for _, ref := range refs {
-		if err := s.AddRef(ref); err != nil {
-			return err
+		if ref.Manuscript != manuscript {
+			return errors.New("storage replace refs: manuscript 不一致")
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("storage replace refs begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 已提交时为 ErrTxDone。
+	if _, err := tx.Exec("DELETE FROM paper_refs WHERE manuscript = ?", manuscript); err != nil {
+		return fmt.Errorf("storage replace refs delete: %w", err)
+	}
+	if err := writeRefs(tx, refs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("storage replace refs commit: %w", err)
+	}
+	return nil
+}
+
+func writeRefs(tx *sql.Tx, refs []model.PaperRef) error {
+	now := time.Now().Format(time.RFC3339)
+	for _, ref := range refs {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO paper_refs
+			(cite_key, sentence_hash, manuscript, sentence, created_at)
+			VALUES (?,?,?,?,?)`, ref.CiteKey, ref.SentenceHash, ref.Manuscript, ref.Sentence, now); err != nil {
+			return fmt.Errorf("storage write refs %s: %w", ref.CiteKey, err)
 		}
 	}
 	return nil

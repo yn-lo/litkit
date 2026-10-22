@@ -126,11 +126,11 @@ func TestScorerEngine_CacheHit_ReturnsImmediately(t *testing.T) {
 
 	// 预存缓存
 	_ = store.SaveCitationScore(model.CitationScore{
-		CiteKey: k, SentenceHash: "hash1", ModelID: "mock-a",
+		CiteKey: k, SentenceHash: scoringInputHash("句子", "摘要"), ModelID: "mock-a",
 		PromptVersion: "v1", Score: 0.85, Rationale: "一致",
 	})
 	_ = store.SaveCitationScore(model.CitationScore{
-		CiteKey: k, SentenceHash: "hash1", ModelID: "mock-b",
+		CiteKey: k, SentenceHash: scoringInputHash("句子", "摘要"), ModelID: "mock-b",
 		PromptVersion: "v1", Score: 0.90, Rationale: "一致",
 	})
 
@@ -192,11 +192,11 @@ func TestScorerEngine_CacheMiss_FansOut(t *testing.T) {
 	}
 
 	// 验证缓存已写入
-	cs, _ := store.GetCitationScore(k, "hash2", "mock-a", "v1")
+	cs, _ := store.GetCitationScore(k, scoringInputHash("句子", "摘要"), "mock-a", "v1")
 	if cs == nil || cs.Score != 0.85 {
 		t.Fatal("mock-a 评分应已缓存")
 	}
-	cs, _ = store.GetCitationScore(k, "hash2", "mock-b", "v1")
+	cs, _ = store.GetCitationScore(k, scoringInputHash("句子", "摘要"), "mock-b", "v1")
 	if cs == nil || cs.Score != 0.75 {
 		t.Fatal("mock-b 评分应已缓存")
 	}
@@ -210,7 +210,7 @@ func TestScorerEngine_PartialCache_PartialFanOut(t *testing.T) {
 
 	// mock-a 已缓存
 	_ = store.SaveCitationScore(model.CitationScore{
-		CiteKey: k, SentenceHash: "hash3", ModelID: "mock-a",
+		CiteKey: k, SentenceHash: scoringInputHash("句子", "摘要"), ModelID: "mock-a",
 		PromptVersion: "v1", Score: 0.90, Rationale: "已知",
 	})
 

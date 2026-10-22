@@ -62,7 +62,7 @@ const (
 	ruleR17        = "R1.7"
 	ruleR21        = "R2.1"
 	ruleCiteExists = "R5.6" // 引用存在性校验（[@citeKey] 须在本地库中）
-	ruleRetracted  = "R5.7" // 撤稿状态校验（联网查 Crossref update-to，R5.7）
+	ruleRetracted  = "R5.7" // 撤稿状态校验（联网查 Crossref updated-by，R5.7）
 	ruleCurrency   = "R5.8" // 引用时效（文献跨度过大）
 	ruleSelfCite   = "R5.9" // 自引比例上限
 
@@ -131,8 +131,8 @@ type Rule struct {
 	Langs    []string // ["zh"] / ["en"] / ["zh","en"]
 	Types    []string // 适用论文类型，空=全部（如 ["empirical"] 仅实证）
 	Method   Method
-	From     Mode // 从该模式起启用
-	Check    func(src *Source, spec *ManuscriptSpec) []Violation
+	From     Mode                                                // 从该模式起启用
+	Check    func(src *Source, spec *ManuscriptSpec) []Violation // nil 表示查库/联网检查，由 RunFilesWithStore 执行
 	// Fix 自动修正：对单行应用确定性替换，返回修正后行与是否修改。nil=不可修。
 	Fix func(line string, spec *ManuscriptSpec) (string, bool)
 }
@@ -196,7 +196,7 @@ var (
 	rangeUnitBothRe   = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)\s*[～~]\s*(\d+(?:\.\d+)?)\s*([a-zA-Z℃°]+)`) // 10kg～15kg → 10～15kg（仅同单位）
 	yearRangeWaveRe   = regexp.MustCompile(`\d{4}年\s*[～~]\s*\d{4}年`)                                                   // 1988年～1998年 → 1988—1998年
 	hourRangeDashRe   = regexp.MustCompile(`\d+(?:\.\d+)?\s*—\s*\d+(?:\.\d+)?\s*(?:小时|分钟|天|周)`)                        // 24—48小时 → 24～48小时
-	doubleSlashUnitRe = regexp.MustCompile(`[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+`)                          // mg/kg/d → mg/(kg·d)
+	doubleSlashUnitRe = regexp.MustCompile(`\d+(?:\.\d+)?\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+\s*/\s*[a-zA-Z℃°]+`)          // 5 mg/kg/d → 5 mg/(kg·d)
 
 	// R3.4 计量单位（yueshu.md 五、计量单位）：数字后的中文单位词 / 英制旧制单位
 	cnUnitRe = regexp.MustCompile(`\d+(?:\.\d+)?\s*(?:毫米汞柱|毫米水柱|毫克|微克|纳克|千克|公斤|克|厘米|毫米|千米|公里|米|毫升|升|毫摩尔|摩尔|兆帕|千帕|帕|千瓦|瓦|千伏|伏|毫安|安|兆赫|千赫|赫兹|焦耳|牛顿|摄氏度|华氏度|英寸|磅|英尺|尺|寸|两|钱|卡|石)`)
@@ -1092,7 +1092,7 @@ func checkR33(src *Source, _ *ManuscriptSpec) []Violation {
 // sameUnitRange 行内是否存在两端单位相同的数字范围（10kg～15kg）。
 func sameUnitRange(ln string) bool {
 	for _, m := range rangeUnitBothRe.FindAllStringSubmatch(ln, -1) {
-		if strings.EqualFold(m[2], m[4]) {
+		if m[2] == m[4] {
 			return true
 		}
 	}
@@ -1953,6 +1953,10 @@ func AllRules() []Rule {
 		{ID: "R5.2", Name: "待引证占位符", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeFinal, Check: checkR52},
 		{ID: "R5.3", Name: "引用密度", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodS, From: ModeFinal, Check: checkR53},
 		{ID: "R5.4", Name: "待办标记", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR54},
+		{ID: ruleCiteExists, Name: "引用存在性", Category: CatCitation, Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft},
+		{ID: ruleRetracted, Name: "撤稿状态", Category: CatCitation, Langs: []string{"zh", "en"}, Method: MethodA, From: ModeDraft},
+		{ID: ruleCurrency, Name: "引用时效", Category: CatCitation, Langs: []string{"zh", "en"}, Method: MethodS, From: ModeDraft},
+		{ID: ruleSelfCite, Name: "自引比例", Category: CatCitation, Langs: []string{"zh", "en"}, Method: MethodS, From: ModeDraft},
 		{ID: "R6.1", Name: "引用位置", Category: CatCitation, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR61, Fix: fixR61},
 		{ID: "R7.1", Name: "标题冒号", Category: CatHeading, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeChapter, Check: checkR71, Fix: fixR71},
 		{ID: "R7.2", Name: "自我夸大", Category: CatBoastWords, Langs: []string{"zh", "en"}, Types: nil, Method: MethodA, From: ModeDraft, Check: checkR72},

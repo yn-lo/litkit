@@ -1,7 +1,7 @@
 # 功能设计：引用与手稿处理
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-10-09
 status: active
 owner: litkit-core
 ---
@@ -16,9 +16,11 @@ owner: litkit-core
 
 ### 包含
 - 占位符解析：裸 `[@citeKey]`（Pandoc 风格，查本地库；FR-REF-01 方案 B）与带前缀 `[@doi:]` / `[@pmid:]` / `[@arxiv:]` / `[@title:]`（现场反查并入库）
+- 裸句柄组合 `[@AAA,BBB]` 与独立相邻引用一致；评分保留原始组合句，共享句子指纹
 - 按标识符取元数据：DOI→CrossRef，PMID→PubMed，arXiv→Atom，title→CrossRef（FR-REF-02）
 - 引用渲染：zh→GB/T 7714—2025（含预印本[PP]/数据集[DS]类型）、en→APA 7th/IEEE（FR-REF-03/04）
 - BibTeX / RIS 生成（FR-REF-05/06）
+- APA 7 作者列表：至多 20 位全列，21 位以上列前 19 位与末位；无年份用 n.d.；BibTeX 保留成对的大小写保护组，未配对花括号转换为 TeX 文本命令
 - `manuscript` 完整流水线：formatted.md + refs.bib + refs.ris + references.txt +（可选）docx（FR-REF-08）
 - 未解析占位符归入 unresolved（FR-REF-09）
 - `litkit export` 批量导出（FR-REF-10）

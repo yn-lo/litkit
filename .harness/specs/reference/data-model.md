@@ -1,7 +1,7 @@
 # 数据模型参考 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-10-09
 status: active
 owner: litkit-core
 ---
@@ -113,13 +113,13 @@ type PaperRef struct {
 ```
 
 `citation_scores` 表记录引用评分缓存（FR-LINT-08）：主键 `(cite_key, sentence_hash, model_id, prompt_version)`，
-跳过缓存行（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL。
+缓存中的 sentence_hash 为完整引用句与摘要共同生成的 SHA-256 输入指纹（与 paper_refs 的句子前缀指纹用途不同）；句子或摘要变化自动不命中，prompt 升级亦失效，不做 TTL。
 
 ```go
 // CitationScore 引用评分缓存行
 type CitationScore struct {
     CiteKey       string  `json:"citeKey"`       // 被引论文 cite_key
-    SentenceHash  string  `json:"sentenceHash"`  // 引用句指纹
+    SentenceHash  string  `json:"sentenceHash"`  // 引用句与摘要的缓存输入指纹
     ModelID       string  `json:"modelId"`       // 评分模型标识
     PromptVersion string  `json:"promptVersion"` // 提示词版本（改 prompt 失效）
     Score         float64 `json:"score"`         // 相关性评分 [0, 1]

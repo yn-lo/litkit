@@ -1,4 +1,4 @@
-# Empirical manuscript spec — comments are AI-readable; no extra step after editing thresholds.
+# Review manuscript spec — comments are AI-readable; no extra step after editing thresholds.
 # AI must-read: This file is the single source of truth for writing rules.
 #
 # Writing rules (pre-instruction):
@@ -7,17 +7,17 @@
 # - No lists or bold in body text; no back-references or self-promotion
 # - Report statistics with consistent decimals; percentages rounded to 1 decimal
 
-paper_type: empirical
+paper_type: review
 lang: en
 journal: ""
 sections:
   - Introduction
-  - Methods
-  - Results
-  - Discussion
+  - Literature Search Methods
+  - Thematic Analysis
+  - Discussion and Outlook
   - Conclusion
 word_counts:
-  total: [3500, 6000]       # Total word count [min, max]
+  total: [3500, 5000]       # Total word count [min, max]
   abstract: [200, 500]      # Abstract word count [min, max]
   paragraph: [200, 400]     # Per-paragraph word count [min, max]
 citation:
