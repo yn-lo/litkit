@@ -44,7 +44,7 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 ## 环境变量
 
-全部配置经 `.env` 读取（`LITKIT_ENV_FILE` 可指定路径；发现顺序 `LITKIT_WORK_DIR/.env` > 当前目录向上溯源，进程环境变量优先），**无任何必需密钥**：
+全部配置经 `.env` 读取（`LITKIT_ENV_FILE` 可指定路径；发现顺序 `LITKIT_WORK_DIR/.env` > 当前目录向上溯源 > 全局配置 `%AppData%\litkit\.env`，进程环境变量优先），**无任何必需密钥**：
 
 | 变量                                                 | 说明                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------- |
@@ -63,7 +63,21 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 ## 安装
 
-从 [Releases](https://github.com/yn-lo/litkit/releases) 下载对应平台二进制（Windows / Linux / macOS × amd64 / arm64），解压后加入 `PATH`。
+### Windows（安装版，推荐）
+
+从 [Releases](https://github.com/yn-lo/litkit/releases) 下载 `litkit-<版本>-windows-amd64-setup.exe`（ARM64 机器选 `arm64`），双击安装：
+
+- 安装到当前用户目录 `%LocalAppData%\Programs\litkit`，无需管理员权限；
+- 自动加入当前用户 `PATH`，任意目录可直接执行 `litkit`；
+- 生成全局配置 `%AppData%\litkit\.env`（API key、代理等所有项目共享；项目内 `.env` 优先）；
+- **升级**：下载新版本安装包覆盖安装即可，文献库与配置不受影响；
+- **卸载**：自动移除 `PATH` 条目，保留 `%AppData%\litkit` 下的个人配置。
+
+安装后新开终端执行 `litkit --version` 验证。若项目目录里还留着旧的 `litkit.exe`，Windows 会优先执行当前目录中的文件——请删除旧副本，`where litkit` 应只剩安装目录一条。
+
+### 其他平台
+
+从 Releases 下载对应平台二进制（Linux / macOS × amd64 / arm64），解压后加入 `PATH`。
 
 源码构建（需 Go 1.26+）：
 
@@ -76,7 +90,7 @@ cd app && go build -o litkit ./cmd/litkit
 ```powershell
 $env:LITKIT_WORK_DIR = "$HOME\litkit-workspace"   # Linux/macOS: export LITKIT_WORK_DIR=...
 
-litkit init --type empirical --lang zh                 # 1. 初始化（review 综述 | empirical 实证 | book 专著 | proposal 标书）
+litkit init                                            # 1. 交互式初始化（工作目录/类型/语言/期刊）；也可用 --type empirical --lang zh
 litkit search "retrieval augmented generation" -n 3    # 2. 跨源检索（输出 JSON）
 litkit lib add --doi 10.5555/3295222.3295349           # 3. DOI 反查并入库
 litkit fetch <citeKey>                                 # 4. 取回全文（Unpaywall OA → Sci-Hub）

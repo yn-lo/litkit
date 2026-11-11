@@ -261,7 +261,9 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 
 ### .env 发现顺序
 
-`LITKIT_ENV_FILE` 指定 > `WORK_DIR/.env` > 当前目录 `.env` > 项目根 `.env`
+`LITKIT_ENV_FILE` 指定 > `WORK_DIR/.env` > 当前目录 `.env` > 项目根 `.env` > 全局配置 `<用户配置目录>/litkit/.env`（Windows: `%AppData%\litkit\.env`，安装向导生成）
+
+全局与项目级 `.env` 会合并加载：项目级覆盖全局，进程环境变量优先于两者。
 
 ## 3. 数据交换格式
 

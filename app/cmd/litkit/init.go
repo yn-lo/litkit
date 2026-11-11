@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"litkit/internal/config"
@@ -58,7 +60,17 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 		Short: "初始化项目（.env + .litkit/ 目录）并注册论文类型",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// 工作目录必须显式设置（FR-LIB-03），前置检查
+			// 工作目录必须显式设置（FR-LIB-03）：终端下可交互补问，非终端直接报错
+			if cfg.WorkDir == "" {
+				if !isTerminal() {
+					return errNoWorkDir
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return errNoWorkDir
+				}
+				cfg.WorkDir = promptWorkDir(os.Stdin, cwd)
+			}
 			if err := requireWorkDir(cfg); err != nil {
 				return err
 			}
@@ -225,13 +237,21 @@ func fileExists(p string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// isTerminal 检测 stdin 是否为终端（非管道/重定向）。
+// isTerminal 检测 stdin 是否为交互终端（管道/重定向/NUL 均为 false）。
 func isTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
+	return isatty.IsTerminal(os.Stdin.Fd())
+}
+
+// promptWorkDir 交互式询问工作目录；留空使用当前目录。
+func promptWorkDir(in io.Reader, cwd string) string {
+	fmt.Printf("工作目录（回车使用当前目录 %s）: ", cwd)
+	scanner := bufio.NewScanner(in)
+	if scanner.Scan() {
+		if v := strings.TrimSpace(scanner.Text()); v != "" {
+			return v
+		}
 	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return cwd
 }
 
 // runInitWizard 交互式初始化向导，逐项询问未显式指定的参数。

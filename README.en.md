@@ -52,7 +52,7 @@ All sources provide abstracts (FR-SEARCH-03). Known upstream limitations: Semant
 
 ## Environment Variables
 
-All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`; discovery order is `LITKIT_WORK_DIR/.env` > upward search from the current directory, with process environment variables taking precedence); **no API key is required**:
+All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`; discovery order is `LITKIT_WORK_DIR/.env` > upward search from the current directory > global `%AppData%\litkit\.env`, with process environment variables taking precedence); **no API key is required**:
 
 | Variable                                             | Description                                                                           |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -71,7 +71,21 @@ See [`app/.env.example`](app/.env.example) for the full list with inline comment
 
 ## Installation
 
-Download the prebuilt binary for your platform from [Releases](https://github.com/yn-lo/litkit/releases) (Windows / Linux / macOS × amd64 / arm64), extract it, and add it to your `PATH`.
+### Windows (installer, recommended)
+
+Download `litkit-<version>-windows-amd64-setup.exe` from [Releases](https://github.com/yn-lo/litkit/releases) (choose `arm64` on ARM64 machines) and run it:
+
+- Installs per-user to `%LocalAppData%\Programs\litkit` without administrator rights;
+- Adds `litkit` to the current user's `PATH`;
+- Creates a global config at `%AppData%\litkit\.env` (API keys, proxy) shared by all projects; a project-local `.env` takes precedence;
+- **Upgrade**: run the newer installer over the old one; the library and config are preserved;
+- **Uninstall**: removes the `PATH` entry and keeps `%AppData%\litkit`.
+
+Verify with `litkit --version` in a new terminal. Delete any old `litkit.exe` left inside project folders, since Windows prefers the current directory over `PATH`.
+
+### Other platforms
+
+Download the prebuilt binary for your platform from [Releases](https://github.com/yn-lo/litkit/releases) (Linux / macOS × amd64 / arm64), extract it, and add it to your `PATH`.
 
 Build from source (requires Go 1.26+):
 
@@ -84,7 +98,7 @@ cd app && go build -o litkit ./cmd/litkit
 ```powershell
 $env:LITKIT_WORK_DIR = "$HOME\litkit-workspace"   # Linux/macOS: export LITKIT_WORK_DIR=...
 
-litkit init --type empirical --lang zh                 # 1. Init (review | empirical | book | proposal)
+litkit init                                            # 1. Interactive init (work dir / type / language / journal); or pass --type empirical --lang zh
 litkit search "retrieval augmented generation" -n 3    # 2. Cross-source search (JSON out)
 litkit lib add --doi 10.5555/3295222.3295349           # 3. Resolve DOI and store
 litkit fetch <citeKey>                                 # 4. Fetch full text (Unpaywall → Sci-Hub)

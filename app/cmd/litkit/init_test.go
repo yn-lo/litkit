@@ -46,6 +46,16 @@ func TestInitCmd_rejectsWithoutWorkDir(t *testing.T) {
 	}
 }
 
+func TestPromptWorkDir(t *testing.T) {
+	cwd := filepath.Join("E:", "paper")
+	if got := promptWorkDir(strings.NewReader("\n"), cwd); got != cwd {
+		t.Errorf("留空应使用当前目录，got %q", got)
+	}
+	if got := promptWorkDir(strings.NewReader("  D:\\tmp  \n"), cwd); got != `D:\tmp` {
+		t.Errorf("应使用输入并去除空白，got %q", got)
+	}
+}
+
 func TestInitWorkdir_createsFiles(t *testing.T) {
 	dir := t.TempDir()
 	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {

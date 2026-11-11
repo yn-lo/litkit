@@ -6,6 +6,47 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "litkit-config-test")
+	if err != nil {
+		panic(err)
+	}
+	// 隔离用户配置目录，避免读到本机 %AppData%\litkit\.env 影响断言
+	_ = os.Setenv("AppData", dir)         // Windows
+	_ = os.Setenv("XDG_CONFIG_HOME", dir) // Linux
+	_ = os.Setenv("HOME", dir)            // macOS / Linux 回落
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// writeGlobalEnv 在隔离的用户配置目录写入全局 .env 并返回其路径。
+func writeGlobalEnv(t *testing.T, content string) string {
+	t.Helper()
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir: %v", err)
+	}
+	p := filepath.Join(dir, "litkit", ".env")
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		t.Fatalf("mkdir global config: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatalf("write global .env: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(p) })
+	return p
+}
+
+// unsetEnv 临时移除进程环境变量（t.Cleanup 时恢复）。
+func unsetEnv(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, k := range keys {
+		t.Setenv(k, "")
+		_ = os.Unsetenv(k)
+	}
+}
+
 // writeEnv 在临时目录创建 .env 并返回其路径。
 func writeEnv(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -61,6 +102,52 @@ func TestDiscoverEnvFile_notFound(t *testing.T) {
 	got := discoverEnvFileFrom(t.TempDir())
 	if got != "" {
 		t.Fatalf("无 .env 时应返回空串，got %s", got)
+	}
+}
+
+func TestDiscoverEnvFile_globalFallback(t *testing.T) {
+	t.Chdir(t.TempDir()) // 无项目级 .env
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_WORK_DIR", "")
+	want := writeGlobalEnv(t, "LITKIT_LANG=en\n")
+
+	if got := DiscoverEnvFile(); got != want {
+		t.Fatalf("应回落到全局配置：got %s want %s", got, want)
+	}
+}
+
+func TestLoad_projectEnvOverridesGlobal(t *testing.T) {
+	unsetEnv(t, "LITKIT_LANG", "LITKIT_LLM_API_KEY")
+	writeGlobalEnv(t, "LITKIT_LANG=en\nLITKIT_LLM_API_KEY=sk-global\n")
+	project := writeEnv(t, t.TempDir(), "LITKIT_LANG=zh\n")
+	t.Setenv("LITKIT_ENV_FILE", project)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Lang != "zh" {
+		t.Errorf("项目级 .env 应覆盖全局：got %q", cfg.Lang)
+	}
+	if cfg.LLMAPIKey != "sk-global" {
+		t.Errorf("全局独有配置应生效：got %q", cfg.LLMAPIKey)
+	}
+	if cfg.EnvFile != project {
+		t.Errorf("EnvFile 应记录项目级路径：got %s", cfg.EnvFile)
+	}
+}
+
+func TestLoad_processEnvOverridesFiles(t *testing.T) {
+	writeGlobalEnv(t, "LITKIT_LANG=en\n")
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, t.TempDir(), "LITKIT_LANG=zh\n"))
+	t.Setenv("LITKIT_LANG", "en")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Lang != "en" {
+		t.Errorf("进程环境变量应优先于 .env：got %q", cfg.Lang)
 	}
 }
 

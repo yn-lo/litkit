@@ -219,7 +219,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
 | FR-CONFIG-01 | 所有密钥经统一配置入口读取，禁止硬编码 | P0 | 静态扫描强制 |
-| FR-CONFIG-02 | .env 自动发现（ENV_FILE > WORK_DIR > CWD > 项目根） | P0 | 按序查找 |
+| FR-CONFIG-02 | .env 自动发现（ENV_FILE > WORK_DIR > CWD > 项目根 > 全局配置） | P0 | 按序查找；全局配置供安装版跨项目共享凭据，项目级优先 |
 | FR-CONFIG-03 | 提供 .env.example 模板 | P0 | 列出全部可选 key |
 | FR-CONFIG-04 | 写作语言模式默认 zh | P0 | 可用 --lang 覆盖 |
 

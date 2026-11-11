@@ -3,8 +3,11 @@
 // 所有密钥经本包统一读取，禁止硬编码（FR-CONFIG-01、NFR-SEC-01）。
 // .env 自动发现顺序（FR-CONFIG-02）：
 //
-//	LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env > 项目根 .env
+//	LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env > 项目根 .env > 全局配置
 //
+// 全局配置位于 <用户配置目录>/litkit/.env（Windows: %AppData%\litkit\.env），
+// 由 Windows 安装向导生成，供安装版在多项目间共享 LLM/检索凭据；
+// 项目级 .env 优先于全局配置，进程环境变量优先于两者。
 // .env.example 模板见仓库根（FR-CONFIG-03）。
 package config
 
@@ -57,13 +60,39 @@ type Config struct {
 //
 // 已存在的进程环境变量优先于 .env 文件（godotenv.Load 不覆盖已设置变量）。
 func Load() (*Config, error) {
-	envFile := DiscoverEnvFile()
-	return loadFrom(envFile)
+	projectFile := discoverProjectEnvFile()
+	globalFile := GlobalEnvFile()
+	if globalFile == projectFile {
+		globalFile = ""
+	}
+	return loadFrom(globalFile, projectFile)
 }
 
-// DiscoverEnvFile 按 FR-CONFIG-02 优先级查找 .env 路径。
+// DiscoverEnvFile 按 FR-CONFIG-02 优先级查找 .env 路径（项目级优先，其次全局配置）。
 // 未找到返回空串（不视为错误）。
 func DiscoverEnvFile() string {
+	if p := discoverProjectEnvFile(); p != "" {
+		return p
+	}
+	return GlobalEnvFile()
+}
+
+// GlobalEnvFile 返回全局配置文件路径（<用户配置目录>/litkit/.env），不存在时返回空串。
+// Windows 下即 %AppData%\litkit\.env，由安装向导创建。
+func GlobalEnvFile() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(dir, "litkit", ".env")
+	if !fileExists(p) {
+		return ""
+	}
+	return p
+}
+
+// discoverProjectEnvFile 查询项目级 .env（不含全局配置）。
+func discoverProjectEnvFile() string {
 	// 1. LITKIT_ENV_FILE 显式指定
 	if p := os.Getenv("LITKIT_ENV_FILE"); p != "" {
 		if fileExists(p) {
@@ -98,12 +127,14 @@ func discoverEnvFileFrom(start string) string {
 	return ""
 }
 
-// loadFrom 加载指定 .env（若非空）并填充 Config。
-func loadFrom(envFile string) (*Config, error) {
-	if envFile != "" {
-		if err := godotenv.Load(envFile); err != nil {
-			return nil, fmt.Errorf("load .env %q: %w", envFile, err)
-		}
+// loadFrom 加载全局与项目级 .env（项目级优先，进程环境变量最高优先）并填充 Config。
+func loadFrom(globalFile, projectFile string) (*Config, error) {
+	if err := loadEnvFiles(globalFile, projectFile); err != nil {
+		return nil, err
+	}
+	envFile := projectFile
+	if envFile == "" {
+		envFile = globalFile
 	}
 	cfg := &Config{
 		EnvFile:               envFile,
@@ -135,6 +166,38 @@ func loadFrom(envFile string) (*Config, error) {
 		cfg.HTTPTimeoutMS = DefaultHTTPTimeoutMS
 	}
 	return cfg, nil
+}
+
+// loadEnvFiles 按给定顺序合并 .env（后者覆盖前者），但不覆盖已存在的进程环境变量。
+// 先全局、后项目，保证项目配置优先于全局配置。
+func loadEnvFiles(files ...string) error {
+	preset := make(map[string]struct{}, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		preset[k] = struct{}{}
+	}
+	merged := map[string]string{}
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		kv, err := godotenv.Read(f)
+		if err != nil {
+			return fmt.Errorf("load .env %q: %w", f, err)
+		}
+		for k, v := range kv {
+			merged[k] = v
+		}
+	}
+	for k, v := range merged {
+		if _, ok := preset[k]; ok {
+			continue
+		}
+		if err := os.Setenv(k, v); err != nil {
+			return fmt.Errorf("set env %s: %w", k, err)
+		}
+	}
+	return nil
 }
 
 func fileExists(p string) bool {

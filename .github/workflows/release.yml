@@ -39,3 +39,56 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  installer:
+    name: Build & upload Windows installer
+    needs: goreleaser
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.9"
+          cache-dependency-path: app/go.sum
+
+      - name: Build Windows binaries
+        working-directory: app
+        shell: pwsh
+        run: |
+          $v = $env:GITHUB_REF_NAME.TrimStart('v')
+          $ld = "-s -w -X litkit/internal/buildinfo.Version=$v"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $env:CGO_ENABLED = "0"
+          $env:GOARCH = "amd64"
+          go build -trimpath -ldflags $ld -o dist/litkit-amd64.exe ./cmd/litkit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:GOARCH = "arm64"
+          go build -trimpath -ldflags $ld -o dist/litkit-arm64.exe ./cmd/litkit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installers
+        working-directory: app
+        shell: pwsh
+        run: |
+          $v = $env:GITHUB_REF_NAME.TrimStart('v')
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          & $iscc "installer\litkit.iss" "/DAppVersion=$v" "/DAppArch=amd64"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $iscc "installer\litkit.iss" "/DAppVersion=$v" "/DAppArch=arm64"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload installers to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Get-ChildItem "app\dist\litkit-*-setup.exe" | ForEach-Object {
+            gh release upload $env:GITHUB_REF_NAME $_.FullName --clobber
+          }
