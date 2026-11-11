@@ -23,7 +23,7 @@ CI 的接口一致性检查（`.harness/constraints/sync`）机械化强制 CLI 
 ## 本地门禁
 
 ```bash
-# 全量门禁（7 项：gofmt → build → lint → vet → test → vulncheck → arch-check + sync）
+# 全量门禁（7 项：gofmt → build → lint → vet → test → arch-check + sync）
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
 
@@ -42,7 +42,7 @@ cd app && gofmt -l . && go test ./...
 
 ## 环境
 
-- Go ≥ 1.26；golangci-lint、govulncheck、goreleaser（发布）。
+- Go ≥ 1.26；golangci-lint、goreleaser（发布）。
 - 触网测试依赖网络与外部 API（arxiv / PubMed 等），本地手动执行。
 
 ## 报告问题

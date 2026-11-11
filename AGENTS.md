@@ -22,10 +22,10 @@
 
 ## 构建与验证
 
-Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁（8 项）：
+Go 源码位于 `app/` 子目录。**单一入口**跑完构建 + 全量门禁（7 项）：
 
 ```bash
-# 构建全量门禁（一步跑完 8 项：gofmt → build → lint → vet → test → vulncheck → arch-check → sync）
+# 构建全量门禁（一步跑完 7 项：gofmt → build → lint → vet → test → arch-check → sync）
 .harness/constraints/gate.ps1        # Windows PowerShell
 bash .harness/constraints/gate.sh     # Linux/macOS
 

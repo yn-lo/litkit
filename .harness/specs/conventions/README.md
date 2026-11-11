@@ -13,4 +13,4 @@ owner: litkit-core
 | 命名规范 | [`naming.md`](naming.md) | golangci-lint（revive/nolintlint） |
 | 错误处理 | [`error-handling.md`](error-handling.md) | errcheck / go vet / review |
 | 测试策略 | [`testing.md`](testing.md) | go test / coverage 门禁 / build tag |
-| 工具链 / CI 门禁 / 文档 / 提交 / 开发环境 | [`process.md`](process.md) | gofmt / golangci-lint / govulncheck / CI |
+| 工具链 / CI 门禁 / 文档 / 提交 / 开发环境 | [`process.md`](process.md) | gofmt / golangci-lint / CI |

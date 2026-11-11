@@ -135,7 +135,7 @@ litkit verify chapter1.md --report citation-refs       # 6d. LLM citation-releva
 ## Development
 
 ```bash
-# Full gate (gofmt → build → lint → vet → test → vulncheck → arch-check → sync)
+# Full gate (gofmt → build → lint → vet → test → arch-check → sync)
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
 ```

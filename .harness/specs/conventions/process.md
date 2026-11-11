@@ -41,7 +41,6 @@ go test ./...       (单元测试，离线)
 go test -cover      (覆盖率 ≥ 60%)
 arch-check          (分层依赖)
 sync-check          (CLI/api.md 一致性 + 文档断链)
-govulncheck         (依赖漏洞扫描)
 ```
 
 CI 配置见 [`../../constraints/ci/ci.yml`](../../constraints/ci/ci.yml)；lint 配置见 [`../../constraints/style/.golangci.yml`](../../constraints/style/.golangci.yml)。
@@ -68,7 +67,6 @@ go version  # ≥ 1.26
 
 # 安装工具链
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-go install golang.org/x/vuln/cmd/govulncheck@latest
 
 # 本地验证（等价 CI 门禁）
 gofmt -l . && golangci-lint run && go vet ./... && go test ./... -cover

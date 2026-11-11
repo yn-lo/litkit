@@ -127,7 +127,7 @@ litkit verify chapter1.md --report citation-refs       # 6d. 引用相关性 LLM
 ## 开发
 
 ```bash
-# 全量门禁（gofmt → build → lint → vet → test → vulncheck → arch-check → sync）
+# 全量门禁（gofmt → build → lint → vet → test → arch-check → sync）
 powershell -File .harness/constraints/gate.ps1    # Windows
 bash .harness/constraints/gate.sh                 # Linux/macOS
 ```

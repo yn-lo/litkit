@@ -119,7 +119,7 @@ owner: litkit-core
 - [ ] 相关：Pearson/Spearman/Kendall 已知数列断言 r/ρ
 - [ ] 正态性：正态样本 PASS、偏态/离群样本 FAIL 且降级路径正确
 - [ ] `Result` JSON 序列化：默认字段最小集，无报告冗余
-- [ ] gate 门禁：go.mod 新增五依赖过 lint/vulncheck/arch
+- [ ] gate 门禁：go.mod 新增五依赖过 lint/arch
 
 ## 对外对接契约（未来接入方必读）
 

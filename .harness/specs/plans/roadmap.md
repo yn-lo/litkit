@@ -94,7 +94,7 @@ owner: litkit-core
 | 任务 | 对应 FR |
 |---|---|
 | 打包发布（goreleaser 跨平台单一二进制） | — |
-| CI：gofmt / golangci-lint / go vet / go test / coverage / govulncheck | NFR-MAINT-02/03、NFR-SEC-03 |
+| CI：gofmt / golangci-lint / go vet / go test / coverage | NFR-MAINT-02/03 |
 | 文档核对（断链检查）、.env.example | FR-CONFIG-03 |
 | 示例与快速开始完善 | — |
 | 开源发布（Apache-2.0、README/CONTRIBUTING） | C11 |

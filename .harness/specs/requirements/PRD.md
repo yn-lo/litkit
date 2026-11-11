@@ -249,7 +249,6 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 |---|---|---|
 | NFR-SEC-01 | 禁止硬编码 API key | 静态扫描 + CI 强制 |
 | NFR-SEC-02 | .env 不入库 | .gitignore 覆盖 |
-| NFR-SEC-03 | 依赖漏洞扫描 | CI 运行 |
 
 ### 5.4 NFR-MAINT 可维护
 
