@@ -102,6 +102,22 @@ func TestParseSource_BOMAndRefsHeading(t *testing.T) {
 	}
 }
 
+// TestR18_noWordFalsePositive 「代表1种」「发表3篇」中的表1/表3 不是图表引用。
+func TestR18_noWordFalsePositive(t *testing.T) {
+	fr := runContent(t, "# 标题\n\n本研究代表1种新方法，发表3篇论文。\n", DefaultSpec(), zhChapter())
+	if got := violationsOf(fr, "R1.8"); len(got) != 0 {
+		t.Errorf("构词不应误报图表引用，got %+v", got)
+	}
+}
+
+// TestR18_referenceContext 正常图表引用仍应检出缺失题注。
+func TestR18_referenceContext(t *testing.T) {
+	fr := runContent(t, "# 标题\n\n结果如表1所示。\n", DefaultSpec(), zhChapter())
+	if got := violationsOf(fr, "R1.8"); len(got) != 1 {
+		t.Errorf("「如表1所示」应报 1 条缺失题注，got %+v", got)
+	}
+}
+
 func TestRule_R0_1(t *testing.T) {
 	pos := "This is an English sentence with many words here and more words overall.\nAnother English line with plenty of words to push the ratio high enough.\n"
 	fr := runContent(t, pos, DefaultSpec(), zhChapter())

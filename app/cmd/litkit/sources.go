@@ -39,7 +39,7 @@ LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES 控制。
 		RunE: func(_ *cobra.Command, _ []string) error {
 			list := reg.List()
 			enabled := make(map[string]bool, len(list))
-			defaults, warns := resolveSearchSources(nil, cfg, reg.Names())
+			defaults, warns := resolveSearchSources("", cfg, reg.Names())
 			for _, w := range warns {
 				fmt.Fprintf(os.Stderr, "litkit: %s\n", w)
 			}

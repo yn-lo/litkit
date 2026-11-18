@@ -58,6 +58,61 @@ func TestFixCmd_rewritesFile(t *testing.T) {
 	}
 }
 
+// TestFixCmd_respectsSpecSkipRules fix 必须与 verify 一样应用 spec 的 skip_rules。
+func TestFixCmd_respectsSpecSkipRules(t *testing.T) {
+	dir := t.TempDir()
+	spec := lint.SpecForType(lint.PaperTypeEmpirical, lint.LangZH)
+	spec.SkipRules = []string{"R3.1"}
+	if err := lint.WriteSpec(lint.SpecPath(dir, lint.PaperTypeEmpirical, lint.LangZH), spec); err != nil {
+		t.Fatalf("WriteSpec: %v", err)
+	}
+	p := filepath.Join(dir, "doc.md")
+	content := "# 方法设计\n\n正文,内容。\n"
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cmd := newFixCmd(&config.Config{WorkDir: dir})
+	cmd.SetArgs([]string{p})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fix 命令执行失败: %v", err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("spec.skip_rules 中的 R3.1 不应被修复，got %q", string(got))
+	}
+}
+
+// TestFixCmd_CRLFAndPreservesLineEndings CRLF 文件应可修复，且保持原行尾风格。
+func TestFixCmd_CRLFAndPreservesLineEndings(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "crlf.md")
+	content := "# 研究结果。\r\n\r\n正文内容。\r\n"
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cmd := newFixCmd(&config.Config{WorkDir: dir})
+	cmd.SetArgs([]string{p})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fix 命令执行失败: %v", err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(got), "# 研究结果\r\n") {
+		t.Errorf("标题末尾标点应被修复且保留 CRLF，got %q", string(got))
+	}
+	if strings.Contains(string(got), "# 研究结果。") {
+		t.Errorf("标题末尾标点未修复：%q", string(got))
+	}
+	if strings.Count(strings.ReplaceAll(string(got), "\r\n", ""), "\n") != 0 {
+		t.Errorf("不应产生混合行尾：%q", string(got))
+	}
+}
+
 func TestFixCmd_noChangesSkipsRewrite(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "ok.md")

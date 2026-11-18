@@ -547,7 +547,7 @@ func bibEntryType(p model.Paper) string {
 // bibKey 生成 BibTeX 引用键：优先 CiteKey；否则 首作者姓+年；再回落 title 首词+年。
 func bibKey(p model.Paper) string {
 	if k := strings.TrimSpace(p.CiteKey); k != "" {
-		return k
+		return sanitizeBib(k)
 	}
 	var first string
 	if len(p.Authors) > 0 {
@@ -575,8 +575,14 @@ func sanitizeBib(s string) string {
 		"\\", "", "{", "", "}", "", "&", "", "%", "", "#", "",
 		"_", "", "$", "", "~", "", "^", "", " ", "", "'", "", "\"", "",
 		",", "", ".", "", ":", "", ";", "", "/", "", "(", "", ")", "", "-", "",
+		"\r", "", "\n", "", "\t", "",
 	)
 	return repl.Replace(s)
+}
+
+// risField 把字段折叠为单行：RIS 是逐行记录格式，字段内的 CR/LF 会伪造新字段甚至提前终止条目。
+func risField(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // escapeBibText 转义 BibTeX 字段文本（保留大小写，防 TeX 特殊字符误解析）。
@@ -745,46 +751,46 @@ func FormatRIS(p model.Paper) string {
 			}
 		}
 		if name != "" {
-			b.WriteString("AU  - " + name + "\n")
+			b.WriteString("AU  - " + risField(name) + "\n")
 		}
 	}
-	if t := strings.TrimSpace(p.Title); t != "" {
+	if t := risField(p.Title); t != "" {
 		b.WriteString("TI  - " + t + "\n")
 	}
-	if ab := strings.TrimSpace(p.Abstract); ab != "" {
+	if ab := risField(p.Abstract); ab != "" {
 		b.WriteString("AB  - " + ab + "\n")
 	}
-	if v := strings.TrimSpace(p.Venue); v != "" {
+	if v := risField(p.Venue); v != "" {
 		b.WriteString("JO  - " + v + "\n")
 	}
 	if p.Year > 0 {
 		b.WriteString("PY  - " + strconv.Itoa(p.Year) + "\n")
 	}
-	if v := strings.TrimSpace(p.Volume); v != "" {
+	if v := risField(p.Volume); v != "" {
 		b.WriteString("VL  - " + v + "\n")
 	}
-	if v := strings.TrimSpace(p.Number); v != "" {
+	if v := risField(p.Number); v != "" {
 		b.WriteString("IS  - " + v + "\n")
 	}
 	if sp, ep := risPages(p.Pages); sp != "" {
-		b.WriteString("SP  - " + sp + "\n")
+		b.WriteString("SP  - " + risField(sp) + "\n")
 		if ep != "" {
-			b.WriteString("EP  - " + ep + "\n")
+			b.WriteString("EP  - " + risField(ep) + "\n")
 		}
 	}
-	if d := strings.TrimSpace(p.DOI); d != "" {
+	if d := risField(p.DOI); d != "" {
 		b.WriteString("DO  - " + d + "\n")
 	}
-	if u := strings.TrimSpace(p.URL); u != "" {
+	if u := risField(p.URL); u != "" {
 		b.WriteString("UR  - " + u + "\n")
 	}
-	if v := strings.TrimSpace(p.Publisher); v != "" {
+	if v := risField(p.Publisher); v != "" {
 		b.WriteString("PB  - " + v + "\n")
 	}
-	if v := strings.TrimSpace(p.City); v != "" {
+	if v := risField(p.City); v != "" {
 		b.WriteString("CY  - " + v + "\n")
 	}
-	if v := strings.TrimSpace(p.Institution); v != "" {
+	if v := risField(p.Institution); v != "" {
 		b.WriteString("AD  - " + v + "\n")
 	}
 	b.WriteString("ER  - \n")

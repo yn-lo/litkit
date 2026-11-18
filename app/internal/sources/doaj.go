@@ -67,7 +67,9 @@ type doajAuthor struct {
 }
 
 type doajJournal struct {
-	Title string `json:"title"`
+	Title  string `json:"title"`
+	Volume string `json:"volume"`
+	Number string `json:"number"`
 }
 
 // Search 调用 DOAJ 检索并解析 JSON。
@@ -85,6 +87,29 @@ func (d *DoajSource) buildURL(query string, opts SearchOptions) string {
 	}
 	return fmt.Sprintf("%s/search/articles/%s?pageSize=%d",
 		d.BaseURL, q, ensureMax(opts.MaxResults, defaultMaxResults))
+}
+
+// firstNonEmpty 返回第一个去空白后非空的字符串。
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// joinPageRange 拼合起止页：仅单边时直接返回该页，避免生成 "446-" / "-456"。
+func joinPageRange(start, end string) string {
+	sp, ep := strings.TrimSpace(start), strings.TrimSpace(end)
+	switch {
+	case sp != "" && ep != "":
+		return sp + "-" + ep
+	case sp != "":
+		return sp
+	default:
+		return ep
+	}
 }
 
 // doajYear 将 DOAJ 的年份（数字或字符串）转为 int；无法解析按 0。
@@ -116,14 +141,12 @@ func parseDoajJSON(data []byte) ([]model.Paper, error) {
 			Abstract: collapseSpace(b.Abstract),
 			Year:     doajYear(b.Year),
 			Venue:    strings.TrimSpace(b.Journal.Title),
-			Volume:   b.Volume,
-			Number:   b.Number,
+			Volume:   firstNonEmpty(b.Journal.Volume, b.Volume),
+			Number:   firstNonEmpty(b.Journal.Number, b.Number),
 			DocType:  DocTypeArticle,
 			Source:   "doaj",
 		}
-		if b.StartPage != "" || b.EndPage != "" {
-			p.Pages = strings.TrimSpace(b.StartPage + "-" + b.EndPage)
-		}
+		p.Pages = joinPageRange(b.StartPage, b.EndPage)
 		for _, id := range b.Identifier {
 			if id.Type == "doi" {
 				p.DOI = id.ID

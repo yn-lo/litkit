@@ -95,6 +95,11 @@ func readPapersFile(path string) ([]model.Paper, error) {
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("export: 解析 %s 失败（期望 []Paper 或 {\"papers\":[...]}）: %w", path, err)
 	}
+	// 单个 Paper 对象也能反序列化成空 wrapper（未知字段被忽略）；
+	// nil 说明输入里没有 papers 数组，直接报错而不是静默导出 0 条。
+	if wrapper.Papers == nil {
+		return nil, fmt.Errorf("export: 解析 %s 失败（期望 []Paper 或 {\"papers\":[...]}，单个对象请用数组包裹）", path)
+	}
 	return dedupPapers(wrapper.Papers), nil
 }
 

@@ -297,6 +297,35 @@ func TestFormatRIS_FieldComplete(t *testing.T) {
 	}
 }
 
+// TestFormatRIS_FieldNewlinesCollapsed RIS 是逐行记录格式：
+// 字段内换行必须折叠，否则可伪造字段或提前终止条目；BibTeX 键同理不得含换行。
+func TestFormatRIS_FieldNewlinesCollapsed(t *testing.T) {
+	p := sampleJournal()
+	p.Title = "Real Title\nER  - \nTY  - JOUR"
+	p.Abstract = "line1\r\nline2"
+	got := FormatRIS(p)
+	if strings.Contains(got, "\r") {
+		t.Errorf("RIS 不应含 CR：\n%q", got)
+	}
+	if c := strings.Count(got, "TY  - "); c != 1 {
+		t.Errorf("注入的 TY 应被折叠，got %d 条：\n%s", c, got)
+	}
+	if c := strings.Count(got, "ER  - "); c != 1 {
+		t.Errorf("注入的 ER 应被折叠，got %d 条：\n%s", c, got)
+	}
+	if !strings.Contains(got, "TI  - Real Title ER - TY - JOUR") {
+		t.Errorf("字段应折叠为单行：\n%s", got)
+	}
+	if !strings.Contains(got, "AB  - line1 line2") {
+		t.Errorf("抽象换行应折叠：\n%s", got)
+	}
+
+	p.CiteKey = "Bad\nKey"
+	if bib := FormatBibTeX(p); !strings.Contains(bib, "@article{BadKey,") {
+		t.Errorf("BibTeX 键应剔除换行：\n%s", bib)
+	}
+}
+
 func TestRISFromPapers_Batch(t *testing.T) {
 	p1 := sampleJournal()
 	p2 := p1

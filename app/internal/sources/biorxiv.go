@@ -36,9 +36,6 @@ func NewBiorxivSource(server string, httpClient *httpclient.Client, limiter *rat
 	}
 }
 
-// biorxivDefaultResults MaxResults 未指定时的默认拉取条数（interval 取数字 N 形式）。
-const biorxivDefaultResults = 100
-
 // biorxivResponse bioRxiv API 响应结构。
 type biorxivResponse struct {
 	Messages   []biorxivMessage `json:"messages"`
@@ -60,10 +57,22 @@ type biorxivEntry struct {
 	Server   string `json:"server"`
 }
 
+// biorxivFetchWindow 单次拉取窗口：API 无关键词端点，窗口取默认拉取条数
+// 而非用户要的条数，否则"最近 5 篇里搜关键词"几乎必然漏检。
+const biorxivFetchWindow = 100
+
+// biorxivInterval 计算请求的 interval：至少覆盖默认窗口，用户要更多时按需放大。
+func biorxivInterval(maxResults int) int {
+	if maxResults > biorxivFetchWindow {
+		return maxResults
+	}
+	return biorxivFetchWindow
+}
+
 // Search 拉取 bioRxiv/medRxiv 最近批次并按关键词过滤。
 func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOptions) ([]model.Paper, error) {
-	// interval 用数字 N（最近 N 篇）；MaxResults=0 回退 100，而非不截断
-	u := fmt.Sprintf("%s/details/%s/%d", b.BaseURL, b.Server, ensureMax(opts.MaxResults, biorxivDefaultResults))
+	interval := biorxivInterval(opts.MaxResults)
+	u := fmt.Sprintf("%s/details/%s/%d", b.BaseURL, b.Server, interval)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("biorxiv search: %w", err)
@@ -101,7 +110,7 @@ func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOpt
 	if len(papers) == 0 && strings.TrimSpace(query) != "" {
 		return nil, fmt.Errorf(
 			"biorxiv.%s 关键词检索未命中：%s API 无关键词检索端点，仅对最近 %d 篇预印本做本地关键词过滤后为空，无法区分“真无结果”与“召回不足”；建议改用支持关键词检索的源（openalex/pubmed/semantic_scholar）",
-			b.Server, b.Server, ensureMax(opts.MaxResults, biorxivDefaultResults))
+			b.Server, b.Server, interval)
 	}
 	return papers, nil
 }
@@ -137,14 +146,24 @@ func parseBiorxivJSON(data []byte, server string) ([]model.Paper, error) {
 	return papers, nil
 }
 
-// parseBiorxivAuthors 解析 "First Last;First2 Last2" 为 []Author。
+// parseBiorxivAuthors 解析 "Family, Given;Family2, Given2" 为 []Author。
+// 真实 API 为 "Last, First" 逗号格式；无逗号时回退按空白拆分（兼容单名/旧格式）。
 func parseBiorxivAuthors(s string) []model.Author {
 	parts := strings.Split(s, ";")
 	out := make([]model.Author, 0, len(parts))
 	for _, p := range parts {
-		if name := strings.TrimSpace(p); name != "" {
-			out = append(out, splitAuthorName(name))
+		name := strings.TrimSpace(p)
+		if name == "" {
+			continue
 		}
+		if i := strings.Index(name, ","); i > 0 {
+			out = append(out, model.Author{
+				Family: strings.TrimSpace(name[:i]),
+				Given:  strings.TrimSpace(name[i+1:]),
+			})
+			continue
+		}
+		out = append(out, splitAuthorName(name))
 	}
 	return out
 }

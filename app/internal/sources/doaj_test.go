@@ -83,6 +83,10 @@ func TestParseDoajJSON(t *testing.T) {
 	if p1.Pages != "446-456" {
 		t.Errorf("Pages：got %q", p1.Pages)
 	}
+	// 真实 DOAJ 把卷/期放在 bibjson.journal 下
+	if p1.Volume != "45" || p1.Number != "2" {
+		t.Errorf("卷/期应从 journal 读取，got volume=%q number=%q", p1.Volume, p1.Number)
+	}
 	if len(p1.Authors) != 2 {
 		t.Fatalf("应有 2 位作者，got %d", len(p1.Authors))
 	}
@@ -102,6 +106,20 @@ func TestParseDoajJSON(t *testing.T) {
 func TestParseDoajJSON_invalidJSON(t *testing.T) {
 	if _, err := parseDoajJSON([]byte("not json")); err == nil {
 		t.Fatal("非法 JSON 应报错")
+	}
+}
+
+func TestJoinPageRange(t *testing.T) {
+	cases := []struct{ start, end, want string }{
+		{"446", "456", "446-456"},
+		{"446", "", "446"},
+		{"", "456", "456"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		if got := joinPageRange(c.start, c.end); got != c.want {
+			t.Errorf("joinPageRange(%q,%q) = %q, want %q", c.start, c.end, got, c.want)
+		}
 	}
 }
 

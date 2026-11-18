@@ -132,9 +132,14 @@ func (f *FulltextFetcher) Fetch(ctx context.Context, ref string) (*FetchResult, 
 		// 抽取失败不删除已落盘 PDF（FR-FETCH-05）
 		return nil, fmt.Errorf("fetch: 抽取全文失败（PDF 已保存至 %s）: %w", pdfPath, err)
 	}
-	// 抽取成功（可能为空文本——扫描版 PDF 无文本层），全文缓存入库
-	_ = f.store.SetFulltext(p.CiteKey, text)
-	_ = f.store.SetPDFURL(p.CiteKey, pdfURL)
+	// 抽取成功（可能为空文本——扫描版 PDF 无文本层），全文缓存入库。
+	// 写入失败必须上报：否则调用方以为缓存成功，后续 fetch 会重复下载并覆盖同一 PDF。
+	if err := f.store.SetFulltext(p.CiteKey, text); err != nil {
+		return nil, fmt.Errorf("fetch: 全文已抽取（PDF 已保存至 %s），但缓存入库失败: %w", pdfPath, err)
+	}
+	if err := f.store.SetPDFURL(p.CiteKey, pdfURL); err != nil {
+		return nil, fmt.Errorf("fetch: PDF 已保存至 %s，但记录 PDF 地址失败: %w", pdfPath, err)
+	}
 
 	return &FetchResult{CiteKey: p.CiteKey, PdfPath: pdfPath, Fulltext: text, Via: via}, nil
 }

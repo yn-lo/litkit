@@ -103,7 +103,7 @@ func (a *ArxivSource) Search(ctx context.Context, query string, opts SearchOptio
 //   - full：all:<q>，全字段（含全文，误检率较高，作高级选项）
 func (a *ArxivSource) buildURL(query string, opts SearchOptions) (string, error) {
 	q := url.Values{}
-	q.Set("search_query", arxivSearchQuery(query, opts.Mode))
+	q.Set("search_query", arxivQueryWithRange(query, opts.Mode, opts.Year, opts.Since))
 	q.Set("start", "0")
 	q.Set("max_results", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	q.Set("sortBy", "relevance")
@@ -111,12 +111,20 @@ func (a *ArxivSource) buildURL(query string, opts SearchOptions) (string, error)
 	return a.BaseURL + "?" + q.Encode(), nil
 }
 
-// arxivSearchQuery 按检索等级构造 arXiv 检索式。
-func arxivSearchQuery(query, mode string) string {
-	if mode == modeFull {
-		return "all:" + query
+// arxivQueryWithRange 构造检索式，并把年份过滤下推到 API：
+// 本地过滤发生在 max_results 截断之后，会把结果误清空。
+func arxivQueryWithRange(query, mode string, year, since int) string {
+	base := "all:" + query
+	if mode != modeFull {
+		base = `ti:"` + query + `" OR abs:"` + query + `"`
 	}
-	return `ti:"` + query + `" OR abs:"` + query + `"`
+	switch {
+	case year > 0:
+		return fmt.Sprintf("(%s) AND submittedDate:[%d01010000 TO %d12312359]", base, year, year)
+	case since > 0:
+		return fmt.Sprintf("(%s) AND submittedDate:[%d01010000 TO 999912312359]", base, since)
+	}
+	return base
 }
 
 // ParseArxivAtom 解析 arXiv Atom Feed 字节为 []Paper。

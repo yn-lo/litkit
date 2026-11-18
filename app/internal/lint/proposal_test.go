@@ -95,6 +95,89 @@ func TestParseSource_ProposalScope(t *testing.T) {
 	}
 }
 
+// runContentWithSpec 以 spec 解析（封面裁剪生效）后执行验证。
+func runContentWithSpec(t *testing.T, content string, spec *ManuscriptSpec, opts Options) FileReport {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	src, err := parseSourceWithSpec(path, spec)
+	if err != nil {
+		t.Fatalf("parseSourceWithSpec: %v", err)
+	}
+	return Run(src, spec, opts)
+}
+
+// TestParseSource_AbstractBodyKept 摘要节正文不能被封面裁剪吞掉
+// （empirical/review 的 sections 从「引言」开始，摘要排在其前）。
+func TestParseSource_AbstractBodyKept(t *testing.T) {
+	spec := SpecForType(PaperTypeEmpirical, LangZH)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	content := "# 研究标题\n\n## 摘要\n\n这是摘要正文。\n\n# 1 引言\n\n这是引言正文。\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	src, err := parseSourceWithSpec(path, spec)
+	if err != nil {
+		t.Fatalf("parseSourceWithSpec: %v", err)
+	}
+	if !bodyHas(src, "这是摘要正文。") {
+		t.Errorf("摘要正文应保留在 Body，got %v", src.Body)
+	}
+	if !bodyHas(src, "这是引言正文。") {
+		t.Errorf("引言正文应保留在 Body，got %v", src.Body)
+	}
+}
+
+// TestR82_AbstractCounted 摘要字数应统计实际正文，而非恒为 0。
+func TestR82_AbstractCounted(t *testing.T) {
+	spec := SpecForType(PaperTypeEmpirical, LangZH)
+	content := "# 研究标题\n\n## 摘要\n\n这是摘要正文。\n\n# 1 引言\n\n这是引言正文。\n"
+	rep := runContentWithSpec(t, content, spec, zhFinal())
+	vs := violationsOf(rep, "R8.2")
+	if len(vs) != 1 {
+		t.Fatalf("短摘要应报 R8.2，got %d 条：%+v", len(vs), vs)
+	}
+	if strings.Contains(vs[0].Problem, "摘要字数 0") {
+		t.Errorf("摘要字数不应为 0：%q", vs[0].Problem)
+	}
+}
+
+// TestR13_AbstractHeadingExempt 摘要标题惯例不编号，不应触发 R1.3。
+func TestR13_AbstractHeadingExempt(t *testing.T) {
+	spec := SpecForType(PaperTypeEmpirical, LangZH)
+	content := "# 研究标题\n\n## 摘要\n\n摘要正文。\n\n# 1 引言\n\n正文。\n"
+	rep := runContentWithSpec(t, content, spec, zhChapter())
+	for _, v := range violationsOf(rep, "R1.3") {
+		if strings.Contains(v.Problem, "标题未带数字编号") {
+			t.Errorf("摘要标题不应要求编号：%+v", v)
+		}
+	}
+}
+
+// TestR49_AbstractCitation proposal 的「中文摘要」也应接受摘要禁引用检查。
+func TestR49_AbstractCitation(t *testing.T) {
+	spec := makeProposalSpec()
+	content := "# 标书\n\n## 中文摘要\n\n摘要含引用[@abc]。\n\n## 立项依据\n\n正文。\n"
+	rep := runContentWithSpec(t, content, spec, Options{Lang: LangZH, Mode: ModeFinal, PaperType: PaperTypeProposal})
+	if len(violationsOf(rep, "R4.9")) == 0 {
+		t.Errorf("中文摘要含引用应报 R4.9，got %+v", rep.Violations)
+	}
+}
+
+// TestR82_ChineseAbstract proposal 的「中文摘要」字数应受 spec 约束。
+func TestR82_ChineseAbstract(t *testing.T) {
+	spec := makeProposalSpec()
+	content := "# 标书\n\n## 中文摘要\n\n太短。\n\n## 立项依据\n\n正文。\n"
+	rep := runContentWithSpec(t, content, spec, Options{Lang: LangZH, Mode: ModeFinal, PaperType: PaperTypeProposal})
+	if len(violationsOf(rep, "R8.2")) == 0 {
+		t.Errorf("过短的中文摘要应报 R8.2，got %+v", rep.Violations)
+	}
+}
+
 // TestR102_SectionWordCount 超字数/不足字数被检出；未配置区间的节不报。
 func TestR102_SectionWordCount(t *testing.T) {
 	spec := makeProposalSpec()

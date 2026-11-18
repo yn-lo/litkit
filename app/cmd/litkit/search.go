@@ -66,9 +66,9 @@ func hasNetworkError(errs []model.SourceError) bool {
 //
 // 显式 -s（explicit 非空）完全覆盖 .env 配置；否则从白名单（未设=全部注册源）
 // 中减去排除列表。warnings 为 .env 中未注册的源名（调用方输出到 stderr）。
-func resolveSearchSources(explicit []string, cfg *config.Config, registered []string) (names, warnings []string) {
-	if len(explicit) > 0 {
-		return normalizeSources(explicit), nil
+func resolveSearchSources(explicit string, cfg *config.Config, registered []string) (names, warnings []string) {
+	if names := config.SplitList(explicit); len(names) > 0 {
+		return names, nil
 	}
 	known := make(map[string]struct{}, len(registered))
 	for _, n := range registered {
@@ -104,24 +104,6 @@ func resolveSearchSources(explicit []string, cfg *config.Config, registered []st
 		out = append(out, n)
 	}
 	return out, warnings
-}
-
-// normalizeSources trim、去空并按出现顺序去重（对齐 config.splitList 的源列表语义）。
-func normalizeSources(names []string) []string {
-	out := make([]string, 0, len(names))
-	seen := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		if _, ok := seen[n]; ok {
-			continue
-		}
-		seen[n] = struct{}{}
-		out = append(out, n)
-	}
-	return out
 }
 
 // newSearchCmd 构造 `litkit search` 子命令。
@@ -190,8 +172,7 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 					}
 				}
 			}
-			explicit := splitCSV(sourcesFlag)
-			names, warns := resolveSearchSources(explicit, cfg, reg.Names())
+			names, warns := resolveSearchSources(sourcesFlag, cfg, reg.Names())
 			for _, w := range warns {
 				fmt.Fprintf(os.Stderr, "litkit: %s\n", w)
 			}

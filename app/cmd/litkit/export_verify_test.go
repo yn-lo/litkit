@@ -1,10 +1,50 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"litkit/internal/model"
 )
+
+// TestReadPapersFile 仅接受 []Paper 或 {"papers":[...]}；
+// 单个 Paper 对象须报错，不能静默导出 0 条（未知字段反序列化会得到空 wrapper）。
+func TestReadPapersFile(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name    string
+		content string
+		wantN   int
+		wantErr bool
+	}{
+		{"裸数组", `[{"title":"A"},{"title":"B"}]`, 2, false},
+		{"包装对象", `{"papers":[{"title":"A"}]}`, 1, false},
+		{"包装空数组", `{"papers":[]}`, 0, false},
+		{"单个对象", `{"title":"A"}`, 0, true},
+		{"非 JSON", `not json`, 0, true},
+	}
+	for _, tc := range cases {
+		p := filepath.Join(dir, "papers.json")
+		if err := os.WriteFile(p, []byte(tc.content), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		got, err := readPapersFile(p)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%s: 应报错，got %d 条", tc.name, len(got))
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: 不应报错：%v", tc.name, err)
+			continue
+		}
+		if len(got) != tc.wantN {
+			t.Errorf("%s: got %d 条 want %d", tc.name, len(got), tc.wantN)
+		}
+	}
+}
 
 // TestDedupPapers 重复 citeKey 应仅保留首次出现（report 问题2）。
 func TestDedupPapers(t *testing.T) {

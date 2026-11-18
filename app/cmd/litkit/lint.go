@@ -62,7 +62,9 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 			}
 			if journal != "" {
 				spec.Journal = journal
-				_ = lint.WriteSpec(specPath, spec)
+				if err := lint.WriteSpec(specPath, spec); err != nil {
+					return fmt.Errorf("lint init: 写入期刊配置失败: %w", err)
+				}
 			}
 
 			return printJSON(struct {

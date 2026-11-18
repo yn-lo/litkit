@@ -151,8 +151,8 @@ func loadFrom(globalFile, projectFile string) (*Config, error) {
 		DefaultMaxResults:     getenvInt("LITKIT_DEFAULT_MAX_RESULTS", DefaultMaxResults),
 		RecentYears:           getenvInt("LITKIT_DEFAULT_RECENT_YEARS", DefaultRecentYears),
 		SearchMode:            getenvDefault("LITKIT_DEFAULT_SEARCH_MODE", DefaultSearchMode),
-		SearchSources:         splitList(os.Getenv("LITKIT_SEARCH_SOURCES")),
-		SearchExcludeSources:  splitList(os.Getenv("LITKIT_SEARCH_EXCLUDE_SOURCES")),
+		SearchSources:         SplitList(os.Getenv("LITKIT_SEARCH_SOURCES")),
+		SearchExcludeSources:  SplitList(os.Getenv("LITKIT_SEARCH_EXCLUDE_SOURCES")),
 		SearchTimeoutMS:       getenvInt("LITKIT_SEARCH_TIMEOUT_MS", DefaultSearchTimeoutMS),
 		ProxyURL:              os.Getenv("LITKIT_PROXY_URL"),
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
@@ -230,8 +230,9 @@ func resolveWorkDir(wd, envFile string) string {
 	return filepath.Clean(filepath.Join(base, wd))
 }
 
-// splitList 解析逗号分隔列表：trim、去掉空项、按出现顺序去重。
-func splitList(s string) []string {
+// SplitList 解析逗号分隔列表：trim、去掉空项、按出现顺序去重。
+// 同时供 CLI 解析 -s / --rule 等逗号分隔参数复用。
+func SplitList(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	seen := make(map[string]struct{}, len(parts))

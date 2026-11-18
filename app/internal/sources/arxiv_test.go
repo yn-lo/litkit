@@ -149,16 +149,33 @@ func TestArxivSource_Search_viaHTTP(t *testing.T) {
 
 func TestArxivSearchQuery_tiabDefault(t *testing.T) {
 	// 默认/空 mode → tiab：仅题目+摘要
-	got := arxivSearchQuery("fear of pain", "")
+	got := arxivQueryWithRange("fear of pain", "", 0, 0)
 	if got != `ti:"fear of pain" OR abs:"fear of pain"` {
 		t.Fatalf("tiab 检索式不符：%q", got)
 	}
 }
 
 func TestArxivSearchQuery_full(t *testing.T) {
-	got := arxivSearchQuery("fear of pain", "full")
+	got := arxivQueryWithRange("fear of pain", "full", 0, 0)
 	if got != "all:fear of pain" {
 		t.Fatalf("full 检索式不符：%q", got)
+	}
+}
+
+// TestArxivQueryWithRange 年份过滤必须下推 API：本地过滤发生在 max_results 截断之后。
+func TestArxivQueryWithRange(t *testing.T) {
+	got := arxivQueryWithRange("fear of pain", "", 2023, 0)
+	want := `(ti:"fear of pain" OR abs:"fear of pain") AND submittedDate:[202301010000 TO 202312312359]`
+	if got != want {
+		t.Errorf("year 检索式不符：got %q want %q", got, want)
+	}
+	got = arxivQueryWithRange("fear of pain", "full", 0, 2020)
+	want = `(all:fear of pain) AND submittedDate:[202001010000 TO 999912312359]`
+	if got != want {
+		t.Errorf("since 检索式不符：got %q want %q", got, want)
+	}
+	if got := arxivQueryWithRange("q", "", 0, 0); got != `ti:"q" OR abs:"q"` {
+		t.Errorf("无日期过滤时不应加范围：%q", got)
 	}
 }
 

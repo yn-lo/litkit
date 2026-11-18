@@ -414,9 +414,14 @@ func checkR13(src *Source, spec *ManuscriptSpec) []Violation {
 		for hashes < len(t) && t[hashes] == '#' {
 			hashes++
 		}
-		_, num, _ := headingLevel(t)
+		_, num, headingText := headingLevel(t)
 		line := src.bodyIdx[i]
 		if num == "" {
+			// 摘要/Abstract 惯例不编号，不参与编号栈
+			if isAbstractHeading(headingText) {
+				firstHeading = false
+				continue
+			}
 			if firstHeading {
 				// 首个无编号标题 = 大标题，合法，不参与编号栈
 				firstHeading = false
@@ -922,6 +927,33 @@ func nearTableOrImage(lines []string, i int) bool {
 	return false
 }
 
+// figTableRefs 返回正文行中的图表引用匹配（子匹配索引），并排除构词误命中：
+// 「代表1种」「发表3篇」中的「表1」「表3」不是图表引用。
+func figTableRefs(line string) [][]int {
+	all := figTableRefRe.FindAllStringSubmatchIndex(line, -1)
+	out := all[:0]
+	for _, m := range all {
+		if isFigTableRefContext(line, m[0]) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// figTableRefContext 判断匹配前的字符是否构成引用语境：
+// 行首、非汉字（空格/ASCII/标点），或中文引导词（见/如/于/由/按/示/和/与/及/至/从/据/参/、/，/（/：）。
+func isFigTableRefContext(line string, start int) bool {
+	if start == 0 {
+		return true
+	}
+	prev := []rune(line[:start])
+	r := prev[len(prev)-1]
+	if r < '\u4e00' || r > '\u9fff' {
+		return true
+	}
+	return strings.ContainsRune("见如于由按示和与及至从据参、，。；：（(【[", r)
+}
+
 // checkR18 图表交叉引用：正文引用图/表 N 但全文找不到题注定义违规。
 //
 // 题注定义 = 题注行（图N/表N/Figure N/Table N）满足之一：标题行、含图片 ![、
@@ -939,8 +971,9 @@ func checkR18(src *Source, _ *ManuscriptSpec) []Violation {
 	var vs []Violation
 	reported := map[string]bool{}
 	for i, ln := range src.Body {
-		for _, m := range figTableRefRe.FindAllStringSubmatch(ln, -1) {
-			key := figTableKey(m[1], m[2])
+		for _, m := range figTableRefs(ln) {
+			kind, num := ln[m[2]:m[3]], ln[m[4]:m[5]]
+			key := figTableKey(kind, num)
 			if defined[key] || reported[key] {
 				continue
 			}
@@ -948,7 +981,7 @@ func checkR18(src *Source, _ *ManuscriptSpec) []Violation {
 			vs = append(vs, Violation{
 				RuleID:     "R1.8",
 				Line:       src.bodyIdx[i],
-				Problem:    fmt.Sprintf("引用了%s%s，但全文未找到对应题注定义", m[1], m[2]),
+				Problem:    fmt.Sprintf("引用了%s%s，但全文未找到对应题注定义", kind, num),
 				Suggestion: "补充该图表及题注（题注须紧邻表格或图片），或修正引用编号",
 			})
 		}
@@ -1258,7 +1291,7 @@ func checkR82(src *Source, spec *ManuscriptSpec) []Violation {
 			continue
 		}
 		title := strings.TrimSpace(strings.TrimLeft(t, "#"))
-		if title == "摘要" || strings.EqualFold(title, "abstract") {
+		if isAbstractHeading(title) {
 			idx = i
 			break
 		}
@@ -1548,7 +1581,7 @@ func checkR49(src *Source, _ *ManuscriptSpec) []Violation {
 		t := strings.TrimSpace(ln)
 		if isHeading(t) {
 			title := strings.TrimSpace(strings.TrimLeft(t, "#"))
-			if title == "摘要" || strings.EqualFold(title, "abstract") {
+			if isAbstractHeading(title) {
 				idx = i
 				break
 			}

@@ -37,9 +37,18 @@ func ParseSource(path string) (*Source, error) {
 	return parseSourceWithSpec(path, nil)
 }
 
+// isAbstractHeading 判断标题是否为摘要节，覆盖「摘要」「Abstract」「中文摘要」
+// 「结构式摘要」等命名变体（R8.2/R4.9 依赖该判定）。
+func isAbstractHeading(title string) bool {
+	t := strings.ToLower(strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(title), "#")))
+	return t == "abstract" || strings.HasSuffix(t, "摘要")
+}
+
 // parseSourceWithSpec 从文件路径解析 Source；spec 定义 sections 时，
 // 首个 section 标题之前的非标题行（封面/简表字段）不进入 Body，
-// 标题行保留（主标题仍受 R1.2 等检查）。spec 为 nil 或无 sections 时行为与旧版一致。
+// 标题行保留（主标题仍受 R1.2 等检查）。摘要节正文始终保留（摘要常置于首个
+// section 之前，且 R8.2/R4.9 需要其正文）。
+// spec 为 nil 或无 sections 时行为与旧版一致。
 func parseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -55,14 +64,18 @@ func parseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
 	src := &Source{Path: path, Lines: lines}
 	codeLines := markdownCodeLines(lines)
 	inRefs := false
+	inAbstract := false
 	for i, ln := range lines {
 		lineNo := i + 1
 		trimmed := strings.TrimSpace(ln)
 		if codeLines[i] {
 			continue
 		}
-		// 封面区（首个 section 标题之前）：标题行保留，其余排除
-		if coverEnd > 0 && lineNo < coverEnd && !isHeading(trimmed) {
+		if isHeading(trimmed) {
+			_, _, text := headingLevel(trimmed)
+			inAbstract = isAbstractHeading(text)
+		} else if coverEnd > 0 && lineNo < coverEnd && !inAbstract {
+			// 封面区（首个 section 标题之前）：标题行保留，非摘要正文排除
 			continue
 		}
 		// 参考文献标题：自此到文件末尾排除

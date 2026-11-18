@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,14 +29,16 @@ func newFixCmd(cfg *config.Config) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ruleFlag, _ := cmd.Flags().GetString("rule")
 			skipFlag, _ := cmd.Flags().GetString("skip")
-			rules := filterFixRules(lint.FixableRules(), splitCSV(ruleFlag), splitCSV(skipFlag))
-			if len(rules) == 0 {
-				return &paramError{msg: "fix: 无可用的可修规则（检查 --rule/--skip）"}
-			}
 			// 加载阈值配置（供 R2.1 P 值小数位等规则读取；未配置时自动回落默认）。
 			spec, err := loadVerifySpec(cfg.WorkDir, "", "")
 			if err != nil {
 				return err
+			}
+			// spec 级 skip_rules 与 verify 保持一致：永久跳过，等效每次携带 --skip
+			skip := append(splitCSV(skipFlag), spec.SkipRules...)
+			rules := filterFixRules(lint.FixableRules(), splitCSV(ruleFlag), skip)
+			if len(rules) == 0 {
+				return &paramError{msg: "fix: 无可用的可修规则（检查 --rule/--skip 与 spec 的 skip_rules）"}
 			}
 			files := map[string]lint.FixReport{}
 			for _, p := range args {
@@ -43,9 +46,18 @@ func newFixCmd(cfg *config.Config) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("fix: 读取 %s 失败: %w", p, err)
 				}
-				fixed, rep := lint.ApplyFixes(string(data), spec, rules)
+				content := string(data)
+				// 统一按 LF 应用修复（verify 也按 LF 解析），写回时恢复原行尾风格。
+				hadCRLF := strings.Contains(content, "\r\n")
+				if hadCRLF {
+					content = strings.ReplaceAll(content, "\r\n", "\n")
+				}
+				fixed, rep := lint.ApplyFixes(content, spec, rules)
 				if rep.Total() == 0 {
 					continue
+				}
+				if hadCRLF {
+					fixed = strings.ReplaceAll(fixed, "\n", "\r\n")
 				}
 				var perm os.FileMode = initFilePerm
 				if info, err := os.Stat(p); err == nil {

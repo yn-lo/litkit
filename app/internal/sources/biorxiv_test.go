@@ -99,10 +99,10 @@ func TestParseBiorxivJSON_invalidJSON(t *testing.T) {
 
 func TestBiorxivSource_Search_filtersByKeyword(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 验证请求路径为 /details/{server}/{数字 interval}
+		// 请求路径固定使用拉取窗口，而非用户要的条数（否则只搜最近 5 篇）
 		path := r.URL.Path
-		if want := "/details/biorxiv/5"; !strings.HasSuffix(path, want) {
-			t.Errorf("路径应以 %s 结尾（interval=MaxResults），got %q", want, path)
+		if want := "/details/biorxiv/100"; !strings.HasSuffix(path, want) {
+			t.Errorf("路径应以 %s 结尾（窗口拉取），got %q", want, path)
 		}
 		_, _ = w.Write([]byte(biorxivSample))
 	}))
@@ -121,6 +121,24 @@ func TestBiorxivSource_Search_filtersByKeyword(t *testing.T) {
 	}
 	if papers[0].Title != "CRISPR Gene Editing in Yeast" {
 		t.Errorf("保留篇标题：got %q", papers[0].Title)
+	}
+}
+
+// TestParseBiorxivAuthors_realFormat 真实 API 使用 "Family, Given" 逗号格式。
+func TestParseBiorxivAuthors_realFormat(t *testing.T) {
+	got := parseBiorxivAuthors("Lee, K.;Sahlender, D.;Mononym")
+	if len(got) != 3 {
+		t.Fatalf("应有 3 位作者，got %d", len(got))
+	}
+	if got[0].Family != "Lee" || got[0].Given != "K." {
+		t.Errorf("逗号格式应解析为 Family=Lee Given=K.，got %+v", got[0])
+	}
+	if got[1].Family != "Sahlender" || got[1].Given != "D." {
+		t.Errorf("第 2 位应解析为 Family=Sahlender Given=D.，got %+v", got[1])
+	}
+	// 无逗号单名回退：整体入 Family
+	if got[2].Family != "Mononym" || got[2].Given != "" {
+		t.Errorf("单名应整体入 Family，got %+v", got[2])
 	}
 }
 
@@ -208,5 +226,14 @@ func TestBiorxivSource_Search_zeroMaxResultsFallsBackTo100(t *testing.T) {
 	}
 	if want := "/details/biorxiv/100"; !strings.HasSuffix(path, want) {
 		t.Errorf("MaxResults=0 应回退 interval=100，got %q", path)
+	}
+}
+
+func TestBiorxivInterval(t *testing.T) {
+	if got := biorxivInterval(5); got != 100 {
+		t.Errorf("小条数应使用 100 的拉取窗口，got %d", got)
+	}
+	if got := biorxivInterval(200); got != 200 {
+		t.Errorf("超过窗口应按用户条数放大，got %d", got)
 	}
 }

@@ -12,14 +12,14 @@ func TestResolveSearchSources(t *testing.T) {
 	registered := []string{"arxiv", "openalex", "pubmed"}
 	cases := []struct {
 		name       string
-		explicit   []string
+		explicit   string
 		cfg        *config.Config
 		want       []string
 		wantWarnNo int
 	}{
 		{
 			name:     "显式 -s 完全覆盖 env",
-			explicit: []string{"pubmed"},
+			explicit: "pubmed",
 			cfg: &config.Config{
 				SearchSources:        []string{"arxiv"},
 				SearchExcludeSources: []string{"pubmed"},
@@ -28,7 +28,7 @@ func TestResolveSearchSources(t *testing.T) {
 		},
 		{
 			name:     "显式 -s trim/去空/去重",
-			explicit: []string{" pubmed ", "", "pubmed", "openalex"},
+			explicit: " pubmed ,,pubmed,openalex",
 			cfg:      &config.Config{SearchSources: []string{"arxiv"}},
 			want:     []string{"pubmed", "openalex"},
 		},

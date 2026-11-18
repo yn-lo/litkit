@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -31,17 +30,14 @@ type libPapersOutputFull struct {
 	Papers []model.Paper `json:"papers"`
 }
 
-// errNoStore 文献库不可用时的公共错误（稳定哨兵，便于 errors.Is 判断）。
-var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKIT_WORK_DIR（可用 litkit init 初始化）")
-
-// noStoreError 在公共错误上补充当前目录与 .env 查找范围：
+// noStoreError 文献库不可用时的错误，附带当前目录与 .env 查找范围：
 // 子进程/后台任务（如 Start-Job）不继承 cwd 时，用户需要看到实际工作目录才能定位。
 func noStoreError() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "<未知>"
 	}
-	return fmt.Errorf("%w（当前目录：%s；.env 自当前目录向上查找）", errNoStore, cwd)
+	return fmt.Errorf("本地文献库不可用：请确认已设置 LITKIT_WORK_DIR（可用 litkit init 初始化）（当前目录：%s；.env 自当前目录向上查找）", cwd)
 }
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
