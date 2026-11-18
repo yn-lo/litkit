@@ -102,7 +102,7 @@ begin
     Delete(Paths, 1, P);
     P := Pos(';', Paths);
   end;
-  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvKey, 'Path', NewPaths, False);
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvKey, 'Path', NewPaths);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
