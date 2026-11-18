@@ -72,18 +72,25 @@ func ExtractCiteSentences(body string) []CiteSentence {
 	for _, m := range matches {
 		citeKeys := strings.Split(body[m[2]:m[3]], ",")
 
-		// 向前找句末标点（字节偏移）
+		// 向前找句末标点（字节偏移）；无标点时以段落/标题边界兜底，
+		// 避免把文首标题与前面整段正文都算进"引用句"。
 		sentStart := 0
 		before := body[:m[0]]
 		if idx := lastSentenceEndByte(before); idx >= 0 {
 			sentStart = idx
 		}
+		if ps := paragraphStartBefore(before); ps > sentStart {
+			sentStart = ps
+		}
 
-		// 向后找句末标点（字节偏移）
+		// 向后找句末标点（字节偏移）；同样以段落/标题边界兜底。
 		after := body[m[1]:]
 		sentEnd := len(body)
 		if idx := nextSentenceEndByte(after); idx >= 0 {
 			sentEnd = m[1] + idx
+		}
+		if pe := paragraphEndAfter(after); pe >= 0 && m[1]+pe < sentEnd {
+			sentEnd = m[1] + pe
 		}
 
 		sentence := strings.TrimSpace(body[sentStart:sentEnd])
@@ -119,6 +126,37 @@ func ExtractCiteSentences(body string) []CiteSentence {
 		}
 	}
 	return result
+}
+
+// paragraphStartBefore 返回 before 中当前段落的起点（最后一个空行或标题行之后）。
+// 引用句不得跨越段落/标题；软换行（单换行）仍视为同段，避免截断跨行句子。
+func paragraphStartBefore(before string) int {
+	start := 0
+	if i := strings.LastIndex(before, "\n\n"); i >= 0 {
+		start = i + 2
+	}
+	if i := strings.LastIndex(before, "\n#"); i >= 0 && i+1 > start {
+		start = i + 1
+	}
+	// 文首即为标题行（无前导换行）
+	if strings.HasPrefix(before, "#") {
+		if i := strings.Index(before, "\n"); i >= 0 && i+1 > start {
+			start = i + 1
+		}
+	}
+	return start
+}
+
+// paragraphEndAfter 返回 after 中当前段落的终点（下一个空行或标题行之前），未找到返回 -1。
+func paragraphEndAfter(after string) int {
+	end := -1
+	if i := strings.Index(after, "\n\n"); i >= 0 {
+		end = i
+	}
+	if i := strings.Index(after, "\n#"); i >= 0 && (end < 0 || i < end) {
+		end = i
+	}
+	return end
 }
 
 // lastSentenceEndByte 在 before 中从后向前找句末标点，返回标点后的下一个字节位置。

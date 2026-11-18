@@ -91,7 +91,6 @@ type PaperRef struct {
 	SentenceHash string `json:"sentenceHash"` // 引用句 sha256 前缀指纹
 	Manuscript   string `json:"manuscript"`   // 手稿文件名（相对 WORK_DIR）
 	Sentence     string `json:"sentence"`     // 引用句原文，评分输入
-	Line         int    `json:"line"`         // 在原文中的行号（1 起）
 }
 
 // CitationScore LLM 引用相关性评分结果（FR-LINT-08）。

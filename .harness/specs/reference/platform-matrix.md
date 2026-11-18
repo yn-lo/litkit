@@ -1,7 +1,7 @@
 # 平台能力矩阵 — litkit（国内可达性视角）
 
 ---
-last_updated: 2026-09-06
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -35,19 +35,19 @@ owner: litkit-core
 | Zenodo | 支持 | 可用 | 机构仓储 |
 | IEEE / ACM | key | 部分 | 需订阅 key；检索时剔除无摘要论文 |
 
-## 移除（不实现）
+## 不作为检索源（不实现）
 
 | 平台 | 说明 |
 |---|---|
 | CORE / OpenAIRE | 数据被 OpenAlex 完整索引，适配收益低；DOAJ 单列（FR-SRC-21） |
-| Unpaywall | OA 反查非检索源，与摘要工作流不匹配 |
+| Unpaywall | 非检索源；仅用于 `litkit fetch` 的 OA PDF 解析（FR-FETCH-02） |
 | Europe PMC / PMC | 与 PubMed 数据重合 |
 | HAL | 小众机构仓储，与 Zenodo 重合 |
 | BASE | 需机构 IP，协议老旧 |
 | SSRN / CiteSeerX | 端点不稳定 |
 | dblp | 无摘要，直接不实现 |
 | Google Scholar | 国内不可达，需代理 |
-| Sci-Hub | 法律风险；摘要工作流不依赖下载 |
+| Sci-Hub | 法律风险；非检索源，仅作全文获取兜底（FR-FETCH-03） |
 
 ## 规则
 

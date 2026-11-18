@@ -335,6 +335,15 @@ func mergePapers(existing, incoming model.Paper) model.Paper {
 	if existing.Venue == "" && incoming.Venue != "" {
 		existing.Venue = incoming.Venue
 	}
+	if existing.Volume == "" && incoming.Volume != "" {
+		existing.Volume = incoming.Volume
+	}
+	if existing.Number == "" && incoming.Number != "" {
+		existing.Number = incoming.Number
+	}
+	if existing.Pages == "" && incoming.Pages != "" {
+		existing.Pages = incoming.Pages
+	}
 	if existing.Year == 0 && incoming.Year != 0 {
 		existing.Year = incoming.Year
 	}

@@ -1,7 +1,7 @@
 # 分层架构 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -36,12 +36,12 @@ litkit 采用四层单向依赖架构，核心目的是：
 - 经 `internal/sources/registry.go` 使用源注册表
 
 ### 服务层（internal/core）
-- 业务流程编排：跨源并发检索、去重合并、本地库 keyword 检索、元数据反查、引用渲染、手稿流水线、约束验证、缓存、文献库
+- 业务流程编排：跨源并发检索、去重合并、本地库 keyword 检索、元数据反查、引用渲染、手稿流水线、约束验证、文献库
 - 唯一的事务与业务编排点
 
 ### 适配层（internal/sources）
 - 每个学术源一个适配器，统一实现 `PaperSource` 接口
-- 所有源复用同一缓存 / 降级 / 限速公共逻辑（源基类）
+- 所有源复用同一降级 / 限速公共逻辑（源基类）
 - 禁止反向 import 入口层或服务层
 
 ### 叶子层（internal/model · config · storage · util）

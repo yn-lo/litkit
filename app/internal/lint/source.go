@@ -37,6 +37,12 @@ func ParseSource(path string) (*Source, error) {
 	return parseSourceWithSpec(path, nil)
 }
 
+// ParseSourceWithSpec 按 spec 分段解析（含封面裁剪与摘要保留），
+// 供需要与 verify 保持同一分段口径的调用方（如 citation-refs 行号映射）使用。
+func ParseSourceWithSpec(path string, spec *ManuscriptSpec) (*Source, error) {
+	return parseSourceWithSpec(path, spec)
+}
+
 // isAbstractHeading 判断标题是否为摘要节，覆盖「摘要」「Abstract」「中文摘要」
 // 「结构式摘要」等命名变体（R8.2/R4.9 依赖该判定）。
 func isAbstractHeading(title string) bool {

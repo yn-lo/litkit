@@ -1,9 +1,21 @@
 package lint
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+// TestViolationJSONIncludesRuleID verify 输出必须带规则编号（FR-LINT-05 三要素）。
+func TestViolationJSONIncludesRuleID(t *testing.T) {
+	b, err := json.Marshal(Violation{RuleID: "R3.1", Line: 3, Problem: "p", Suggestion: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"ruleId":"R3.1"`) {
+		t.Fatalf("违规 JSON 缺少 ruleId：%s", b)
+	}
+}
 
 func mustSpec(lang string) *ManuscriptSpec { return &ManuscriptSpec{Lang: lang} }
 

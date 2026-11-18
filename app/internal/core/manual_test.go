@@ -55,6 +55,24 @@ func TestAddManualPaper_missingTitle(t *testing.T) {
 	}
 }
 
+// TestAddManualPaper_accessDate 网页访问日期须可手动录入（GB/T [EB/OL] 依赖该字段）。
+func TestAddManualPaper_accessDate(t *testing.T) {
+	in := ManualPaperInput{
+		Title:      "网页资料",
+		Abstract:   "网页摘要。",
+		DocType:    model.DocTypeWebpage,
+		URL:        "https://example.org/page",
+		AccessDate: " 2025-01-02 ",
+	}
+	p, err := AddManualPaper(in)
+	if err != nil {
+		t.Fatalf("AddManualPaper: %v", err)
+	}
+	if p.AccessDate != "2025-01-02" {
+		t.Errorf("accessDate 应 trim 后入库，got %q", p.AccessDate)
+	}
+}
+
 // TestAddManualPaper_invalidYear 年份超出合理范围报错。
 func TestAddManualPaper_invalidYear(t *testing.T) {
 	in := ManualPaperInput{Title: "文献", Abstract: "摘要", Year: 3000}

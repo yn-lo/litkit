@@ -10,6 +10,17 @@ func fixContent(content string) (string, FixReport) {
 	return ApplyFixes(content, DefaultSpec(), FixableRules())
 }
 
+// TestFix_R12_HeadingWithTrailingSpace 行尾带空白的标题也必须能修复（verify 已报违规）。
+func TestFix_R12_HeadingWithTrailingSpace(t *testing.T) {
+	got, rep := fixContent("## 方法。 \n")
+	if strings.Contains(got, "。") {
+		t.Errorf("标题末尾标点应被移除，got %q", got)
+	}
+	if rep.Applied["R1.2"] != 1 {
+		t.Errorf("R1.2 应修正 1 行，got %v", rep.Applied)
+	}
+}
+
 func TestFix_R31_HalfWidthPunct(t *testing.T) {
 	got, rep := fixContent("中文,内容。中文;分号。\n")
 	if !strings.Contains(got, "中文，内容。中文；分号。") {

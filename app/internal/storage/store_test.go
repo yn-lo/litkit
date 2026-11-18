@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -322,7 +323,9 @@ func TestUpsertPaper_SameTitleNoDOI_Dedup(t *testing.T) {
 	}
 }
 
-func TestUpsertPaper_SameTitleDifferentAuthors_Dedup(t *testing.T) {
+// TestUpsertPaper_SameTitleDifferentAuthors_Separate 无 DOI 的同标题不同第一作者
+// 应按 title+authors 分别入库（FR-CACHE-02），避免通用标题互相覆盖元数据。
+func TestUpsertPaper_SameTitleDifferentAuthors_Separate(t *testing.T) {
 	s := newTestStore(t)
 	_, inserted1, err := s.UpsertPaper(paper("T", "", "Alice"))
 	if err != nil {
@@ -331,13 +334,82 @@ func TestUpsertPaper_SameTitleDifferentAuthors_Dedup(t *testing.T) {
 	if !inserted1 {
 		t.Fatal("首次应 inserted=true")
 	}
-	// 同标题不同作者（无 DOI）：按归一化标题去重（与检索层 dedupPapers 一致）
 	_, inserted2, err := s.UpsertPaper(paper("T", "", "Bob"))
 	if err != nil {
 		t.Fatalf("二次: %v", err)
 	}
-	if inserted2 {
-		t.Fatal("同标题不同作者（无 DOI）应按标题去重，不应重复插入")
+	if !inserted2 {
+		t.Fatal("同标题不同作者（无 DOI）应分别入库，inserted=true")
+	}
+}
+
+// TestGetByCiteKey_caseInsensitive cite_key 由大小写混合字母生成，查询应容忍大小写差异。
+func TestGetByCiteKey_caseInsensitive(t *testing.T) {
+	s := newTestStore(t)
+	key, _, err := s.UpsertPaper(paper("Case Key", "10.1/case", "Smith"))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	for _, variant := range []string{key, strings.ToLower(key), strings.ToUpper(key)} {
+		p, err := s.GetByCiteKey(variant)
+		if err != nil || p == nil {
+			t.Fatalf("GetByCiteKey(%q) 应命中，got %v err=%v", variant, p, err)
+		}
+	}
+}
+
+// TestSearchLocal_escapesWildcards 通配符应按字面量处理，作者不应按 JSON 键名命中。
+func TestSearchLocal_escapesWildcards(t *testing.T) {
+	s := newTestStore(t)
+	if _, _, err := s.UpsertPaper(paper("Graph Nets", "10.1/a", "Zhang")); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if _, _, err := s.UpsertPaper(paper("Other Paper", "10.1/b", "Li")); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	for _, kw := range []string{"%", "_", "family", "given"} {
+		got, err := s.SearchLocal(kw, 0, 0)
+		if err != nil {
+			t.Fatalf("SearchLocal(%q): %v", kw, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("SearchLocal(%q) 不应命中，got %d 条", kw, len(got))
+		}
+	}
+	got, err := s.SearchLocal("Zhang", 0, 0)
+	if err != nil || len(got) != 1 {
+		t.Errorf("SearchLocal(Zhang) 应命中 1 条，got %d err=%v", len(got), err)
+	}
+}
+
+// TestStats_whitespaceAbstractNotCounted 纯空白摘要不应计为有摘要。
+func TestStats_whitespaceAbstractNotCounted(t *testing.T) {
+	s := newTestStore(t)
+	p := paper("Whitespace Abstract", "10.1/ws", "Smith")
+	p.Abstract = "   "
+	if _, _, err := s.UpsertPaper(p); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	st, err := s.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.WithAbstract != 0 {
+		t.Errorf("纯空白摘要不应计入，got %d", st.WithAbstract)
+	}
+	if st.Total != 1 {
+		t.Errorf("Total 应为 1，got %d", st.Total)
+	}
+}
+
+// TestSetFulltext_missingPaperReturnsError 论文被并发删除时应上报，而非静默成功。
+func TestSetFulltext_missingPaperReturnsError(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SetFulltext("zzz", "text"); err == nil {
+		t.Error("不存在的论文写入全文应报错")
+	}
+	if err := s.SetPDFURL("zzz", "https://x"); err == nil {
+		t.Error("不存在的论文写入 PDF 地址应报错")
 	}
 }
 

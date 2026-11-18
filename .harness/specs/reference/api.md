@@ -1,7 +1,7 @@
 # 接口规范 — litkit
 
 ---
-last_updated: 2026-10-09
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -112,11 +112,11 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 裸句柄支持单引 `[@AAA]` 和组合 `[@AAA,BBB]`；组合中的各句柄分别查库，编号样式沿用相邻引用的折叠规则（如 `[1-2]`）。带前缀的 `[@title:...]` 等标识符中的逗号保留原义。
 
 ```
-litkit export <papers.json> [-f bibtex|ris|text] [-s style]
+litkit export <papers.json> [-f bibtex|ris|text] [-s style]   # 输入仅接受 [Paper...] 或 {"papers":[...]}
 litkit lib add <metadata.json>
 litkit lib get <cite_key> [cite_key ...]
-litkit lib list [--source S] [--limit N] [--offset N]
-litkit lib search <keyword> [--limit N]
+litkit lib list [--source S] [--sort year|id] [--limit N] [--offset N] [--full]
+litkit lib search <keyword> [--limit N] [--offset N] [--full]
 litkit lib rm <cite_key>          # 别名：forget
 litkit lib stats | path
 ```
@@ -129,10 +129,10 @@ litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
 > **模式 1：`<metadata.json>` 手动录入**（单对象或对象数组，AI 手动添加检索源覆盖不到的文献）。
 > **必填**：`title`、`abstract`（摘要工作流：入库文献必须携带摘要）。
 > **可选**：`authors`（字符串数组 `["张三"]` 或对象数组 `[{"family","given"}]`）、
-> `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`。
+> `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`、`institution`、`accessDate`（网页 [EB/OL] 访问日期）。
 > **模式 2：`--doi <DOI>` 反查入库**（CrossRef）。摘要缺失默认 soft（告警并仍入库，stderr 提示）；
 > `--require-abstract` 时缺失则拒绝入库（退出码 2）。
-> 同一 DOI（无 DOI 按归一化标题或源 ID）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
+> 同一 DOI（无 DOI 按标题+第一作者签名或源 ID）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
 > 缺失元数据保留已有值；无 DOI 条目补充 DOI 时沿用原 citeKey。题名或源 ID 更新时同步更新有效去重键。不同 DOI 不合并，标题回退匹配多条记录时拒绝更新，需提供 DOI 明确身份。
 > 手动录入 `source=manual`；DOI 反查 `source=crossref`，可用 `lib list --source` / `lib stats` 区分。
 > 输出：`{ added, papers: [{ citeKey, title, inserted }] }`（`--doi` 单条为 `{ citeKey, title, inserted }`）。
@@ -141,12 +141,12 @@ litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
 litkit lib get <cite_key> [cite_key ...]
 ```
 
-> 按一个或多个 3 字母 citeKey 查询库内文献条目，返回**完整元数据（含摘要）**（AI 取引用详情用，FR-LIB）。
+> 按一个或多个 3 字母 citeKey 查询库内文献条目（大小写不敏感），返回**完整元数据（含摘要）**（AI 取引用详情用，FR-LIB）。
 > 未命中的键放入 `missing` 字段，命中的按输入顺序去重后放 `papers`。
 > 输出：`{ papers: [ Paper... ], missing: [ citeKey... ] }`。
 
 ```
-litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book] [--journal NAME]
+litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book|proposal] [--journal NAME]
 litkit rules
 ```
 
@@ -154,7 +154,7 @@ litkit rules
 litkit rules
 ```
 
-输出：`{ rules: [{ id, name, category, langs, types, method, from }] }`
+输出：`{ rules: [{ id, name, category, langs, types, method, from, fixable }] }`
 
 | 字段 | 含义 |
 |---|---|
@@ -175,6 +175,11 @@ litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
 | `--rule` | 仅修正指定规则（逗号分隔） | 全部可修规则 |
 | `--skip` | 跳过指定规则（逗号分隔） | 无 |
 
+> spec 的 `skip_rules` 与 verify 一致：永久跳过对应规则（等效每次携带 `--skip`）。
+> 可修规则同样按 spec 的 `lang`/`paper_type` 过滤：zh 专属规则（R3.1/R3.2/R3.3/R3.5/R3.6）
+> 不会作用于 en 规范；R2.1 仅作用于 empirical。
+> 文件行尾风格原样保留（CRLF 文件修复后仍为 CRLF）。
+
 > 仅修正"字符级确定性"规则：全半角（R3.1）、直引号（R3.2）、数字范围（R3.3，仅两端单位大小写完全相同的范围合并）、中文括号（R3.5）、中文省略号（R3.6）、P 值格式（R2.1，大于类比较 P>0.0001 保留原语义不折叠为 P<0.001）、
 > 加粗标记（R1.4）、标题冒号（R7.1）、标题末尾标点（R1.2）、引用位置（R6.1）。
 > 保留反引号/波浪号代码围栏、缩进代码块、行内代码（含跨行跨度）、URL、链接目标、引用式链接定义和 HTML 标签；仅修正这些区域之外的正文。
@@ -182,17 +187,19 @@ litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
 > 输出：`{ files: { "<path>": { applied: { "R3.1": 1, ... } } } }`（applied = 规则 ID → 修正行数）。
 
 ```
-litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book] [--rule R2.1,R7.1] [--skip R4.2]
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book|proposal] [--rule R2.1,R7.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
 | `--lang` | 写作语言模式 | zh |
-| `--mode` | 验证深度：`chapter`（结构）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
-| `--type` | 论文类型：`review` \| `empirical` \| `book`（空=从 spec 自动取） | 空 |
+| `--mode` | 验证深度：`chapter`（结构+章节字数）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
+| `--type` | 论文类型：`review` \| `empirical` \| `book` \| `proposal`（空=从 spec 自动取） | 空 |
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
-| `--skip` | 跳过指定规则（逗号分隔） | 无 |
+| `--skip` | 跳过指定规则（逗号分隔，未知 ID 报错） | 无 |
+| `--check` / `--skip-check` | 仅运行/跳过指定检查类别（逗号分隔） | 无 |
+| `--report` | `json`（默认）\| `citation-refs`（附加 LLM 引用评分） | json |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/<type-lang>/manuscript-spec.yaml` 阈值配置）。显式类型/语言不会被自动检测覆盖；文件缺失时使用匹配预设，无可用预设（如 book/en）或规范文件无效时返回错误。
 > 查库类附加检查（R5.6 引用存在 / R5.7 撤稿 / R5.8 时效 / R5.9 自引）已纳入规则列表，归属 citation 类别，draft 起启用；同样遵循 `--rule`/`--skip` 和 `--check`/`--skip-check` 筛选：局部验证（如 `--rule R3.1` 或 `--check punctuation`）不会被缺失引用阻断。

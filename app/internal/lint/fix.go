@@ -178,14 +178,16 @@ func fixR71(line string, _ *ManuscriptSpec) (string, bool) {
 }
 
 // fixR12 删除标题末尾标点（R1.2）。
+//
+// checkR12 以 TrimSpace 后的文本判定，修复也须在右裁剪文本上替换，
+// 否则行尾带空白（如 "## 方法。 "）时 verify 报违规而 fix 无法修正。
 func fixR12(line string, _ *ManuscriptSpec) (string, bool) {
-	if !isHeading(strings.TrimSpace(line)) {
+	trimmed := strings.TrimSpace(line)
+	if !isHeading(trimmed) || !headingEndRe.MatchString(trimmed) {
 		return line, false
 	}
-	if !headingEndRe.MatchString(strings.TrimSpace(line)) {
-		return line, false
-	}
-	out := headingEndRe.ReplaceAllString(line, "")
+	body := strings.TrimRightFunc(line, unicode.IsSpace)
+	out := headingEndRe.ReplaceAllString(body, "") + line[len(body):]
 	return out, out != line
 }
 

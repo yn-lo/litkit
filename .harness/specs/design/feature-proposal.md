@@ -1,7 +1,7 @@
 # 功能设计：学术标书（课题申请书）撰写与审查支持
 
 ---
-last_updated: 2026-10-09
+last_updated: 2026-11-18
 status: draft
 owner: litkit-core
 ---
@@ -26,16 +26,17 @@ owner: litkit-core
   - `endnote`：标书模式（正文不出现内联引用标记，参考文献统一置于报告正文末尾）
 - verify 新增 A 类规则（R10.2/R10.3 通用；不新增章节结构规则——
   现有 R1.5 章节完整性 + R1.9 章节顺序已按 spec.Sections 覆盖，标书直接复用）：
-  - R10.2 每节字数区间校验（通用，所有类型生效）：sections 条目新增可选
-    `min_words`/`max_words`；未填不查该节；填了在全局字数之外加查该节。
-    统计口径：中文字符按 1 字计、英文按空格分词（复用 countWords）
+  - R10.2 每节字数区间校验（通用，所有类型生效）：spec 新增顶层
+    `section_limits: { "中文摘要": [200,400] }`（map，键为章节名，未配置的节不查）。
+    统计口径：中文字符按 1 字计、英文按空格分词（复用 countWords）；
+    统计至下一个同级或更高级标题，子节正文计入本节
   - R10.3 引用模式校验（citation_mode=endnote 时，默认违规；
     走统一规则注册表，`--rule/--skip` 可按需跳过/单跑）：
-    正文出现 `[1]` / `[1,2]` / `（作者，年份）` 内联引用判违规；
-    文末须存在参考文献节，且条目编号连续、与文内提及一致
+    正文出现 `[1]` / `[1,2]` 内联引用判违规；文末须存在参考文献节。
+    （当前不校验条目编号连续性与文内提及一致性，human checklist 兜底）
   - R10.4 占位符规范：`〔　〕` 类待填空项允许存在（输出人工核对提示，不计 fail），
     但 AI 禁止编造空项内容（写入 spec yaml 规定 + verify 的 manualChecklist）
-- 用户自定义模板：`litkit init --spec <path.yaml>` 采纳外部标书模板 yaml
+- 用户自定义模板（未实现，后续需要时再设计）：`litkit init --spec <path.yaml>` 采纳外部标书模板 yaml
   （单位/学科差异不改代码，只改 yaml；改后立即生效，无需重新渲染任何文件）
 - 检索与引用能力照常服务标书「立项依据」的文献综述（不新增逻辑）
 
@@ -51,18 +52,19 @@ owner: litkit-core
 - `templates/proposal-zh/manuscript-spec.yaml`（go:embed）：proposal 章节树与阈值
 - `templates/proposal-zh/manuscript-spec.yaml` 顶部注释补 proposal 分支规定（引用模式、占位符祈使句）
 - `verify.go`：R10.x 规则函数注册，按 `type == proposal` 与 `citation_mode` 启用
-- `init`：`--spec` 参数读取外部 yaml（覆盖内置 preset）
+- `init`：`--spec` 参数读取外部 yaml（覆盖内置 preset）——**未实现，保留为后续设计**
 
 ### 入口层
-`litkit init --type proposal [--spec x.yaml]`、`litkit verify --mode chapter|draft|final`
-（命令接口不变，仅 preset 扩展；api.md 同步更新）
+`litkit init --type proposal`、`litkit verify --mode chapter|draft|final`
+（命令接口不变，仅 preset 扩展；`--spec` 尚未实现；api.md 同步更新）
 
 ## 关键规则/约束
 - 标书类型 = preset 阈值切换，与 `--type review|empirical` 同构，不引入第二套系统
 - **正文作用域收口（通用，单点改动）**：现状 ParseSource 仅排除代码块/参考文献/表格，
   封面、简表、签章页均计入 Body。改为：spec 定义 sections 时，
   首个 section 标题之前的行不进入 Body，但标题行保留（主标题仍受 R1.2 等检查，
-  封面字段文字排除）——ParseSource 一处收口，
+  封面字段文字排除）；**例外：摘要节（摘要/中文摘要/Abstract）正文始终保留**，
+  因为 R8.2 摘要字数与 R4.9 摘要禁引用需要读取该段——ParseSource 一处收口，
   全部既有规则（标点/加粗/AI 痕迹/引用/字数等 46 条）自动只作用于 section 范围，
   规则代码零改动；未定义 sections 的旧 yaml 保持现状（向后兼容）。
   不引入 body_start/body_end 变量，sections 即起止标记
@@ -73,17 +75,18 @@ owner: litkit-core
 - verify 三要素（问题 / 修复 / 规则编号）与 exitHint 语义不变
 - mode 递增照旧：chapter（结构+字数区间）→ draft（+引用模式/标点）→ final（+行文）
 - 占位符 `〔　〕` 不判 fail（这是标书的正常形态），仅提示人工补填
-- 内置 proposal 模板以常见院内课题申请书为基准（章节：摘要/立项依据/研究方案/研究基础/经费预算/附件），单位差异靠 `--spec` 覆盖
+- 内置 proposal 模板以常见院内课题申请书为基准（章节：中文摘要/立项依据/研究基础/经费预算），
+  单位差异当前通过直接编辑 `.litkit/proposal-zh/manuscript-spec.yaml` 适配（`--spec` 未实现）
 
 ## Open Questions（搁置项）
-- 单节豁免（某节正文跳过部分规则）：现有逃生口 `--rule/--skip` 为全局粒度已够用；
-  真实需求出现后再设计（最可能形态：section 条目加 `skip_rules` 字段），
-  需求不明确前不实现（YAGNI）
+- 按节跳过规则（section 条目加 `skip_rules`）：未实现；当前仅有全局
+  `spec.skip_rules`（verify 与 fix 均生效）与 `--rule/--skip` 逃生口。
+  真实需求出现后再设计（YAGNI）
 
 ## 测试要求
 - [ ] proposal yaml 解析：默认值 / citation_mode 非法值报错
 - [ ] init --type proposal：生成 `.litkit/proposal-zh/manuscript-spec.yaml`，顶部含标书规定注释
-- [ ] init --spec：外部 yaml 采纳、不覆盖用户已改的 yaml
+- [ ] init --spec：外部 yaml 采纳、不覆盖用户已改的 yaml（**未实现，暂不纳入验收**）
 - [ ] R1.5/R1.9 复用：标书文稿缺节 / 顺序错样例被既有规则检出
 - [ ] R10.2：超字数 / 不足字数样例被检出；区间边界值通过；未配字数的节不报
 - [ ] 作用域：含封面/简表/签章页的文稿，封面内容不计入任何节字数；旧 yaml（无 sections）行为回归不变

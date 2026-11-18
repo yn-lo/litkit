@@ -1,7 +1,7 @@
 # 功能设计：本地文献库与结果持久化
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -23,7 +23,7 @@ owner: litkit-core
 - 引用标记 paper_refs（FR-LIB-07）：记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿 + 行号）；同句重复引用幂等
 - 引用评分缓存 citation_scores（FR-LINT-08）：多模型对 (cite_key, sentence_hash) 的评分结果，主键 `(cite_key, sentence_hash, model_id, prompt_version)` 自然失效（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL
 - 增删查接口（FR-LIB-02）：`litkit lib list | search | rm | stats | path`
-- 本地 keyword 检索（FR-LIB-04）：M1 为 LIKE 检索（标题/作者/摘要）；FTS5+中文分词二期
+- 本地 keyword 检索（FR-LIB-04）：M1 为 LIKE 检索（标题/摘要/作者姓名，通配符转义）；FTS5+中文分词二期
 
 ### 不包含
 - 文献管理数据库（Zotero/Mendeley 替代品）

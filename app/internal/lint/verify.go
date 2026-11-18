@@ -70,6 +70,9 @@ type CitationRelevanceItem struct {
 	LowConsensus bool           `json:"lowConsensus"`     // consensus < 0.5（无成功模型时不置位）
 	ScoredModels int            `json:"scoredModels"`     // 成功出分的模型数（0=全部失败）
 	Failed       []ModelFailure `json:"failed,omitempty"` // 失败模型及原因（全部失败时该条仍保留在 results 中）
+	// UnverifiedNumbers 引用句中出现但摘要中找不到的数字（Layer 0 确定性检查，
+	// 零网络零成本；仅作证据提示，不等于幻觉结论）。
+	UnverifiedNumbers []string `json:"unverifiedNumbers,omitempty"`
 }
 
 // FileReport 单文件验证结果。

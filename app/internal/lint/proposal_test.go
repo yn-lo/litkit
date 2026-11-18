@@ -178,6 +178,22 @@ func TestR82_ChineseAbstract(t *testing.T) {
 	}
 }
 
+// TestR102_SubsectionCountedInParent 父节含子标题时，子节正文计入父节字数。
+func TestR102_SubsectionCountedInParent(t *testing.T) {
+	spec := SpecForType(PaperTypeProposal, LangZH)
+	spec.Sections = []string{"立项依据"}
+	spec.SectionLimits = map[string][2]int{"立项依据": {100, 200}}
+	content := "# 标书\n\n## 立项依据\n\n### 研究内容\n\n子节正文内容。\n"
+	rep := runContentWithSpec(t, content, spec, proposalDraft())
+	vs := violationsOf(rep, "R10.2")
+	if len(vs) != 1 {
+		t.Fatalf("应检出 1 条 R10.2，got %+v", vs)
+	}
+	if strings.Contains(vs[0].Problem, "字数 0 ") {
+		t.Errorf("子节正文应计入父节字数：%q", vs[0].Problem)
+	}
+}
+
 // TestR102_SectionWordCount 超字数/不足字数被检出；未配置区间的节不报。
 func TestR102_SectionWordCount(t *testing.T) {
 	spec := makeProposalSpec()

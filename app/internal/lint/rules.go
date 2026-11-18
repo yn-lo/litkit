@@ -117,7 +117,7 @@ func modeRank(m Mode) int {
 
 // Violation 单条违规。
 type Violation struct {
-	RuleID     string `json:"-"` // 内部使用，不输出到 JSON
+	RuleID     string `json:"ruleId"` // 规则编号（FR-LINT-05 三要素之一）
 	Line       int    `json:"line,omitempty"`
 	Problem    string `json:"problem"`
 	Suggestion string `json:"suggestion"`
@@ -1889,22 +1889,33 @@ func checkR102(src *Source, spec *ManuscriptSpec) []Violation {
 		return nil
 	}
 	var vs []Violation
-	// 定位每个 section 标题在 Body 中的位置，累计到下一标题的字数
+	// 固定匹配顺序：名称更长（更具体）的 section 优先，避免子串重叠时限额不确定
+	names := make([]string, 0, len(spec.SectionLimits))
+	for name := range spec.SectionLimits {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(a, b int) bool {
+		if len(names[a]) != len(names[b]) {
+			return len(names[a]) > len(names[b])
+		}
+		return names[a] < names[b]
+	})
+	// 定位每个 section 标题在 Body 中的位置，累计到下一个同级或更高级标题的字数
 	for i, ln := range src.Body {
 		t := strings.TrimSpace(ln)
 		if !isHeading(t) {
 			continue
 		}
-		_, _, text := headingLevel(t)
+		level, _, text := headingLevel(t)
 		if text == "" {
 			continue
 		}
 		textLower := strings.ToLower(text)
 		var lim [2]int
 		var secName string
-		for name, r := range spec.SectionLimits {
+		for _, name := range names {
 			if strings.Contains(textLower, strings.ToLower(name)) {
-				lim, secName = r, name
+				lim, secName = spec.SectionLimits[name], name
 				break
 			}
 		}
@@ -1913,8 +1924,11 @@ func checkR102(src *Source, spec *ManuscriptSpec) []Violation {
 		}
 		words := 0
 		for j := i + 1; j < len(src.Body); j++ {
-			if isHeading(strings.TrimSpace(src.Body[j])) {
-				break
+			tj := strings.TrimSpace(src.Body[j])
+			if isHeading(tj) {
+				if subLevel, _, _ := headingLevel(tj); subLevel <= level {
+					break // 同级或更高标题标志本节结束；子标题内容计入本节
+				}
 			}
 			words += wordCount(src.Body[j])
 		}

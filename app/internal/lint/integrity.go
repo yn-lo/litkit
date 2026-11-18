@@ -161,9 +161,13 @@ func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptS
 	if spec.Citation.HasSelfCite() && len(origin) > 0 {
 		ratio := float64(rs.selfHits) / float64(len(origin))
 		if ratio > spec.Citation.SelfCiteRatio() {
-			out = append(out, healthViolation{0, Violation{
+			loc := rs.selfFirst
+			if loc.line == 0 {
+				loc = citeOrigin{file: 0, line: 1}
+			}
+			out = append(out, healthViolation{loc.file, Violation{
 				RuleID:     ruleSelfCite,
-				Line:       1,
+				Line:       loc.line,
 				Problem:    fmt.Sprintf("自引比例 %.0f%%（%d/%d 篇）超过上限 %.0f%%", ratio*percent, rs.selfHits, len(origin), spec.Citation.SelfCiteRatio()*percent),
 				Suggestion: "减少自身文献引用，补充独立来源",
 			}})
@@ -179,6 +183,7 @@ type recencyScore struct {
 	aging      int               // 距今 (warnAge, maxAge]
 	stale      int               // 距今 > maxAge
 	selfHits   int               // 自引命中（R5.9）
+	selfFirst  citeOrigin        // 首篇自引出现位置（违规落点）
 	hasAging   bool              // 是否存在 5-10y 档文献
 	firstAging citeOrigin        // 5-10y 档首篇位置（聚合提示落点）
 }
@@ -207,6 +212,9 @@ func (r *recencyScore) add(p *model.Paper, k string, o citeOrigin, spec *Citatio
 		r.within++
 	}
 	if spec.HasSelfCite() && isSelfCited(p, spec.SelfCitationAuthors) {
+		if r.selfHits == 0 {
+			r.selfFirst = o
+		}
 		r.selfHits++
 	}
 }

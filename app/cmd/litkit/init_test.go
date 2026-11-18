@@ -130,6 +130,29 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 	}
 }
 
+// TestInitWorkdir_journalKeepsSpecComments --journal 不得抹掉模板顶部的撰写规定注释。
+func TestInitWorkdir_journalKeepsSpecComments(t *testing.T) {
+	dir := t.TempDir()
+	if err := initWorkdir(dir, false, lint.PaperTypeReview, lint.LangZH, "测试期刊"); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	path := lint.SpecPath(dir, lint.PaperTypeReview, lint.LangZH)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if !strings.Contains(string(data), "撰写硬性规定") {
+		t.Errorf("--journal 后模板注释丢失：%s", data)
+	}
+	spec, err := lint.LoadSpec(path)
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if spec.Journal != "测试期刊" {
+		t.Errorf("journal 应为 测试期刊，got %q", spec.Journal)
+	}
+}
+
 func TestInitWorkdir_typeProposal(t *testing.T) {
 	dir := t.TempDir()
 	if err := initWorkdir(dir, false, lint.PaperTypeProposal, lint.LangZH, ""); err != nil {

@@ -113,8 +113,11 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			// spec 级 skip_rules 永久跳过（合并进 --skip，等效每次携带）
 			opts.Skip = append(opts.Skip, spec.SkipRules...)
 
-			// 校验 --rule 指定的规则 ID 均存在（避免未知规则静默"全部通过"，report 问题3）
+			// 校验 --rule / --skip 指定的规则 ID 均存在（避免未知规则静默"全部通过"/"未跳过"）
 			if err := validateRuleIDs(ruleFlag); err != nil {
+				return &paramError{msg: "verify: " + err.Error()}
+			}
+			if err := validateRuleIDs(skipFlag); err != nil {
 				return &paramError{msg: "verify: " + err.Error()}
 			}
 
@@ -129,7 +132,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 
 			// 引用评分（FR-LINT-08）
 			if strings.Contains(reportFlag, "citation-refs") && store != nil {
-				cr := runCitationRelevance(args, store, cfg)
+				cr := runCitationRelevance(args, store, cfg, spec)
 				report.CitationRefs = cr
 			}
 
@@ -156,7 +159,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 // runCitationRelevance 对文稿执行引用相关性评分（FR-LINT-08）。
 //
 // 在规则验证后额外执行，不产生 lint Violation，以独立报告形式输出。
-func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Config) *lint.CitationRelevanceReport {
+func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Config, spec *lint.ManuscriptSpec) *lint.CitationRelevanceReport {
 	cr := &lint.CitationRelevanceReport{Enabled: false}
 
 	// 加载 verifier_models.json
@@ -184,7 +187,8 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 	ctx := context.Background()
 
 	for _, p := range paths {
-		src, err := lint.ParseSource(p)
+		// 与 verify 使用同一分段口径（封面裁剪/摘要保留），保证行号一致
+		src, err := lint.ParseSourceWithSpec(p, spec)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "litkit: 解析 %s 失败: %v（跳过引用评分）\n", p, err)
 			continue
@@ -211,17 +215,11 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 				continue
 			}
 			papers[r.CiteKey] = paper
-			// 映射到原始行号
-			origLine := r.Line
-			if r.Line > 0 && r.Line <= len(lineNos) {
-				origLine = lineNos[r.Line-1]
-			}
 			refModels = append(refModels, model.PaperRef{
 				CiteKey:      r.CiteKey,
 				SentenceHash: r.SentenceHash,
 				Manuscript:   rel,
 				Sentence:     r.Sentence,
-				Line:         origLine,
 			})
 		}
 		if lookupFailed {
@@ -248,6 +246,7 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 				origLine = lineNos[r.Line-1]
 			}
 			item := buildRelevanceItem(rel, origLine, r.CiteKey, r.Sentence, result, vm)
+			item.UnverifiedNumbers = unverifiedNumbers(r.Sentence, paper.Abstract)
 			cr.Results = append(cr.Results, item)
 		}
 	}
@@ -305,6 +304,20 @@ func buildRelevanceItem(rel string, line int, citeKey, sentence string, result *
 		item.LowConsensus = result.Consensus < vm.ConsensusThreshold
 	}
 	return item
+}
+
+// unverifiedNumbers 返回引用句中不在摘要出现的数字（Layer 0 数字集合规则，
+// 确定性检查；引用句中的年份等也会列出，供人工判读）。
+func unverifiedNumbers(sentence, abstract string) []string {
+	issues := core.CheckNumericConsistency(sentence, abstract)
+	if len(issues) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(issues))
+	for _, iss := range issues {
+		out = append(out, iss.Number)
+	}
+	return out
 }
 
 // scoredModelCount 统计成功出分的模型数（0=全部模型失败）。

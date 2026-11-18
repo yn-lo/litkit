@@ -1,7 +1,7 @@
 # 功能设计：检索与文献平台连接
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -16,8 +16,8 @@ owner: litkit-core
 
 ### 包含
 - `PaperSource` 接口 + 源注册表
-- 默认 5 个一期源（均含摘要）：arXiv、PubMed、OpenAlex、Semantic Scholar、bioRxiv/medRxiv
-- 跨源并发检索、单源失败隔离、DOI→title→id 三级去重
+- 默认 8 个适配器 / 7 个平台（均含摘要）：arXiv、PubMed、OpenAlex、Semantic Scholar、bioRxiv、medRxiv、Crossref、DOAJ
+- 跨源并发检索、单源失败隔离、DOI→title→id 三级去重（内存层）
 - 每源令牌桶限速（≥10 次/分钟）+ 429/503 指数退避重试
 - 检索结果去重后 upsert 进本地文献库（FR-LIB-01），回填 cite_key（FR-LIB-06）；无独立缓存层
 - 结果默认年份倒序（FR-SEARCH-10）：最新在前，year=0 排末尾
@@ -25,11 +25,11 @@ owner: litkit-core
 
 ### 不包含
 - 二期源（Zenodo、IEEE/ACM）本期不实现
-- 移除源（CORE、DOAJ、OpenAIRE、Unpaywall、Europe PMC/PMC、HAL、BASE、SSRN/CiteSeerX、dblp）不实现
-- 无摘要源直接不实现（FR-SRC-19）；CrossRef 检索仅作元数据反查（见 feature-references）
+- 移除源（CORE、OpenAIRE、Europe PMC/PMC、HAL、BASE、SSRN/CiteSeerX、dblp）不实现
+- 无摘要源直接不实现（FR-SRC-19）；CrossRef/DOAJ 已是正式检索源（FR-SRC-20/21），CrossRef 同时承担元数据反查
 - 远程语义重排（`search --mode semantic`）：不实现（全库均不引入 embedding，见 PRD 非目标）
-- Google Scholar / Sci-Hub（明确移除）
-- PDF 下载与全文抽取（摘要工作流）
+- Google Scholar 不实现；Sci-Hub 不作为检索源（仅作全文获取兜底，见 feature-references）
+- 检索流程不做 PDF 下载与全文抽取（全文获取由 `litkit fetch` 单独提供）
 
 ## 分层设计
 
@@ -55,7 +55,7 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - 所有源必须实现 `PaperSource` 接口，禁止绕过注册表（C7）
 - 检索源必须提供摘要（`HasAbstract()`=true），无摘要源不纳入检索（FR-SRC-19）
 - 单源失败归入 errors，不中断整体（FR-SEARCH-01）
-- 去重优先级：DOI（非空）> Title（归一化）> ID（source:externalId）
+- 去重优先级：内存层 DOI（非空）> Title（归一化）> ID；入库层 dedup_key 为 DOI > title+第一作者签名 > paper_id（FR-CACHE-02）
 - 每源限速器取合规限速保守值（arXiv ≥3s/次）
 - 检索结果必须含摘要：无摘要论文默认过滤（`--keep-no-abstract` 显式保留）（FR-SEARCH-03）
 - 新增源不修改核心层（FR-SRC-18）
@@ -71,5 +71,5 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - [ ] 排序测试：结果按年份倒序；year=0 排末尾（FR-SEARCH-10）
 - [ ] PaperSummary 测试：默认输出 5 字段；firstAuthor 为 "Family Given"；`--full` 输出完整字段（FR-IFACE-02）
 - [ ] 检索等级测试：arXiv `ti:`+`abs:`、PubMed `[Title/Abstract]`+`[Keyword]`；`--mode full` 回退全文（FR-SEARCH-12）
-- [ ] 时间范围测试：`--since`/`--years` 换算；arXiv/bioRxiv 本地过滤、PubMed/OpenAlex 服务端过滤（FR-SEARCH-13）
+- [ ] 时间范围测试：`--since`/`--years` 换算；arXiv/PubMed/OpenAlex 服务端过滤、bioRxiv 本地过滤（拉取窗口 100 篇）（FR-SEARCH-13）
 - [ ] 限速测试：并发扇出不超每源上限（NFR-PERF-04）

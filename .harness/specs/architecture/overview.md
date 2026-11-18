@@ -1,7 +1,7 @@
 # 架构概览 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -13,7 +13,7 @@ owner: litkit-core
 | 语言 | Go ≥ 1.26（静态类型、单一二进制、原生并发） |
 | CLI | spf13/cobra |
 | HTTP / XML | net/http、encoding/xml（标准库） |
-| HTML（可选源） | goquery |
+| HTML 解析 | 标准库正则/xml（当前无 goquery 依赖） |
 | 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL（可选） |
 | 存储 | modernc.org/sqlite（纯 Go，无 CGO） |
 | .env | joho/godotenv |
@@ -28,7 +28,7 @@ owner: litkit-core
 
 ```
 cmd/litkit                       入口层（参数解析与注册，不含业务逻辑）
-internal/core                   服务层（检索去重 / 本地库 keyword 检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 缓存 / 文献库）
+internal/core                   服务层（检索去重 / 本地库 keyword 检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 文献库）
 internal/sources                适配层（每个学术源一个适配器，实现 PaperSource 接口）
 internal/model · config · storage · util   叶子层（数据模型 / 配置 / SQLite / 工具）
 ```

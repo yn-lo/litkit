@@ -1,7 +1,7 @@
 # 开发计划 — litkit
 
 ---
-last_updated: 2026-10-09
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -118,7 +118,7 @@ owner: litkit-core
 | 本地库 FTS5 中文分词（trigram） | FR-LIB-04 |
 | 二期源适配：Zenodo、IEEE/ACM | FR-SRC-07/08 |
 
-**产出**：`litkit library search --mode keyword` 中文词法命中。
+**产出**：`litkit lib search` 中文词法命中。
 
 **验收**：中文文献按关键词/标题/作者命中（FR-LIB-04）；本地库万级规模检索 < 1s。
 

@@ -43,6 +43,19 @@ func round2ScoringFixture(t *testing.T) (*config.Config, *storage.Store, string,
 	return &config.Config{WorkDir: dir, LLMTimeoutMS: 1000}, st, path, key
 }
 
+// TestUnverifiedNumbers Layer 0 数字集合规则：只列出摘要中找不到的数字。
+func TestUnverifiedNumbers(t *testing.T) {
+	got := unverifiedNumbers(
+		"The trial enrolled 500 patients in 2020.",
+		"We enrolled 500 patients with hypertension.")
+	if len(got) != 1 || got[0] != "2020" {
+		t.Fatalf("应仅剩摘要中不存在的 2020，got %v", got)
+	}
+	if extra := unverifiedNumbers("We enrolled 500 patients.", "Enrolled 500 patients."); len(extra) != 0 {
+		t.Fatalf("数字一致时不应报告，got %v", extra)
+	}
+}
+
 func TestRelevanceConfiguredConsensusThreshold(t *testing.T) {
 	vm := &core.VerifierModels{Scoring: core.DefaultScoringConfig(), ConsensusThreshold: 0.9}
 	result := &core.ScoreResult{MeanScore: 0.6, Consensus: 0.8, PerModel: []core.ModelScore{{ModelID: "mock"}}}
@@ -69,14 +82,14 @@ func TestRound2_DeletedCitationsClearRefs(t *testing.T) {
 	if err := os.WriteFile(path, []byte("结论[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	first := runCitationRelevance([]string{path}, st, cfg)
+	first := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
 	if len(first.Results) != 1 {
 		t.Fatalf("fixture score: %+v", first)
 	}
 	if err := os.WriteFile(path, []byte("结论。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_ = runCitationRelevance([]string{path}, st, cfg)
+	_ = runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
 	refs, err := st.GetRefsByManuscript("doc.md")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +108,7 @@ func TestRound2_UnknownRefDoesNotDropValidLaterRef(t *testing.T) {
 	if err := os.WriteFile(path, []byte("未知[@"+missing+"]。已知[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := runCitationRelevance([]string{path}, st, cfg)
+	got := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
 	if len(got.Results) != 1 {
 		t.Fatalf("fixture score: %+v", got)
 	}
@@ -113,7 +126,7 @@ func TestRound2_CustomScoreThreshold(t *testing.T) {
 	if err := os.WriteFile(path, []byte("结论[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := runCitationRelevance([]string{path}, st, cfg)
+	got := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
 	if len(got.Results) != 1 {
 		t.Fatalf("fixture score: %+v", got)
 	}

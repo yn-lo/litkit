@@ -1,7 +1,7 @@
 # 功能设计：撰写约束验证（lint / harness）
 
 ---
-last_updated: 2026-10-09
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -82,21 +82,28 @@ skills/（litkit + references、academic-style、manuscript-format + references�
 ## verify 实现要点（已落地）
 
 - **46 条规则**：30 A 类（自动判定）+ 16 S 类（半自动），含 R5.6–R5.9 查库/联网检查；全部按规则和类别统一筛选，S 类命中仅提示人工确认，不计入 fail 判定
-- **模式递增**：chapter（结构）→ draft（+数据/标点/引用）→ final（+字数/行文），高模式包含低模式全部规则
+- **模式递增**：chapter（结构+章节字数区间 R10.2）→ draft（+数据/标点/引用）→ final（+字数/行文），高模式包含低模式全部规则
 - **证据不足的显式出口**：R5.2 `[待引证]` 仅 final 模式判违规，chapter/draft 视为"待人工补文献"的
   合法中间态（写作中不得因占位判 fail，否则模型会删论断或改写空话规避）；
   R5.4 `[TODO]`/`[TBD]` 属作者备忘，draft 起即违规。二者原共用 R5.2，语义不同故拆分
-- **Markdown 分段**：排除代码块/参考文献/表格后检查 Body
+- **Markdown 分段**：排除代码块/参考文献/表格后检查 Body；spec 定义 sections 时，
+  首个 section 之前的封面字段排除，但**摘要节（摘要/中文摘要/Abstract）正文始终保留**
+  （R8.2 摘要字数、R4.9 摘要禁引用依赖该段），且摘要标题豁免 R1.3 编号要求
+- **图表引用语境（R1.8）**：仅把"见/如/于/、/（等引导词 + 图/表 N"视为引用，
+  「代表1种」「发表3篇」等构词命中不再误报
 - **纯函数设计**：lint.Run() 无 IO，接收文本与配置返回 Report；CLI 是薄壳（读文件 → Run → 输出 JSON）
 - **exitHint 三值**：pass / fix_and_rerun / manual_review；退出码 0=通过或仅需人工复核，1=有 A 类违规
 - **引用评分（FR-LINT-08）**：`--report citation-refs` 在规则验证后额外执行，输出包含 enabled/models/results 的 JSON 块
   - 两层漏斗：Layer 0 数字集合规则（免费确定性）→ Layer 1 LLM 多模型评分
+    - Layer 0 结果随每条评分输出 `unverifiedNumbers`（引用句中出现、摘要中找不到的数字），
+      零网络零成本，仅作证据提示，不等于"幻觉"结论
     （原 embedding 语义预筛层已砍除：引用对由 `[@citeKey]` 锚点显式确定，无召回问题；
     预筛只能"跳过"不能"确认"，阈值偏松会静默漏报错引，而评分成本经缓存后可忽略）
   - 禁用模式：无可启用的模型（全 disabled 或全无 key）时静默跳过，不报错
   - 缓存优先：citation_scores 表全命中则直接返回聚合结果，不调 API；缓存输入指纹同时包含原始引用句和摘要，摘要变化自动不命中
   - 引用关系：每份手稿事务替换 paper_refs，空引用集清空旧关系；不存在的句柄单独提示，数据库失败回滚
-  - 输出阈值：lowScore 使用 scoring.low_score_threshold，lowConsensus 使用 consensus_threshold
+  - 输出阈值：lowScore 使用 scoring.low_score_threshold，lowConsensus 使用 consensus_threshold；
+    最终分按模型 `weight` 加权，成功模型数 `< scoring.min_models`（默认 2）时不出分
   - 优雅降级：部分模型失败（401/超时）不影响其他模型评分
   - 失败可见：全部模型失败时该条仍保留在 `results` 中，`scoredModels` 记成功模型数、
     `failed[]` 记各模型失败原因；`lowScore`/`lowConsensus` 仅在 `scoredModels>0` 时置位

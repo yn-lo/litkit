@@ -51,6 +51,7 @@ type ScorerEngine struct {
 	store         *storage.Store
 	scorers       []Scorer // 启用的模型评分器
 	config        ScoringConfig
+	weights       map[string]float64 // 模型 ID → 权重（<=0 按 1）
 	promptVersion string
 }
 
@@ -81,6 +82,7 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, creds Credential
 	}
 
 	var scorers []Scorer
+	weights := map[string]float64{}
 	for _, m := range cfg.Models {
 		if !m.Enabled {
 			continue
@@ -99,6 +101,11 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, creds Credential
 		}
 		m.APIKey, m.BaseURL = key, base
 		scorers = append(scorers, NewLLMScorer(m, m.BaseURL, cfg.PromptVersion, timeout, proxy))
+		w := m.Weight
+		if w <= 0 {
+			w = 1
+		}
+		weights[m.ID] = w
 	}
 
 	if len(scorers) == 0 {
@@ -109,6 +116,7 @@ func NewScorerEngine(store *storage.Store, cfg *VerifierModels, creds Credential
 		store:         store,
 		scorers:       scorers,
 		config:        cfg.Scoring,
+		weights:       weights,
 		promptVersion: cfg.PromptVersion,
 	}
 }
@@ -215,14 +223,21 @@ func (e *ScorerEngine) aggregate(citeKey, sentenceHash string, scored map[string
 	if len(scored) == 0 {
 		return nil
 	}
-
-	var total float64
-	var count int
-	for _, c := range scored {
-		total += c.score
-		count++
+	// 成功模型数不足 min_models 时不出结论，避免单模型误判为高一致
+	if len(scored) < e.config.MinModels {
+		return nil
 	}
-	mean := total / float64(count)
+
+	var total, weightSum float64
+	for id, c := range scored {
+		w := e.weights[id]
+		if w <= 0 {
+			w = 1
+		}
+		total += c.score * w
+		weightSum += w
+	}
+	mean := total / weightSum
 
 	// 一致率 = 1 - min(1.0, maxDeviation / 0.5)
 	var maxDev float64

@@ -22,6 +22,22 @@ func TestExtractCiteSentences_Simple(t *testing.T) {
 	}
 }
 
+// TestExtractCiteSentences_StopsAtParagraph 引用句不得跨段落/标题，
+// 否则评分输入会包含文首标题与前文整段，缓存键也随全文变化失效。
+func TestExtractCiteSentences_StopsAtParagraph(t *testing.T) {
+	body := "# 标题\n\n## 方法\n\n本研究采用[@AAA]方法。结论成立。\n\n下一段。"
+	got := ExtractCiteSentences(body)
+	if len(got) != 1 {
+		t.Fatalf("应提取 1 句，got %d", len(got))
+	}
+	if got[0].Sentence != "本研究采用[@AAA]方法。" {
+		t.Fatalf("引用句应止于段落/标题边界，got %q", got[0].Sentence)
+	}
+	if got[0].Line != 5 {
+		t.Fatalf("行号应为 5，got %d", got[0].Line)
+	}
+}
+
 func TestExtractCiteSentences_MultipleCiteKeys(t *testing.T) {
 	body := `方法 A[@Kxq] 在数据集 B[@Kzr] 上表现优异。`
 	got := ExtractCiteSentences(body)

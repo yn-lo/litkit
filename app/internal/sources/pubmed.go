@@ -49,9 +49,39 @@ type eSearchResult struct {
 }
 
 // pubmedArticleSet EUtils efetch 响应结构（PubmedArticleSet）。
+// 同时收录 PubmedArticle 与 PubmedBookArticle，避免书籍/章节条目被静默丢弃。
 type pubmedArticleSet struct {
-	XMLName        xml.Name        `xml:"PubmedArticleSet"`
-	PubmedArticles []pubmedArticle `xml:"PubmedArticle"`
+	XMLName            xml.Name            `xml:"PubmedArticleSet"`
+	PubmedArticles     []pubmedArticle     `xml:"PubmedArticle"`
+	PubmedBookArticles []pubmedBookArticle `xml:"PubmedBookArticle"`
+}
+
+// pubmedAuthor 作者节点（Article 与 BookDocument 共用）。
+type pubmedAuthor struct {
+	ForeName string `xml:"ForeName"`
+	LastName string `xml:"LastName"`
+}
+
+// pubmedBookArticle 书籍/章节条目（结构较 PubmedArticle 简化，仅取引用所需字段）。
+type pubmedBookArticle struct {
+	BookDocument struct {
+		PMID         string `xml:"PMID"`
+		ArticleTitle struct {
+			Inner string `xml:",innerxml"`
+		} `xml:"ArticleTitle"`
+		Abstract struct {
+			Texts []pubmedAbstractText `xml:"AbstractText"`
+		} `xml:"Abstract"`
+		AuthorList struct {
+			Authors []pubmedAuthor `xml:"Author"`
+		} `xml:"AuthorList"`
+		Book struct {
+			BookTitle string `xml:"BookTitle"`
+			PubDate   struct {
+				Year string `xml:"Year"`
+			} `xml:"PubDate"`
+		} `xml:"Book"`
+	} `xml:"BookDocument"`
 }
 
 // pubmedAbstractText AbstractText 段：Label 属性 + 混合内容。
@@ -72,17 +102,15 @@ type pubmedArticle struct {
 			Abstract struct {
 				Texts []pubmedAbstractText `xml:"AbstractText"`
 			} `xml:"Abstract"`
-			Authors []struct {
-				ForeName string `xml:"ForeName"`
-				LastName string `xml:"LastName"`
-			} `xml:"AuthorList>Author"`
+			Authors []pubmedAuthor `xml:"AuthorList>Author"`
 			Journal struct {
 				Title string `xml:"Title"`
 				Issue struct {
 					PubDate struct {
-						Year  string `xml:"Year"`
-						Month string `xml:"Month"`
-						Day   string `xml:"Day"`
+						Year        string `xml:"Year"`
+						Month       string `xml:"Month"`
+						Day         string `xml:"Day"`
+						MedlineDate string `xml:"MedlineDate"`
 					} `xml:"PubDate"`
 				} `xml:"JournalIssue"`
 			} `xml:"Journal"`
@@ -247,18 +275,22 @@ func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
 	if err := xml.Unmarshal(data, &set); err != nil {
 		return nil, fmt.Errorf("parse efetch: %w", err)
 	}
-	papers := make([]model.Paper, 0, len(set.PubmedArticles))
+	papers := make([]model.Paper, 0, len(set.PubmedArticles)+len(set.PubmedBookArticles))
 	for _, art := range set.PubmedArticles {
 		ma := art.MedlineCitation
+		pubDate := ma.Article.Journal.Issue.PubDate
 		p := model.Paper{
 			Title:    stripInlineXML(ma.Article.Title.Inner),
 			Abstract: composePubmedAbstract(ma.Article.Abstract.Texts),
 			PMID:     strings.TrimSpace(ma.PMID),
-			Year:     atoiSafe(ma.Article.Journal.Issue.PubDate.Year),
+			Year:     pubmedYear(pubDate.Year, pubDate.MedlineDate),
 			Venue:    strings.TrimSpace(ma.Article.Journal.Title),
 			Authors:  pubmedAuthorsToModel(ma.Article.Authors),
 			Source:   "pubmed",
 			DocType:  DocTypeArticle,
+		}
+		if p.Title == "" {
+			continue
 		}
 		p.DOI = pubmedPickArticleID(art.PubmedData.ArticleIDs, "doi")
 		if p.URL == "" && p.DOI != "" {
@@ -267,8 +299,41 @@ func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
 		p.ID = p.ComputeID()
 		papers = append(papers, p)
 	}
+	for _, art := range set.PubmedBookArticles {
+		bd := art.BookDocument
+		p := model.Paper{
+			Title:    stripInlineXML(bd.ArticleTitle.Inner),
+			Abstract: composePubmedAbstract(bd.Abstract.Texts),
+			PMID:     strings.TrimSpace(bd.PMID),
+			Year:     atoiSafe(bd.Book.PubDate.Year),
+			Venue:    strings.TrimSpace(bd.Book.BookTitle),
+			Authors:  pubmedAuthorsToModel(bd.AuthorList.Authors),
+			Source:   "pubmed",
+			DocType:  model.DocTypeBook,
+		}
+		if p.Title == "" {
+			continue
+		}
+		p.ID = p.ComputeID()
+		papers = append(papers, p)
+	}
 	return papers, nil
 }
+
+// pubmedYear 取出版年：优先 PubDate/Year，回退 MedlineDate 的前 4 位
+// （如 "2023 Nov-Dec"），避免非标准日期导致年份为 0。
+func pubmedYear(year, medlineDate string) int {
+	if y := atoiSafe(year); y > 0 {
+		return y
+	}
+	if m := pubmedYearRe.FindString(strings.TrimSpace(medlineDate)); m != "" {
+		y, _ := strconv.Atoi(m)
+		return y
+	}
+	return 0
+}
+
+var pubmedYearRe = regexp.MustCompile(`^\d{4}`)
 
 // composePubmedAbstract 合并 AbstractText 多段（带 Label），段内容经 stripInlineXML 转平文。
 func composePubmedAbstract(texts []pubmedAbstractText) string {
@@ -290,10 +355,7 @@ func composePubmedAbstract(texts []pubmedAbstractText) string {
 	return strings.Join(parts, " ")
 }
 
-func pubmedAuthorsToModel(authors []struct {
-	ForeName string `xml:"ForeName"`
-	LastName string `xml:"LastName"`
-}) []model.Author {
+func pubmedAuthorsToModel(authors []pubmedAuthor) []model.Author {
 	out := make([]model.Author, 0, len(authors))
 	for _, a := range authors {
 		out = append(out, model.Author{

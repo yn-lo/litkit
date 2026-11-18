@@ -1,7 +1,7 @@
 # litkit 需求文档（PRD）
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -172,14 +172,14 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 生成 `.litkit/`（`.env` + `litkit.db` + `AGENTS.md` + `verifier_models.json`）与 `.agents/skills/`（litkit / academic-style / manuscript-format 三个技能），并按 `--type`/`--lang` 生成 `.litkit/<type-lang>/manuscript-spec.yaml`（模板 go:embed 编译进二进制）；支持 `--type review\|empirical\|book\|proposal`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--force`；交互式向导（stdin 是终端时） |
+| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 在工作目录生成 `.env` 与 `.litkit/`（`litkit.db` + `AGENTS.md` + `verifier_models.json`）及 `.agents/skills/`（litkit / academic-style / manuscript-format 三个技能），并按 `--type`/`--lang` 生成 `.litkit/<type-lang>/manuscript-spec.yaml`（模板 go:embed 编译进二进制）；支持 `--type review\|empirical\|book\|proposal`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--force`；交互式向导（stdin 是终端时） |
 | FR-LINT-02 | zh 专属规则 | P0 | 覆盖：全半角标点、中文引号、句式冗余（"进行""通过…使"）、"的/地/得"、"了/着/过"、AI 痕迹；规则标注 langs: zh |
 | FR-LINT-03 | en 专属规则 | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、AI 痕迹；规则标注 langs: en |
 | FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注、types 标注（空=全部类型；如 empirical 仅实证论文触发）；**规则代码单套按 langs x types 过滤，不设多套系统** |
-| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
+| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical\|book\|proposal`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单（M 类规则） | P1 | 由 `verify` 输出的 `manualChecklist` 字段承载（不落独立文件，避免与规则集脱同步），M 类不自动判 fail |
 | FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；**manuscript-spec.yaml 即单一事实源**（含顶部「撰写硬性规定」注释），改后立即生效，无需重渲染任何文件 |
-| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献内容的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。待完成：人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
+| FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献摘要的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。**门槛**：成功模型数 `< scoring.min_models`（默认 2）不出分；按模型 `weight` 加权；无摘要文献不参与评分。待完成：人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
 | FR-LINT-09 | `lint init` 引导终端运行 verify | P1 | lint init 返回的 next_steps 指引终端命令 |
 | FR-LINT-10 | 事前指导（撰写硬性规定） | P0 | `manuscript-spec.yaml` 顶部注释即撰写硬性规定（精简祈使句，非 yaml 数据复制），`.litkit/AGENTS.md` 与 `.agents/skills/` 各技能均指向它；AI 写稿时自动遵守，事后 verify 兜底 |
 
@@ -187,11 +187,11 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 入库元数据必须含摘要；检索结果自动 upsert 入库 |
+| FR-LIB-01 | SQLite 存储论文元数据与摘要 | P0 | 检索结果入库必须含摘要；手动录入硬校验摘要，`lib add --doi` 默认 soft（`--require-abstract` 硬拒） |
 | FR-LIB-02 | 增删查接口（CLI） | P1 | 可按 DOI/title/关键词查询；`lib list` / `lib rm` |
-| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | WORK_DIR/litkit.db；删除工作目录即删除库（无 TTL）。**未设置 LITKIT_WORK_DIR 时拒绝执行（errNoWorkDir），不退化为 CWD，避免污染任意目录**。**测试固化目录：`e:\Codes\litkit\workspace`** |
-| FR-LIB-04 | 本地 keyword 检索（FTS5 + 中文分词） | P1 | M1 为 LIKE 检索（标题/作者/摘要）；FTS5+分词二期 |
-| FR-LIB-06 | 引用标识 cite_key | P0 | 3 字母 a-zA-Z 唯一；入库自动分配；AI 引用与引用标记的唯一入口 |
+| FR-LIB-03 | 库文件位置跟随工作目录 | P0 | `WORK_DIR/.litkit/litkit.db`；删除工作目录即删除库（无 TTL）。**未设置 LITKIT_WORK_DIR 时 search/lib/manuscript 拒绝执行（errNoWorkDir）；init 在终端下询问后回退 CWD，非终端拒绝**。`.env` 中的相对工作目录锚定到该 `.env` 所在目录（进程环境变量仍按 CWD 解析）。**测试固化目录：`e:\Codes\litkit\workspace`** |
+| FR-LIB-04 | 本地 keyword 检索 | P1 | 当前为 LIKE 检索（标题/摘要/作者姓名，通配符转义）；FTS5+中文分词为二期 |
+| FR-LIB-06 | 引用标识 cite_key | P0 | 3 字母 a-zA-Z 唯一（空间耗尽升 4/5 字母）；入库自动分配；查询大小写不敏感；AI 引用与引用标记的唯一入口 |
 | FR-LIB-07 | 引用标记 paper_refs | P1 | 记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿）；同句重复引用幂等 |
 
 ### 4.6 FR-CACHE 缓存（已并入 FR-LIB）
@@ -202,9 +202,9 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | 原需求 | 去向 |
 |---|---|
 | FR-CACHE-01 搜索结果自动缓存 | FR-LIB-01（检索结果自动入库，重复检索按 dedup_key 去重更新） |
-| FR-CACHE-02 缓存键确定性 | dedup_key（DOI > title+authors > paper_id） |
+| FR-CACHE-02 缓存键确定性 | dedup_key（DOI > title+第一作者签名 > paper_id）；检索层内存去重仍为 DOI→title→id |
 | FR-CACHE-03 默认 TTL 24h 可覆盖 | 删除（无 TTL） |
-| FR-CACHE-04 缓存目录 WORK_DIR/.litkit_cache | FR-LIB-03（WORK_DIR/litkit.db） |
+| FR-CACHE-04 缓存目录 WORK_DIR/.litkit_cache | FR-LIB-03（WORK_DIR/.litkit/litkit.db） |
 | FR-CACHE-05 `cache list` / `cache clear` | `litkit lib list` / `litkit lib rm <cite_key>` |
 
 ### 4.7 FR-IFACE 接口
@@ -274,7 +274,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | CLI | spf13/cobra v1.9+ | 子命令、自动帮助生成、shell 补全 |
 | HTTP | net/http（标准库） | 零依赖；超时/重试自封装 |
 | XML/Atom | encoding/xml（标准库） | arXiv Atom / PubMed EUtils |
-| HTML | goquery（可选源） | 需 HTML 抓取的源（预留，二期） |
+| HTML | 标准库正则/xml（goquery 依赖已移除） | 需 HTML 抓取的源（预留，二期） |
 | 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL | 3 种核心样式原生实现；Zotero 已发布 GB/T 7714—2025 CSL 样式（numeric/author-date/note）；5 个 .csl 经 Pandoc |
 | 存储 | modernc.org/sqlite v1.54+ | 纯 Go（无 CGO），SQLite 3.53，FTS5 内建，交叉编译友好 |
 | .env | joho/godotenv | .env 文件解析 |
@@ -292,16 +292,19 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 ### 7.1 CLI
 
 ```
-litkit search       <query> [-s sources] [-n N] [-y year] [--keep-no-abstract]
+litkit init         --type empirical|review|book|proposal --lang zh|en [--journal NAME]
+litkit search       <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]
 litkit metadata     <id_type> <identifier>          # doi | pmid | arxiv | title
-litkit fetch        <cite_key|doi> [--out downloads]  # 全文获取（Unpaywall OA → Sci-Hub 兜底）
+litkit fetch        <cite_key|doi>                  # 全文获取（Unpaywall OA → Sci-Hub 兜底）
 litkit sources
-litkit manuscript   <draft.md> [--lang zh|en] [-s style] [--docx] [-o output_dir]
+litkit manuscript   <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o output_dir]
 litkit export       <papers.json> [-f bibtex|ris|text] [-s style]
-litkit cache        list | clear
-litkit library      <subcommand>
-litkit lint init    [project_dir] [--force] [--type review|empirical] [--lang zh|en] [--journal NAME]
-litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical]
+litkit lib          add | get | list | search | rm | stats | path
+litkit lint init    [project_dir] [--force] [--type review|empirical|book|proposal] [--lang zh|en] [--journal NAME]
+litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book|proposal]
+                    [--rule R2.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
+litkit fix          <file.md> [--rule R3.1] [--skip R2.1]
+litkit rules
 ```
 
 ### 7.2 环境变量
@@ -311,13 +314,16 @@ litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
 | LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（Unpaywall，FR-FETCH-02） |
 | LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
-| LITKIT_IEEE_API_KEY / ACM_API_KEY | 二期激活对应源必需 | 启用源工具 |
-| LITKIT_WORK_DIR | 必填 | 统一工作目录。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
+| LITKIT_IEEE_API_KEY / LITKIT_ACM_API_KEY | 二期激活对应源必需 | 启用源工具 |
+| LITKIT_WORK_DIR | 必填 | 统一工作目录。**未设置时 search/lib/manuscript 拒绝执行（errNoWorkDir，FR-LIB-03）；init 终端下询问、非终端拒绝**。库文件 `WORK_DIR/.litkit/litkit.db`。**测试固化目录：`e:\Codes\litkit\workspace`**（库文件、输出文件落于此） |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
 | LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
+| LITKIT_DEFAULT_MAX_RESULTS / LITKIT_DEFAULT_RECENT_YEARS / LITKIT_DEFAULT_SEARCH_MODE / LITKIT_SEARCH_TIMEOUT_MS | 可选 | 检索默认值：每源条数（5）/ 最近年数（3）/ 检索等级（tiab）/ 整体超时（60000ms） |
+| LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES | 可选 | 默认检索源白名单 / 排除源（逗号分隔；显式 `-s` 完全覆盖；未知源告警忽略，过滤后为空报错） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
 | LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼（检索源/元数据反查/全文获取/LLM 评分）统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
+| LITKIT_LLM_API_KEY / LITKIT_LLM_BASE_URL / LITKIT_LLM_TIMEOUT_MS | 引用评分可选 | LLM 评分全局回落凭据/endpoint/超时；按模型 `LITKIT_LLM_API_KEY_<模型ID大写>` 优先 |
 
 ## 8. 平台能力矩阵（国内可达性视角）
 

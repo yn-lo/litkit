@@ -319,3 +319,41 @@ func TestPubmedSource_Search_emptyIDListReturnsEmpty(t *testing.T) {
 		t.Fatalf("空 IdList 不应调 efetch，应返回 0 篇，got %d", len(papers))
 	}
 }
+
+func TestPubmedYear(t *testing.T) {
+	if got := pubmedYear("2023", ""); got != 2023 {
+		t.Errorf("标准 Year：got %d", got)
+	}
+	if got := pubmedYear("", "2023 Nov-Dec"); got != 2023 {
+		t.Errorf("MedlineDate 应回退取年份：got %d", got)
+	}
+	if got := pubmedYear("", ""); got != 0 {
+		t.Errorf("无年份应为 0：got %d", got)
+	}
+}
+
+// TestParsePubmedEFetch_bookArticle 书籍/章节条目不应被静默丢弃。
+func TestParsePubmedEFetch_bookArticle(t *testing.T) {
+	data := `<PubmedArticleSet>
+  <PubmedBookArticle>
+    <BookDocument>
+      <PMID>12345678</PMID>
+      <ArticleTitle>A Chapter Title</ArticleTitle>
+      <Abstract><AbstractText>Chapter abstract.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Smith</LastName><ForeName>J</ForeName></Author></AuthorList>
+      <Book><BookTitle>Handbook of Tests</BookTitle><PubDate><Year>2021</Year></PubDate></Book>
+    </BookDocument>
+  </PubmedBookArticle>
+</PubmedArticleSet>`
+	papers, err := parsePubmedEFetch([]byte(data))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(papers) != 1 {
+		t.Fatalf("书籍条目应解析为 1 篇，got %d", len(papers))
+	}
+	p := papers[0]
+	if p.Title != "A Chapter Title" || p.Year != 2021 || p.Venue != "Handbook of Tests" || p.PMID != "12345678" {
+		t.Errorf("书籍条目字段解析不符：%+v", p)
+	}
+}

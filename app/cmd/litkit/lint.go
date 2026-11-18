@@ -54,15 +54,9 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 				return err
 			}
 
-			// 加载 spec
-			specPath := lint.SpecPath(dir, paperType, lang)
-			spec, err := lint.LoadSpec(specPath)
-			if err != nil {
-				spec = lint.SpecForType(paperType, lang)
-			}
+			// journal 覆盖（只替换 journal 行，保留模板顶部撰写规定注释）
 			if journal != "" {
-				spec.Journal = journal
-				if err := lint.WriteSpec(specPath, spec); err != nil {
+				if err := lint.SetSpecJournal(lint.SpecPath(dir, paperType, lang), journal); err != nil {
 					return fmt.Errorf("lint init: 写入期刊配置失败: %w", err)
 				}
 			}

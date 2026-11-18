@@ -205,19 +205,9 @@ func ensurePaperType(dir string, force bool, paperType, lang, journal string) ([
 	}
 	created = append(created, yamlCreated...)
 
-	// 加载 spec（优先从 yaml，否则从模板）
-	specPath := lint.SpecPath(dir, paperType, lang)
-	spec, err := lint.LoadSpec(specPath)
-	if err != nil {
-		// yaml 刚被复制，不应失败
-		spec = lint.SpecForType(paperType, lang)
-	}
-
-	// journal 覆盖
+	// journal 覆盖（只替换 journal 行，保留模板顶部撰写规定注释）
 	if journal != "" {
-		spec.Journal = journal
-		// 写回 yaml
-		if err := lint.WriteSpec(specPath, spec); err != nil {
+		if err := lint.SetSpecJournal(lint.SpecPath(dir, paperType, lang), journal); err != nil {
 			return nil, err
 		}
 	}

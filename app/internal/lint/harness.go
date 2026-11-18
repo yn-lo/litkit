@@ -7,6 +7,8 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -79,7 +81,39 @@ func PapersDirPath(dir, paperType, lang string) string {
 	return filepath.Join(dir, LitkitDir, TypeLangDir(paperType, lang))
 }
 
-// WriteSpec 序列化 spec 写回 yaml。
+// SetSpecJournal 只更新 manuscript-spec.yaml 的 journal 字段，保留模板注释。
+//
+// 模板顶部注释是撰写规定的单一事实源（AI 必读），yaml.Marshal 写回会整段丢弃，
+// 因此 --journal 按行替换而非重新序列化。
+func SetSpecJournal(path, journal string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("lint: read spec %s: %w", path, err)
+	}
+	lines := strings.Split(string(data), "\n")
+	val := "journal: " + strconv.Quote(journal)
+	replaced := false
+	for i, ln := range lines {
+		if strings.HasPrefix(strings.TrimSpace(ln), "journal:") {
+			lines[i] = val
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines, val)
+	}
+	out := strings.Join(lines, "\n")
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	if err := os.WriteFile(path, []byte(out), harnessFilePerm); err != nil {
+		return fmt.Errorf("lint: write spec %s: %w", path, err)
+	}
+	return nil
+}
+
+// WriteSpec 序列化 spec 写回 yaml（会丢弃模板注释，仅用于测试/无注释场景）。
 func WriteSpec(path string, spec *ManuscriptSpec) error {
 	data, err := yaml.Marshal(spec)
 	if err != nil {

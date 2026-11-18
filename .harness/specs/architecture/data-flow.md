@@ -1,7 +1,7 @@
 # 数据流 — litkit
 
 ---
-last_updated: 2026-08-02
+last_updated: 2026-11-18
 status: active
 owner: litkit-core
 ---
@@ -12,13 +12,12 @@ owner: litkit-core
 
 ```
 CLI → core.Search(ctx, ...)
-  1. 归一化参数（query、sources、maxResults、year）
-  2. 生成缓存键 hash(query|source|params)，查缓存 → 命中即返回（零网络 IO）
-  3. errgroup 并发调用各源 adapter.Search(ctx, ...)
-  4. 每个源返回 []Paper；单源失败 → 归入 errors，不中断
-  5. 合并 → 按 DOI → title → id 三级 key 去重
-  6. 写缓存（TTL 24h）
-  7. 返回 SearchResult{Total, SourceResults, Errors, Papers}
+  1. 归一化参数（query、sources、maxResults、year）；解析 .env 默认源白名单/排除
+  2. errgroup 并发调用各源 adapter.Search(ctx, ...)
+  3. 每个源返回 []Paper；单源失败 → 归入 errors，不中断
+  4. 合并 → 按 DOI → title → id 三级 key 去重
+  5. upsert 进本地文献库（SQLite，无独立缓存/TTL），回填 cite_key
+  6. 返回 SearchResult{Total, SourceResults, Errors, Papers}
 ```
 
 ## 2. 引用生成数据流（manuscript）
@@ -26,7 +25,7 @@ CLI → core.Search(ctx, ...)
 ```
 1. 解析占位符 [@doi:...] / [@pmid:...] / [@arxiv:...] / [@title:...]
 2. 每个占位符经 core.Metadata(ctx, ...) 取元数据（含摘要）
-   doi → CrossRef / OpenAlex；pmid → PubMed；arxiv → arXiv Atom；title → CrossRef
+   doi → CrossRef；pmid → PubMed；arxiv → arXiv Atom；title → CrossRef
 3. 生成 citationMap（占位符 → 条目）
 4. 按 lang/style 渲染：zh → GB/T 7714—2025（内置格式化器，含预印本[PP]/数据集[DS]类型）
                               en → APA 7th / IEEE（内置格式化器）
@@ -41,8 +40,8 @@ CLI → core.Search(ctx, ...)
 1. 按 --lang 选择规则集（zh/en）
 2. 按 --mode 决定启用规则范围（chapter/draft/final 递增）
 3. 对文稿逐条执行规则验证（A 自动 / S 半自动）
-4. 输出 []Issue：{RuleID, Problem, Suggestion, Location}（三要素）
-5. M 类规则输出至 checklist 供人工复核
+4. 输出 FileReport：每条违规 {rule, line, problem, suggestion}；文件级字段为 passed/exitHint
+5. M 类规则输出至 manualChecklist 供人工复核
 ```
 
 ## 4. 每源限速与重试
@@ -72,7 +71,8 @@ CLI → core.Search(ctx, ...)
 ## 6. 本地文献库检索数据流（library search）
 
 ```
-core.LibrarySearch(ctx, query, mode)：
-  模式 keyword：SQLite FTS5（trigram 中文分词）→ 词法命中
+litkit lib search <keyword>：
+  模式 keyword：SQLite LIKE（标题/摘要/作者姓名），
+               %/_/\ 转义为字面量，作者经 json_each 匹配 family/given
   远程检索保持 keyword（FR-SEARCH-07）
 ```

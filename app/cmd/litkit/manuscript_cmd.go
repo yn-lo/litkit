@@ -104,7 +104,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 	cmd.Flags().StringP("style", "s", "", "引用样式（zh: gb7714-2025；en: apa / ieee）")
 	cmd.Flags().Bool("preview", false, "额外生成 preview 版本 md（与正常版并存）：内联自描述标记 [@doi:{DOI} — 标题]/[@标题]")
 	cmd.Flags().Bool("docx", false, "生成 Word（需 Pandoc）")
-	cmd.Flags().StringP("output-dir", "o", "", "输出目录（默认 WORK_DIR）")
+	cmd.Flags().StringP("output-dir", "o", "", "输出目录（默认 WORK_DIR/outputs）")
 	return cmd
 }
 

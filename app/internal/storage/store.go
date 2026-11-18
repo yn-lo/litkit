@@ -173,16 +173,41 @@ func (s *Store) ensureColumns() error {
 	return nil
 }
 
-// dedupKey 生成入库去重键：DOI > 归一化标题 > paper_id 三级，命中同一键视为同一篇论文。
-// 与检索层 dedupPapers 保持一致（DOI > title > ID），避免两层去重行为分叉。
+// dedupKey 生成入库去重键：DOI > title+authors > paper_id 三级，命中同一键视为同一篇论文。
+// 无 DOI 时把第一作者纳入键，避免「Editorial」这类通用标题把不同文献合并覆盖（FR-CACHE-02）。
 func dedupKey(p model.Paper) string {
 	if doi := strings.ToLower(strings.TrimSpace(p.DOI)); doi != "" {
 		return "doi:" + doi
 	}
 	if title := textutil.NormalizeTitle(p.Title); title != "" {
+		if sig := authorSignature(p.Authors); sig != "" {
+			return "title:" + title + "|" + sig
+		}
 		return "title:" + title
 	}
 	return "id:" + strings.ToLower(strings.TrimSpace(p.ID))
+}
+
+// authorSignature 返回第一作者的归一化签名（Family+Given，忽略大小写与空白）。
+func authorSignature(as []model.Author) string {
+	if len(as) == 0 {
+		return ""
+	}
+	return strings.ToLower(strings.Join(strings.Fields(as[0].Family+" "+as[0].Given), ""))
+}
+
+// authorsCompatible 判断两条记录的作者是否可视为同一文献：
+// 任一方无作者时保持旧行为（允许补齐元数据），双方都有作者时必须一致。
+func authorsCompatible(existingJSON []byte, incoming []model.Author) bool {
+	if len(existingJSON) == 0 {
+		return true
+	}
+	var existing []model.Author
+	if err := json.Unmarshal(existingJSON, &existing); err != nil {
+		return true
+	}
+	es, is := authorSignature(existing), authorSignature(incoming)
+	return es == "" || is == "" || es == is
 }
 
 // findPaper 在写事务内按强标识、归一化标题回退匹配；冲突 DOI 不合并。
@@ -192,7 +217,7 @@ func findPaper(tx *sql.Tx, p model.Paper) (id int64, citeKey string, err error) 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return id, citeKey, err
 	}
-	rows, err := tx.Query("SELECT id, cite_key, title, paper_id FROM papers WHERE ? = '' OR doi = '' OR doi = ?", p.DOI, p.DOI)
+	rows, err := tx.Query("SELECT id, cite_key, title, paper_id, authors FROM papers WHERE ? = '' OR doi = '' OR doi = ?", p.DOI, p.DOI)
 	if err != nil {
 		return 0, "", err
 	}
@@ -202,13 +227,14 @@ func findPaper(tx *sql.Tx, p model.Paper) (id int64, citeKey string, err error) 
 	for rows.Next() {
 		var candidateID int64
 		var candidateKey, candidateTitle, paperID string
-		if err := rows.Scan(&candidateID, &candidateKey, &candidateTitle, &paperID); err != nil {
+		var candidateAuthors []byte
+		if err := rows.Scan(&candidateID, &candidateKey, &candidateTitle, &paperID, &candidateAuthors); err != nil {
 			return 0, "", err
 		}
-		if p.ID != "" && p.ID == paperID {
+		if p.ID != "" && p.ID == paperID && authorsCompatible(candidateAuthors, p.Authors) {
 			return candidateID, candidateKey, nil
 		}
-		if title != "" && title == textutil.NormalizeTitle(candidateTitle) {
+		if title != "" && title == textutil.NormalizeTitle(candidateTitle) && authorsCompatible(candidateAuthors, p.Authors) {
 			id, citeKey = candidateID, candidateKey
 			matches++
 		}
@@ -359,7 +385,9 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 			return nil, err
 		}
 		if len(authorsJSON) > 0 {
-			_ = json.Unmarshal(authorsJSON, &p.Authors)
+			if err := json.Unmarshal(authorsJSON, &p.Authors); err != nil {
+				return nil, fmt.Errorf("storage scan authors: %w", err)
+			}
 		}
 		out = append(out, p)
 	}
@@ -367,8 +395,21 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 }
 
 // GetByCiteKey 按 3 字母引用标识取论文；未命中返回 (nil, nil)。
+// 先精确匹配，再大小写不敏感回退（cite_key 由大小写混合字母生成）。
 func (s *Store) GetByCiteKey(citeKey string) (*model.Paper, error) {
-	rows, err := s.db.Query("SELECT "+paperCols+" FROM papers WHERE cite_key = ? LIMIT 1", citeKey)
+	p, err := s.getByCiteKey(citeKey, false)
+	if err != nil || p != nil {
+		return p, err
+	}
+	return s.getByCiteKey(citeKey, true)
+}
+
+func (s *Store) getByCiteKey(citeKey string, nocase bool) (*model.Paper, error) {
+	q := "SELECT " + paperCols + " FROM papers WHERE cite_key = ? LIMIT 1"
+	if nocase {
+		q = "SELECT " + paperCols + " FROM papers WHERE cite_key = ? COLLATE NOCASE LIMIT 1"
+	}
+	rows, err := s.db.Query(q, citeKey)
 	if err != nil {
 		return nil, fmt.Errorf("storage get by cite key: %w", err)
 	}
@@ -420,9 +461,18 @@ func (s *Store) GetByCiteKeys(keys []string) (found []model.Paper, miss []string
 	for _, k := range unique {
 		if p, ok := byKey[k]; ok {
 			found = append(found, p)
-		} else {
-			miss = append(miss, k)
+			continue
 		}
+		// 大小写不敏感回退（与 GetByCiteKey 一致）
+		p, perr := s.GetByCiteKey(k)
+		if perr != nil {
+			return nil, nil, perr
+		}
+		if p != nil {
+			found = append(found, *p)
+			continue
+		}
+		miss = append(miss, k)
 	}
 	return found, miss, nil
 }
@@ -454,18 +504,33 @@ func (s *Store) GetFulltext(citeKey string) (string, error) {
 	return text, nil
 }
 
-// SetFulltext 按 cite_key 写入全文缓存（覆盖旧值；论文不存在时静默忽略）。
+// SetFulltext 按 cite_key 写入全文缓存（覆盖旧值）。
+// 论文不存在（如并发删除）时返回错误，避免调用方误以为已缓存。
 func (s *Store) SetFulltext(citeKey, text string) error {
-	if _, err := s.db.Exec("UPDATE papers SET fulltext = ? WHERE cite_key = ?", text, citeKey); err != nil {
+	res, err := s.db.Exec("UPDATE papers SET fulltext = ? WHERE cite_key = ?", text, citeKey)
+	if err != nil {
 		return fmt.Errorf("storage set fulltext: %w", err)
 	}
-	return nil
+	return requireAffected(res, "set fulltext", citeKey)
 }
 
-// SetPDFURL 按 cite_key 写入可用的 PDF 直链（论文不存在时静默忽略）。
+// SetPDFURL 按 cite_key 写入可用的 PDF 直链；论文不存在时返回错误。
 func (s *Store) SetPDFURL(citeKey, pdfURL string) error {
-	if _, err := s.db.Exec("UPDATE papers SET pdf_url = ? WHERE cite_key = ?", pdfURL, citeKey); err != nil {
+	res, err := s.db.Exec("UPDATE papers SET pdf_url = ? WHERE cite_key = ?", pdfURL, citeKey)
+	if err != nil {
 		return fmt.Errorf("storage set pdf url: %w", err)
+	}
+	return requireAffected(res, "set pdf url", citeKey)
+}
+
+// requireAffected 校验 UPDATE 至少命中一行（论文可能已被并发删除）。
+func requireAffected(res sql.Result, op, citeKey string) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("storage %s rows: %w", op, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("storage %s: 论文 %q 不存在", op, citeKey)
 	}
 	return nil
 }
@@ -501,15 +566,20 @@ func (s *Store) ListPapers(source, orderBy string, limit, offset int) ([]model.P
 	return scanPapers(rows)
 }
 
-// SearchLocal 本地 keyword 检索（FR-LIB-04）：标题/作者/摘要 LIKE 匹配。
+// SearchLocal 本地 keyword 检索（FR-LIB-04）：标题/摘要/作者姓名 LIKE 匹配。
+// LIKE 通配符会被转义（%/_ 按字面量），作者按 JSON 字段值匹配而非原始 JSON 文本。
 func (s *Store) SearchLocal(keyword string, limit, offset int) ([]model.Paper, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	pattern := "%" + keyword + "%"
+	pattern := "%" + escapeLike(keyword) + "%"
 	rows, err := s.db.Query(`SELECT `+paperCols+` FROM papers
-		WHERE title LIKE ? OR authors LIKE ? OR abstract LIKE ?
-		ORDER BY year DESC, id DESC LIMIT ? OFFSET ?`, pattern, pattern, pattern, limit, offset)
+		WHERE title LIKE ? ESCAPE '\' OR abstract LIKE ? ESCAPE '\'
+		   OR EXISTS (SELECT 1 FROM json_each(papers.authors)
+		              WHERE json_extract(value, '$.family') LIKE ? ESCAPE '\'
+		                 OR json_extract(value, '$.given') LIKE ? ESCAPE '\')
+		ORDER BY year DESC, id DESC LIMIT ? OFFSET ?`,
+		pattern, pattern, pattern, pattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("storage search local: %w", err)
 	}
@@ -517,32 +587,55 @@ func (s *Store) SearchLocal(keyword string, limit, offset int) ([]model.Paper, e
 	return scanPapers(rows)
 }
 
+// escapeLike 转义 SQL LIKE 通配符，使关键词按字面量匹配。
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
 // Forget 删除一篇论文；返回是否实际删除（FR-LIB-02 删）。
+// 先精确匹配，未命中再按大小写不敏感删除。
 func (s *Store) Forget(citeKey string) (bool, error) {
-	res, err := s.db.Exec("DELETE FROM papers WHERE cite_key = ?", citeKey)
+	n, err := s.deleteByCiteKey(citeKey, false)
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = s.deleteByCiteKey(citeKey, true)
+	return n > 0, err
+}
+
+func (s *Store) deleteByCiteKey(citeKey string, nocase bool) (int64, error) {
+	q := "DELETE FROM papers WHERE cite_key = ?"
+	if nocase {
+		q = "DELETE FROM papers WHERE cite_key = ? COLLATE NOCASE"
+	}
+	res, err := s.db.Exec(q, citeKey)
 	if err != nil {
-		return false, fmt.Errorf("storage forget paper: %w", err)
+		return 0, fmt.Errorf("storage forget paper: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("storage forget rows: %w", err)
+		return 0, fmt.Errorf("storage forget rows: %w", err)
 	}
-	return n > 0, nil
+	return n, nil
 }
 
 // Stats 返回文献库统计（lib stats）。
+// 计数在只读事务内完成，避免并发写入时各字段互相矛盾。
 func (s *Store) Stats() (Stats, error) {
 	st := Stats{BySource: map[string]int{}, DBPath: s.path}
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM papers").Scan(&st.Total); err != nil {
-		return st, fmt.Errorf("storage stats total: %w", err)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return st, fmt.Errorf("storage stats begin: %w", err)
 	}
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM papers WHERE abstract != ''").Scan(&st.WithAbstract); err != nil {
-		return st, fmt.Errorf("storage stats abstract: %w", err)
+	defer func() { _ = tx.Rollback() }()
+	if err := tx.QueryRow(`SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN TRIM(abstract) <> '' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN TRIM(doi) <> '' THEN 1 ELSE 0 END), 0)
+		FROM papers`).Scan(&st.Total, &st.WithAbstract, &st.WithDOI); err != nil {
+		return st, fmt.Errorf("storage stats: %w", err)
 	}
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM papers WHERE doi != ''").Scan(&st.WithDOI); err != nil {
-		return st, fmt.Errorf("storage stats doi: %w", err)
-	}
-	rows, err := s.db.Query("SELECT source, COUNT(*) FROM papers GROUP BY source ORDER BY COUNT(*) DESC")
+	rows, err := tx.Query("SELECT source, COUNT(*) FROM papers GROUP BY source ORDER BY COUNT(*) DESC")
 	if err != nil {
 		return st, fmt.Errorf("storage stats by_source: %w", err)
 	}
@@ -555,7 +648,10 @@ func (s *Store) Stats() (Stats, error) {
 		}
 		st.BySource[src] = n
 	}
-	return st, rows.Err()
+	if err := rows.Err(); err != nil {
+		return st, err
+	}
+	return st, tx.Commit()
 }
 
 // AddRef 记录一条引用标记（FR-LIB-07）。

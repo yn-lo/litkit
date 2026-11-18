@@ -22,12 +22,12 @@ func TestFilterFixRules(t *testing.T) {
 		t.Fatal("FixableRules 不应为空")
 	}
 	// --rule 仅保留指定规则
-	got := filterFixRules(rules, []string{"R3.1"}, nil)
+	got := filterFixRules(rules, []string{"R3.1"}, nil, nil)
 	if len(got) != 1 || got[0].ID != "R3.1" {
 		t.Errorf("--rule R3.1 应仅保留 R3.1，got %+v", got)
 	}
 	// --skip 排除指定规则
-	got = filterFixRules(rules, nil, []string{"R3.1"})
+	got = filterFixRules(rules, nil, []string{"R3.1"}, nil)
 	for _, r := range got {
 		if r.ID == "R3.1" {
 			t.Error("--skip R3.1 应排除 R3.1")
@@ -55,6 +55,32 @@ func TestFixCmd_rewritesFile(t *testing.T) {
 		if !strings.Contains(string(got), want) {
 			t.Errorf("文件应含 %q，got %q", want, string(got))
 		}
+	}
+}
+
+// TestFixCmd_skipsRulesNotMatchingSpecLang 英文规范下不得执行 zh 专属规则（R3.3 会把
+// 英文数字范围改成全角波浪线形式）。
+func TestFixCmd_skipsRulesNotMatchingSpecLang(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := lint.InitPaperType(dir, lint.PaperTypeEmpirical, lint.LangEN, false); err != nil {
+		t.Fatalf("InitPaperType: %v", err)
+	}
+	p := filepath.Join(dir, "en.md")
+	content := "# Title\n\nIncluded 10-16% of patients.\n"
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cmd := newFixCmd(&config.Config{WorkDir: dir})
+	cmd.SetArgs([]string{p})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("fix 命令执行失败: %v", err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(got), "～") || string(got) != content {
+		t.Errorf("英文规范不应执行 R3.3，got %q", string(got))
 	}
 }
 

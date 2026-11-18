@@ -243,7 +243,12 @@ func (f *MetadataFetcher) fetchPMID(ctx context.Context, pmid string) (*model.Pa
 	if err := json.Unmarshal(doc, &d); err != nil {
 		return nil, fmt.Errorf("metadata pmid: 解析 esummary 记录: %w", err)
 	}
-	return esummaryToPaper(d, pmid), nil
+	p := esummaryToPaper(d, pmid)
+	// NCBI 对无效 PMID 返回 200 + error 字段，解出的标题为空；按未命中处理。
+	if strings.TrimSpace(p.Title) == "" {
+		return nil, nil
+	}
+	return p, nil
 }
 
 func (f *MetadataFetcher) fetchArxiv(ctx context.Context, id string) (*model.Paper, error) {

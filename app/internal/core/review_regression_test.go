@@ -28,7 +28,9 @@ func TestRound2_ScoreCacheAfterAbstractUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	scorer := &mockScorer{modelID: "mock", promptVersion: "v1", score: 0.9}
-	e := &ScorerEngine{store: st, scorers: []Scorer{scorer}, config: DefaultScoringConfig(), promptVersion: "v1"}
+	cfg := DefaultScoringConfig()
+	cfg.MinModels = 1 // 本用例只验证缓存失效，单模型即可出分
+	e := &ScorerEngine{store: st, scorers: []Scorer{scorer}, config: cfg, weights: map[string]float64{"mock": 1}, promptVersion: "v1"}
 	if _, err := e.Score(context.Background(), key, "sentence", "Claim", p.Abstract); err != nil {
 		t.Fatal(err)
 	}

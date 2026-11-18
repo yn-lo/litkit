@@ -52,6 +52,7 @@ type ManualPaperInput struct {
 	Publisher   string         `json:"publisher"`
 	City        string         `json:"city"`
 	Institution string         `json:"institution"`
+	AccessDate  string         `json:"accessDate"` // 网页访问日期（GB/T [EB/OL] 用）
 }
 
 // AddManualPaper 校验并构造手动录入的文献元数据（信任边界输入校验）。
@@ -91,6 +92,7 @@ func AddManualPaper(in ManualPaperInput) (model.Paper, error) {
 		Publisher:   in.Publisher,
 		City:        in.City,
 		Institution: in.Institution,
+		AccessDate:  strings.TrimSpace(in.AccessDate),
 		Source:      SourceManual,
 	}
 	p.ID = p.ComputeID()
