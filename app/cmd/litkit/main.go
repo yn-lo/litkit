@@ -67,7 +67,7 @@ func newRootCmd(d *deps) *cobra.Command {
 	root.AddCommand(
 		newInitCmd(d.cfg),
 		newSearchCmd(d.searcher, d.registry, d.cfg),
-		newSourcesCmd(d.registry),
+		newSourcesCmd(d.registry, d.cfg),
 		newMetadataCmd(d.fetcher),
 		newFetchCmd(d.store, d.fulltext),
 		newManuscriptCmd(d.store, d.fetcher, d.cfg),

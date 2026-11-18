@@ -55,6 +55,7 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 | `LITKIT_PROXY_URL`                                 | 可选，显式代理（http/https/socks5）；设置后全部外呼（检索/元数据/全文/LLM 评分）走代理 |
 | `LITKIT_SEMANTIC_SCHOLAR_API_KEY`                  | 可选，提升 Semantic Scholar 限速                        |
 | `LITKIT_DEFAULT_MAX_RESULTS` / `LITKIT_DEFAULT_RECENT_YEARS` / `LITKIT_DEFAULT_SEARCH_MODE` / `LITKIT_SEARCH_TIMEOUT_MS` | 可选，检索默认值：每源条数（5）/ 最近年数（3）/ 检索等级（tiab）/ 检索超时 |
+| `LITKIT_SEARCH_SOURCES` / `LITKIT_SEARCH_EXCLUDE_SOURCES` | 可选，默认检索源白名单 / 排除源（逗号分隔；显式 `-s` 时覆盖，未知源告警后忽略） |
 | `LITKIT_UNPAYWALL_EMAIL`                           | 可选，Unpaywall 合规邮箱（不设则跳过 OA 通道）          |
 | `LITKIT_SCI_HUB_URL` / `LITKIT_FETCH_DOWNLOAD_DIR` | 可选，Sci-Hub 镜像（默认 sci-hub.se）/ PDF 落盘目录（默认 `WORK_DIR/downloads`） |
 | `LITKIT_LLM_API_KEY` / `LITKIT_LLM_BASE_URL` / `LITKIT_LLM_TIMEOUT_MS` | 可选，LLM 引用评分凭据、endpoint 与单次超时（默认 30000ms）。全局回落；推荐在 `.litkit/verifier_models.json` 按模型 `api_key`/`base_url` 配置（JSON 优先），也支持 `LITKIT_LLM_API_KEY_<模型ID大写>` 按模型命名约定回落 |

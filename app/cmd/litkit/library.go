@@ -31,9 +31,18 @@ type libPapersOutputFull struct {
 	Papers []model.Paper `json:"papers"`
 }
 
-// errNoStore 文献库不可用时 lib 子命令的公共错误。
-// 原因可能是未设置 LITKIT_WORK_DIR 或库初始化失败。
+// errNoStore 文献库不可用时的公共错误（稳定哨兵，便于 errors.Is 判断）。
 var errNoStore = errors.New("本地文献库不可用：请确认已设置 LITKIT_WORK_DIR（可用 litkit init 初始化）")
+
+// noStoreError 在公共错误上补充当前目录与 .env 查找范围：
+// 子进程/后台任务（如 Start-Job）不继承 cwd 时，用户需要看到实际工作目录才能定位。
+func noStoreError() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "<未知>"
+	}
+	return fmt.Errorf("%w（当前目录：%s；.env 自当前目录向上查找）", errNoStore, cwd)
+}
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
 func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
@@ -75,7 +84,7 @@ func newLibAddCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			doi, _ := cmd.Flags().GetString("doi")
 			hardAbstract, _ := cmd.Flags().GetBool("require-abstract")
@@ -196,7 +205,7 @@ func newLibGetCmd(st *storage.Store) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			found, miss, err := st.GetByCiteKeys(args)
 			if err != nil {
@@ -213,7 +222,7 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 		Short: "列出库内论文（默认按年份倒序，精简视图）",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			source, _ := cmd.Flags().GetString("source")
 			sortBy, _ := cmd.Flags().GetString("sort")
@@ -245,7 +254,7 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			limit, _ := cmd.Flags().GetInt("limit")
 			offset, _ := cmd.Flags().GetInt("offset")
@@ -274,7 +283,7 @@ func newLibRmCmd(st *storage.Store) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			removed, err := st.Forget(args[0])
 			if err != nil {
@@ -294,7 +303,7 @@ func newLibStatsCmd(st *storage.Store) *cobra.Command {
 		Short: "文献库统计",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			s, err := st.Stats()
 			if err != nil {
@@ -311,7 +320,7 @@ func newLibPathCmd(st *storage.Store) *cobra.Command {
 		Short: "打印文献库文件路径",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			return printJSON(struct {
 				Path string `json:"path"`

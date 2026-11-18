@@ -62,6 +62,68 @@ func hasNetworkError(errs []model.SourceError) bool {
 	return false
 }
 
+// resolveSearchSources 计算本次检索实际使用的源集合。
+//
+// 显式 -s（explicit 非空）完全覆盖 .env 配置；否则从白名单（未设=全部注册源）
+// 中减去排除列表。warnings 为 .env 中未注册的源名（调用方输出到 stderr）。
+func resolveSearchSources(explicit []string, cfg *config.Config, registered []string) (names, warnings []string) {
+	if len(explicit) > 0 {
+		return normalizeSources(explicit), nil
+	}
+	known := make(map[string]struct{}, len(registered))
+	for _, n := range registered {
+		known[n] = struct{}{}
+	}
+	base := cfg.SearchSources
+	if len(base) == 0 {
+		base = registered
+	} else {
+		kept := make([]string, 0, len(base))
+		for _, n := range base {
+			if _, ok := known[n]; ok {
+				kept = append(kept, n)
+			} else {
+				warnings = append(warnings, fmt.Sprintf("LITKIT_SEARCH_SOURCES 中的未知源 %q 已忽略（可用源见 litkit sources）", n))
+			}
+		}
+		base = kept
+	}
+	exclude := make(map[string]struct{}, len(cfg.SearchExcludeSources))
+	for _, n := range cfg.SearchExcludeSources {
+		if _, ok := known[n]; !ok {
+			warnings = append(warnings, fmt.Sprintf("LITKIT_SEARCH_EXCLUDE_SOURCES 中的未知源 %q 已忽略（可用源见 litkit sources）", n))
+			continue
+		}
+		exclude[n] = struct{}{}
+	}
+	out := make([]string, 0, len(base))
+	for _, n := range base {
+		if _, skip := exclude[n]; skip {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out, warnings
+}
+
+// normalizeSources trim、去空并按出现顺序去重（对齐 config.splitList 的源列表语义）。
+func normalizeSources(names []string) []string {
+	out := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
 // newSearchCmd 构造 `litkit search` 子命令。
 //
 // 默认输出 PaperSummary（FR-IFACE-04）；--full 输出完整 Paper。
@@ -128,20 +190,21 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 					}
 				}
 			}
-			if sourcesFlag != "" {
-				for _, s := range strings.Split(sourcesFlag, ",") {
-					s = strings.TrimSpace(s)
-					if s != "" {
-						opts.Sources = append(opts.Sources, s)
-					}
-				}
+			explicit := splitCSV(sourcesFlag)
+			names, warns := resolveSearchSources(explicit, cfg, reg.Names())
+			for _, w := range warns {
+				fmt.Fprintf(os.Stderr, "litkit: %s\n", w)
 			}
-			// 源名校验：未知源直接报错，避免静默忽略（返回空结果误导调用方）
-			for _, name := range opts.Sources {
+			// 显式 -s 的未知源直接报错（env 中的未知源已在上一步过滤并告警）
+			for _, name := range names {
 				if _, ok := reg.Get(name); !ok {
 					return &paramError{msg: fmt.Sprintf("search: 未知源 %q（可用源见 litkit sources）", name)}
 				}
 			}
+			if len(names) == 0 {
+				return fmt.Errorf("search: 无可检索源（检查 LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES，可用源见 litkit sources）")
+			}
+			opts.Sources = names
 
 			res, err := s.Search(cmd.Context(), query, opts)
 			if err != nil {

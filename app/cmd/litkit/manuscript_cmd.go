@@ -43,7 +43,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 				return err
 			}
 			if st == nil {
-				return errNoStore
+				return noStoreError()
 			}
 			lang, _ := cmd.Flags().GetString("lang")
 			styleFlag, _ := cmd.Flags().GetString("style")

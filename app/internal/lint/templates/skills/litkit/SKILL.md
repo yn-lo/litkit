@@ -41,6 +41,7 @@ litkit search "<英文关键词>" -s arxiv,pubmed -n 5
 - 检索词**必须英文**
 - 默认 tiab（题目+摘要+关键词）；不足时 `--mode full`
 - 默认最近 3 年；可 `--years 10` 或 `--since 2015`
+- 默认源由 `.env` 的 `LITKIT_SEARCH_SOURCES`（白名单）/ `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）收窄，`-s` 显式覆盖；`litkit sources` 可查看各源 `enabled`
 
 ### 文献库管理
 

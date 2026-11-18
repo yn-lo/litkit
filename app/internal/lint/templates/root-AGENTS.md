@@ -7,6 +7,8 @@
 
 - `litkit search "<英文关键词>"` — 跨源检索并自动入库
   - `-s arxiv,pubmed` 源过滤；`-n 5` 每源条数；`--mode tiab|full` 检索等级
+  - 默认源由 `.env` 的 `LITKIT_SEARCH_SOURCES`（白名单）/ `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）收窄，`-s` 显式覆盖
+- `litkit sources` — 查看已注册源及各源 `enabled`（是否参与默认检索）
 - `litkit lib list / search / rm / stats / path` — 文献库管理
 - `litkit verify manuscript/*.md --type <type> --lang <lang>` — 验证文稿格式
   - `--check citation,word_counts` 仅运行指定检查类别

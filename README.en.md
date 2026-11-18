@@ -63,6 +63,7 @@ All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`; disco
 | `LITKIT_PROXY_URL`                                 | Optional; explicit proxy (http/https/socks5); when set, all outbound calls (search / metadata / full text / LLM scoring) go through it |
 | `LITKIT_SEMANTIC_SCHOLAR_API_KEY`                  | Optional; raises Semantic Scholar rate limits                                         |
 | `LITKIT_DEFAULT_MAX_RESULTS` / `LITKIT_DEFAULT_RECENT_YEARS` / `LITKIT_DEFAULT_SEARCH_MODE` / `LITKIT_SEARCH_TIMEOUT_MS` | Optional; search defaults: per-source count (5) / recent years (3) / search mode (tiab) / search timeout |
+| `LITKIT_SEARCH_SOURCES` / `LITKIT_SEARCH_EXCLUDE_SOURCES` | Optional; default source allowlist / exclusions (comma-separated; overridden by explicit `-s`, unknown names warn and are ignored) |
 | `LITKIT_UNPAYWALL_EMAIL`                           | Optional; Unpaywall requires an email (OA channel is skipped without it)              |
 | `LITKIT_SCI_HUB_URL` / `LITKIT_FETCH_DOWNLOAD_DIR` | Optional; Sci-Hub mirror (default sci-hub.se) / PDF download directory (default `WORK_DIR/downloads`) |
 | `LITKIT_LLM_API_KEY` / `LITKIT_LLM_BASE_URL` / `LITKIT_LLM_TIMEOUT_MS` | Optional; LLM citation-scoring credentials, endpoint and per-call timeout (default 30000 ms). Global fallback; prefer per-model `api_key`/`base_url` in `.litkit/verifier_models.json` (JSON wins), and `LITKIT_LLM_API_KEY_<MODEL_ID_UPPERCASE>` per-model naming is also supported |

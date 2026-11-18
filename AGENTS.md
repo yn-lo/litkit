@@ -42,6 +42,7 @@ bash .harness/constraints/gate.sh     # Linux/macOS
 - **输出**：代码中严禁使用 emoji 提示
 - **测试目录**：如果要进行真实环境的测试，默认将.exe文件放在本项目workspace目录
 - 关键需求/节点使用TDD开发
+- app\internal\lint\templates\skills 和 app\internal\lint\templates\root-AGENTS.md 是为了方便使用者快速的了解工具的功能，所以每次有新功能或者更新的时候，要对这些文档进行更新，这些文档要保持精炼
 
 # Ponytail, lazy senior dev mode
 

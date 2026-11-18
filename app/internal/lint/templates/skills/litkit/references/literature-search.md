@@ -10,11 +10,22 @@ litkit search "<英文关键词>" [选项]
 
 | 选项 | 默认值 | 说明 |
 |---|---|---|
-| `-s, --sources` | `arxiv,pubmed` | 源过滤（逗号分隔） |
-| `-n, --num` | `5` | 每源检索条数 |
+| `-s, --sources` | 全部已注册源 | 源过滤（逗号分隔；默认源受 `.env` 白名单/排除控制） |
+| `-n, --max-results` | `5` | 每源检索条数 |
 | `--mode` | `tiab` | 检索等级：tiab（题目+摘要+关键词）/ full（全文） |
 | `--years` | `3` | 最近 N 年 |
 | `--since` | - | 起始年份（优先于 --years） |
+
+## 默认源配置
+
+`.env` 可收窄未显式 `-s` 时的检索范围（`-s` 一旦指定则完全覆盖）：
+
+```dotenv
+LITKIT_SEARCH_SOURCES=pubmed,openalex,semantic_scholar   # 白名单，留空=全部源
+LITKIT_SEARCH_EXCLUDE_SOURCES=crossref,doaj              # 排除源
+```
+
+未知源名会告警并忽略；过滤后无可用源则报错。`litkit sources` 的 `enabled` 反映该配置。
 
 ## 检索策略
 

@@ -28,6 +28,10 @@ const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-C
 	"LITKIT_DEFAULT_RECENT_YEARS=3\n" +
 	"# 默认检索等级：tiab（题目+摘要+关键词）| full（全文，FR-SEARCH-12）\n" +
 	"LITKIT_DEFAULT_SEARCH_MODE=tiab\n" +
+	"# 默认检索源白名单（逗号分隔；留空=全部源，可用源见 litkit sources）\n" +
+	"# LITKIT_SEARCH_SOURCES=\n" +
+	"# 默认排除源（逗号分隔；仅作用于未显式 -s 的检索）\n" +
+	"# LITKIT_SEARCH_EXCLUDE_SOURCES=\n" +
 	"# 可选：Semantic Scholar API key（配置后提速，避免共享池 429）\n" +
 	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n" +
 	"\n" +

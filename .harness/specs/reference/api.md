@@ -26,7 +26,7 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
-| `-s, --sources` | 逗号分隔源列表（`litkit sources` 查看） | 全部默认源 |
+| `-s, --sources` | 逗号分隔源列表（`litkit sources` 查看） | 全部默认源（受 `.env` 白名单/排除配置影响） |
 | `-n, --max-results` | 每源最大条数 | 5 |
 | `--mode` | 检索等级：`tiab`（题目+摘要+关键词）\| `full`（全文） | `tiab`（`LITKIT_DEFAULT_SEARCH_MODE`） |
 | `--years` | 最近 N 年；`0`=不限 | 3（`LITKIT_DEFAULT_RECENT_YEARS`） |
@@ -91,6 +91,9 @@ litkit sources
 ```
 
 输出：`{ sources: [{ name, searchable, hasAbstract, enabled }] }`
+
+`enabled` 表示该源是否参与未显式 `-s` 的默认检索，受 `.env` 的
+`LITKIT_SEARCH_SOURCES`（白名单）与 `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）控制。
 
 ```
 litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o output_dir]
@@ -252,6 +255,8 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
+| LITKIT_SEARCH_SOURCES | 可选 | 默认检索源白名单（逗号分隔；空=全部注册源）；显式 `-s` 时覆盖 |
+| LITKIT_SEARCH_EXCLUDE_SOURCES | 可选 | 默认排除源（逗号分隔）；仅作用于未显式 `-s` 的检索 |
 | LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
 | LITKIT_LLM_API_KEY | 引用评分必需（FR-LINT-08） | LLM 评分的全局 API key（回落值）。推荐直接在 .litkit/verifier_models.json 每模型 api_key/base_url 明文配置（工作目录副本勿提交 git），JSON 优先于 env |
 | LITKIT_LLM_BASE_URL | 可选 | 全局 LLM API base URL（回落值；JSON 每模型 base_url 优先） |

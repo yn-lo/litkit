@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -113,6 +114,81 @@ func TestDiscoverEnvFile_globalFallback(t *testing.T) {
 
 	if got := DiscoverEnvFile(); got != want {
 		t.Fatalf("应回落到全局配置：got %s want %s", got, want)
+	}
+}
+
+// TestLoad_relativeWorkDirAnchoredToEnvFile 覆盖 Start-Job / 子进程场景：
+// .env 被从其他 cwd 加载时，其中相对的 LITKIT_WORK_DIR 应锚定到 .env 所在目录，
+// 而不是静默落到进程 cwd（否则会新建空库）。
+func TestLoad_relativeWorkDirAnchoredToEnvFile(t *testing.T) {
+	unsetEnv(t, "LITKIT_WORK_DIR")
+	project := t.TempDir()
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, project, "LITKIT_WORK_DIR=.\n"))
+	t.Chdir(t.TempDir()) // 模拟子进程继承了别的 cwd
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WorkDir != project {
+		t.Fatalf("相对 WorkDir 应锚定到 .env 目录：got %s want %s", cfg.WorkDir, project)
+	}
+}
+
+// TestLoad_relativeWorkDirFromProcessEnvUsesCwd 进程环境变量中的相对值仍按 cwd 解析。
+func TestLoad_relativeWorkDirFromProcessEnvUsesCwd(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, cwd, "# 无配置项，仅确保加载的是文件而非全局配置\n"))
+	t.Setenv("LITKIT_WORK_DIR", "sub")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(cwd, "sub")
+	if cfg.WorkDir != want {
+		t.Fatalf("进程环境变量相对 WorkDir 应按 cwd 解析：got %s want %s", cfg.WorkDir, want)
+	}
+}
+
+// TestLoad_relativeWorkDirFromDiscoveredEnvAnchorsToRoot
+// 在项目子目录执行时，向上发现的 .env 里的 "." 应指向项目根，而非当前子目录。
+func TestLoad_relativeWorkDirFromDiscoveredEnvAnchorsToRoot(t *testing.T) {
+	unsetEnv(t, "LITKIT_WORK_DIR")
+	root := t.TempDir()
+	writeEnv(t, root, "LITKIT_WORK_DIR=.\n")
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o750); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+	t.Chdir(sub)
+	t.Setenv("LITKIT_ENV_FILE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WorkDir != root {
+		t.Fatalf("子目录执行应锚定项目根：got %s want %s", cfg.WorkDir, root)
+	}
+}
+
+// TestLoad_searchSourceLists 解析 .env 中的检索源白名单/排除列表：trim、去空、去重。
+func TestLoad_searchSourceLists(t *testing.T) {
+	unsetEnv(t, "LITKIT_SEARCH_SOURCES", "LITKIT_SEARCH_EXCLUDE_SOURCES")
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, t.TempDir(),
+		"LITKIT_SEARCH_SOURCES=pubmed, openalex, ,pubmed\nLITKIT_SEARCH_EXCLUDE_SOURCES=crossref, doaj\n"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := []string{"pubmed", "openalex"}; !slices.Equal(cfg.SearchSources, want) {
+		t.Errorf("SearchSources = %v, want %v", cfg.SearchSources, want)
+	}
+	if want := []string{"crossref", "doaj"}; !slices.Equal(cfg.SearchExcludeSources, want) {
+		t.Errorf("SearchExcludeSources = %v, want %v", cfg.SearchExcludeSources, want)
 	}
 }
 

@@ -5,6 +5,9 @@
 //
 //	LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env > 项目根 .env > 全局配置
 //
+// .env 中声明的相对 LITKIT_WORK_DIR 锚定到该 .env 所在目录（而非进程 cwd），
+// 避免从其他目录（如 Start-Job / 子进程）加载同一 .env 时静默落到错误目录的空库。
+//
 // 全局配置位于 <用户配置目录>/litkit/.env（Windows: %AppData%\litkit\.env），
 // 由 Windows 安装向导生成，供安装版在多项目间共享 LLM/检索凭据；
 // 项目级 .env 优先于全局配置，进程环境变量优先于两者。
@@ -37,14 +40,16 @@ const (
 type Config struct {
 	EnvFile               string // 实际加载的 .env 路径（空表示未加载文件）
 	WorkDir               string
-	Lang                  string // 默认 zh（FR-CONFIG-04）
-	HTTPTimeoutMS         int    // 默认 15000
-	HTTPRetries           int    // 默认 2
-	DefaultMaxResults     int    // 每源默认检索条数，默认 5
-	RecentYears           int    // 默认检索时间范围（最近 N 年），默认 3
-	SearchMode            string // 默认检索等级，tiab|full，默认 tiab
-	SearchTimeoutMS       int    // 整体检索超时（ms），默认 60000
-	ProxyURL              string // 显式代理（http/https/socks5）；空=直连并尊重标准 HTTPS_PROXY 环境变量
+	Lang                  string   // 默认 zh（FR-CONFIG-04）
+	HTTPTimeoutMS         int      // 默认 15000
+	HTTPRetries           int      // 默认 2
+	DefaultMaxResults     int      // 每源默认检索条数，默认 5
+	RecentYears           int      // 默认检索时间范围（最近 N 年），默认 3
+	SearchMode            string   // 默认检索等级，tiab|full，默认 tiab
+	SearchSources         []string // 默认检索源白名单（空=全部注册源）
+	SearchExcludeSources  []string // 默认排除源（仅作用于未显式 -s 的检索）
+	SearchTimeoutMS       int      // 整体检索超时（ms），默认 60000
+	ProxyURL              string   // 显式代理（http/https/socks5）；空=直连并尊重标准 HTTPS_PROXY 环境变量
 	SemanticScholarAPIKey string
 	IEEEAPIKey            string
 	ACMAPIKey             string
@@ -129,7 +134,8 @@ func discoverEnvFileFrom(start string) string {
 
 // loadFrom 加载全局与项目级 .env（项目级优先，进程环境变量最高优先）并填充 Config。
 func loadFrom(globalFile, projectFile string) (*Config, error) {
-	if err := loadEnvFiles(globalFile, projectFile); err != nil {
+	workDirFile, err := loadEnvFiles(globalFile, projectFile)
+	if err != nil {
 		return nil, err
 	}
 	envFile := projectFile
@@ -138,13 +144,15 @@ func loadFrom(globalFile, projectFile string) (*Config, error) {
 	}
 	cfg := &Config{
 		EnvFile:               envFile,
-		WorkDir:               os.Getenv("LITKIT_WORK_DIR"),
+		WorkDir:               resolveWorkDir(os.Getenv("LITKIT_WORK_DIR"), workDirFile),
 		Lang:                  getenvDefault("LITKIT_LANG", DefaultLang),
 		HTTPTimeoutMS:         getenvInt("LITKIT_HTTP_TIMEOUT_MS", DefaultHTTPTimeoutMS),
 		HTTPRetries:           getenvInt("LITKIT_HTTP_RETRIES", DefaultHTTPRetries),
 		DefaultMaxResults:     getenvInt("LITKIT_DEFAULT_MAX_RESULTS", DefaultMaxResults),
 		RecentYears:           getenvInt("LITKIT_DEFAULT_RECENT_YEARS", DefaultRecentYears),
 		SearchMode:            getenvDefault("LITKIT_DEFAULT_SEARCH_MODE", DefaultSearchMode),
+		SearchSources:         splitList(os.Getenv("LITKIT_SEARCH_SOURCES")),
+		SearchExcludeSources:  splitList(os.Getenv("LITKIT_SEARCH_EXCLUDE_SOURCES")),
 		SearchTimeoutMS:       getenvInt("LITKIT_SEARCH_TIMEOUT_MS", DefaultSearchTimeoutMS),
 		ProxyURL:              os.Getenv("LITKIT_PROXY_URL"),
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
@@ -170,12 +178,15 @@ func loadFrom(globalFile, projectFile string) (*Config, error) {
 
 // loadEnvFiles 按给定顺序合并 .env（后者覆盖前者），但不覆盖已存在的进程环境变量。
 // 先全局、后项目，保证项目配置优先于全局配置。
-func loadEnvFiles(files ...string) error {
+// 返回为 LITKIT_WORK_DIR 提供值的 .env 路径；该值来自进程环境变量或各文件均未声明时为空。
+func loadEnvFiles(files ...string) (string, error) {
 	preset := make(map[string]struct{}, len(os.Environ()))
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		preset[k] = struct{}{}
 	}
+	_, workDirPreset := preset["LITKIT_WORK_DIR"]
+	workDirFile := ""
 	merged := map[string]string{}
 	for _, f := range files {
 		if f == "" {
@@ -183,10 +194,13 @@ func loadEnvFiles(files ...string) error {
 		}
 		kv, err := godotenv.Read(f)
 		if err != nil {
-			return fmt.Errorf("load .env %q: %w", f, err)
+			return "", fmt.Errorf("load .env %q: %w", f, err)
 		}
 		for k, v := range kv {
 			merged[k] = v
+		}
+		if _, ok := kv["LITKIT_WORK_DIR"]; ok && !workDirPreset {
+			workDirFile = f
 		}
 	}
 	for k, v := range merged {
@@ -194,10 +208,45 @@ func loadEnvFiles(files ...string) error {
 			continue
 		}
 		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("set env %s: %w", k, err)
+			return "", fmt.Errorf("set env %s: %w", k, err)
 		}
 	}
-	return nil
+	return workDirFile, nil
+}
+
+// resolveWorkDir 把 .env 声明的相对工作目录锚定到该 .env 所在目录；
+// 进程环境变量中的相对值仍按 cwd 解析（符合环境变量语义）。
+func resolveWorkDir(wd, envFile string) string {
+	if wd == "" || filepath.IsAbs(wd) {
+		return wd
+	}
+	base := getCwd()
+	if envFile != "" {
+		base = filepath.Dir(envFile)
+	}
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+	return filepath.Clean(filepath.Join(base, wd))
+}
+
+// splitList 解析逗号分隔列表：trim、去掉空项、按出现顺序去重。
+func splitList(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 func fileExists(p string) bool {
