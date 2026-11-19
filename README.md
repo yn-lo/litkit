@@ -44,7 +44,7 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 ## 环境变量
 
-全部配置经 `.env` 读取（`LITKIT_ENV_FILE` 可指定路径；发现顺序 `LITKIT_WORK_DIR/.env` > 当前目录向上溯源 > 全局配置 `%AppData%\litkit\.env`，进程环境变量优先），**无任何必需密钥**：
+全部配置经项目根 `.env` 读取（`LITKIT_ENV_FILE` 可指定路径；发现顺序 `LITKIT_WORK_DIR/.env` > 当前目录向上溯源，进程环境变量优先），**无任何必需密钥**。litkit 不读取全局 `.env`，每个项目通过 `litkit init` 生成并维护自己的 `.env`：
 
 | 变量                                                 | 说明                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------- |
@@ -70,11 +70,13 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 - 安装到当前用户目录 `%LocalAppData%\Programs\litkit`，无需管理员权限；
 - 自动加入当前用户 `PATH`，任意目录可直接执行 `litkit`；
-- 生成全局配置 `%AppData%\litkit\.env`（API key、代理等所有项目共享；项目内 `.env` 优先）；
+- 配置随项目：在项目目录执行 `litkit init` 生成项目级 `.env`（API key、代理等只作用于该项目；不创建全局配置）；
 - **升级**：下载新版本安装包覆盖安装即可，文献库与配置不受影响；
-- **卸载**：自动移除 `PATH` 条目，保留 `%AppData%\litkit` 下的个人配置。
+- **卸载**：自动移除 `PATH` 条目，不删除项目内已有的 `.env` 与文献库。
 
 安装后新开终端执行 `litkit --version` 验证。若项目目录里还留着旧的 `litkit.exe`，Windows 会优先执行当前目录中的文件——请删除旧副本，`where litkit` 应只剩安装目录一条。
+
+> 从 v1.1.0 及更早版本升级：旧版 `%AppData%\litkit\.env` 不再读取，请在项目目录重新执行 `litkit init`。项目根 `.env` 可能含密钥，请确认已加入项目 `.gitignore`。
 
 ### 其他平台
 
@@ -89,9 +91,8 @@ cd app && go build -o litkit ./cmd/litkit
 ## 快速开始
 
 ```powershell
-$env:LITKIT_WORK_DIR = "$HOME\litkit-workspace"   # Linux/macOS: export LITKIT_WORK_DIR=...
-
-litkit init                                            # 1. 交互式初始化（工作目录/类型/语言/期刊）；也可用 --type empirical --lang zh
+# 在项目根目录执行
+litkit init                                            # 1. 交互向导：工作目录/类型/语言/期刊；生成项目 .env + .litkit/（也可用 --type empirical --lang zh）
 litkit search "retrieval augmented generation" -n 3    # 2. 跨源检索（输出 JSON）
 litkit lib add --doi 10.5555/3295222.3295349           # 3. DOI 反查并入库
 litkit fetch <citeKey>                                 # 4. 取回全文（Unpaywall OA → Sci-Hub）

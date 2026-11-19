@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	// 隔离用户配置目录，避免读到本机 %AppData%\litkit\.env 影响断言
+	// 隔离用户配置目录，避免测试意外读写本机配置
 	_ = os.Setenv("AppData", dir)         // Windows
 	_ = os.Setenv("XDG_CONFIG_HOME", dir) // Linux
 	_ = os.Setenv("HOME", dir)            // macOS / Linux 回落
@@ -106,14 +106,45 @@ func TestDiscoverEnvFile_notFound(t *testing.T) {
 	}
 }
 
-func TestDiscoverEnvFile_globalFallback(t *testing.T) {
-	t.Chdir(t.TempDir()) // 无项目级 .env
+func TestDiscoverEnvFile_ignoresGlobalConfig(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd) // 无项目级 .env
 	t.Setenv("LITKIT_ENV_FILE", "")
 	t.Setenv("LITKIT_WORK_DIR", "")
-	want := writeGlobalEnv(t, "LITKIT_LANG=en\n")
+	// 即使存在旧版全局配置，也不得回退加载（配置仅作用于项目）
+	writeGlobalEnv(t, "LITKIT_LANG=en\n")
 
-	if got := DiscoverEnvFile(); got != want {
-		t.Fatalf("应回落到全局配置：got %s want %s", got, want)
+	if got := DiscoverEnvFile(); got != "" {
+		t.Fatalf("不应回落到全局配置，got %s", got)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Lang != DefaultLang {
+		t.Fatalf("全局配置不应生效：Lang=%q want %q", cfg.Lang, DefaultLang)
+	}
+	if cfg.EnvFile != "" {
+		t.Fatalf("无项目 .env 时 EnvFile 应为空，got %q", cfg.EnvFile)
+	}
+}
+
+// TestLoad_envWithBOM 兼容 Windows 记事本 / PowerShell 5 保存的 UTF-8 BOM。
+func TestLoad_envWithBOM(t *testing.T) {
+	unsetEnv(t, "LITKIT_LANG", "LITKIT_WORK_DIR")
+	dir := t.TempDir()
+	p := writeEnv(t, dir, "\uFEFFLITKIT_WORK_DIR=.\nLITKIT_LANG=en\n")
+	t.Setenv("LITKIT_ENV_FILE", p)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Lang != "en" {
+		t.Errorf("BOM 后首个键应正常解析：Lang=%q", cfg.Lang)
+	}
+	if cfg.WorkDir != dir {
+		t.Errorf("WorkDir 应为 .env 目录：got %s want %s", cfg.WorkDir, dir)
 	}
 }
 
@@ -139,7 +170,7 @@ func TestLoad_relativeWorkDirAnchoredToEnvFile(t *testing.T) {
 func TestLoad_relativeWorkDirFromProcessEnvUsesCwd(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
-	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, cwd, "# 无配置项，仅确保加载的是文件而非全局配置\n"))
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, cwd, "# 无配置项，仅确保加载的是项目文件\n"))
 	t.Setenv("LITKIT_WORK_DIR", "sub")
 
 	cfg, err := Load()
@@ -192,7 +223,7 @@ func TestLoad_searchSourceLists(t *testing.T) {
 	}
 }
 
-func TestLoad_projectEnvOverridesGlobal(t *testing.T) {
+func TestLoad_ignoresGlobalConfig(t *testing.T) {
 	unsetEnv(t, "LITKIT_LANG", "LITKIT_LLM_API_KEY")
 	writeGlobalEnv(t, "LITKIT_LANG=en\nLITKIT_LLM_API_KEY=sk-global\n")
 	project := writeEnv(t, t.TempDir(), "LITKIT_LANG=zh\n")
@@ -203,10 +234,10 @@ func TestLoad_projectEnvOverridesGlobal(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.Lang != "zh" {
-		t.Errorf("项目级 .env 应覆盖全局：got %q", cfg.Lang)
+		t.Errorf("项目级 .env 应生效：got %q", cfg.Lang)
 	}
-	if cfg.LLMAPIKey != "sk-global" {
-		t.Errorf("全局独有配置应生效：got %q", cfg.LLMAPIKey)
+	if cfg.LLMAPIKey != "" {
+		t.Errorf("全局 .env 不应被加载：got %q", cfg.LLMAPIKey)
 	}
 	if cfg.EnvFile != project {
 		t.Errorf("EnvFile 应记录项目级路径：got %s", cfg.EnvFile)
@@ -214,7 +245,6 @@ func TestLoad_projectEnvOverridesGlobal(t *testing.T) {
 }
 
 func TestLoad_processEnvOverridesFiles(t *testing.T) {
-	writeGlobalEnv(t, "LITKIT_LANG=en\n")
 	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, t.TempDir(), "LITKIT_LANG=zh\n"))
 	t.Setenv("LITKIT_LANG", "en")
 

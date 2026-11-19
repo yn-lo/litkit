@@ -4,7 +4,8 @@
 ;   ISCC.exe installer\litkit.iss /DAppVersion=0.1.0 /DAppArch=amd64
 ; 产物：app\dist\litkit-<version>-windows-<arch>-setup.exe
 ;
-; 特性：当前用户安装（免 UAC）、写入 HKCU PATH、同 AppId 覆盖升级、卸载保留用户配置。
+; 特性：当前用户安装（免 UAC）、写入 HKCU PATH、同 AppId 覆盖升级。
+; 配置随项目：首次使用在项目目录执行 litkit init 生成项目级 .env（不创建全局配置）。
 
 #define AppName "litkit"
 #define AppPublisher "litkit"
@@ -52,17 +53,11 @@ Name: "addtopath"; Description: "将 litkit 加入 PATH（当前用户）"; Grou
 
 [Files]
 Source: "{#SourceDir}\litkit-{#AppArch}.exe"; DestDir: "{app}"; DestName: "litkit.exe"; Flags: ignoreversion
-Source: "..\.env.example"; DestDir: "{userappdata}\litkit"; DestName: ".env"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Registry]
 ; {olddata} 追加到已有 PATH；NeedsAddPath 避免重复
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
   ValueData: "{olddata};{app}"; Tasks: addtopath; Check: NeedsAddPath('{app}')
-
-[Run]
-Filename: "{sys}\notepad.exe"; Parameters: """{userappdata}\litkit\.env"""; \
-  Description: "打开全局配置文件（API key / 代理，可稍后编辑）"; \
-  Flags: postinstall shellexec skipifsilent nowait unchecked
 
 [Code]
 const

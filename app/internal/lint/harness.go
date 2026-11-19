@@ -158,8 +158,9 @@ func writeTemplates(dir, base string, files []tmplFile, force bool) ([]string, e
 }
 
 // InitProjectInfra 生成项目基础设施（.litkit/ 下的共享文件，如 verifier_models.json）。
-func InitProjectInfra(dir string, force bool) ([]string, error) {
-	return writeTemplates(dir, LitkitDir, sharedFiles, force)
+// 已存在时永不覆盖：该文件可能含用户 API key，force 也不得清空。
+func InitProjectInfra(dir string) ([]string, error) {
+	return writeTemplates(dir, LitkitDir, sharedFiles, false)
 }
 
 // InitPaperType 生成论文类型目录（.litkit/<type-lang>/），复制对应模板 yaml。

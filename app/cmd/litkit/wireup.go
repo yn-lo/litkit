@@ -19,7 +19,7 @@ import (
 // errNoWorkDir 未设置 LITKIT_WORK_DIR 的公共错误。
 // 工作目录必须显式设置：所有需要文献库的命令（init/search/lib）拒绝执行，
 // 避免生成物污染任意 CWD（FR-LIB-03）。
-var errNoWorkDir = errors.New("未设置 LITKIT_WORK_DIR：请先设置工作目录（如 $env:LITKIT_WORK_DIR = \"<dir>\"）")
+var errNoWorkDir = errors.New("未设置 LITKIT_WORK_DIR：请在项目目录运行 litkit init 生成项目 .env，或设置环境变量（如 $env:LITKIT_WORK_DIR = \"<dir>\"）")
 
 // deps 持有一次 CLI 调用所需的全部依赖。
 type deps struct {

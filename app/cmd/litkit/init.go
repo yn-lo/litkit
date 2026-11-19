@@ -85,10 +85,12 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 			journal, _ := cmd.Flags().GetString("journal")
 
 			// --type 和 --lang 必须指定（非终端模式下报错，终端下进入交互向导）
+			wizardRan := false
 			if !cmd.Flags().Changed("type") || !cmd.Flags().Changed("lang") {
 				if isTerminal() {
 					paperType, lang, journal = runInitWizard(paperType, lang, journal,
 						cmd.Flags().Changed("type"), cmd.Flags().Changed("lang"), cmd.Flags().Changed("journal"))
+					wizardRan = true
 				} else {
 					return &paramError{msg: "init: --type 和 --lang 必须指定（非终端模式下不可省略）"}
 				}
@@ -102,7 +104,8 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 				return &paramError{msg: fmt.Sprintf("init: 无效 --lang %q（可选 zh|en）", lang)}
 			}
 
-			if !cmd.Flags().Changed("journal") && isTerminal() {
+			// 向导已问过期刊；仅在跳过向导时单独补问，避免重复提问
+			if !wizardRan && !cmd.Flags().Changed("journal") && isTerminal() {
 				fmt.Print("目标期刊（留空跳过）: ")
 				scanner := bufio.NewScanner(os.Stdin)
 				if scanner.Scan() {
@@ -113,7 +116,7 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 			return initWorkdir(cfg.WorkDir, force, paperType, lang, journal)
 		},
 	}
-	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
+	cmd.Flags().Bool("force", false, "覆盖已生成的模板文件（.env / verifier_models.json 除外，避免丢失密钥）")
 	cmd.Flags().String("type", lint.PaperTypeEmpirical, fmt.Sprintf("论文类型：%s", lint.PaperTypesLabel()))
 	cmd.Flags().String("lang", lint.LangZH, "撰写语言：zh | en")
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec，影响引用格式默认值）")
@@ -123,6 +126,11 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 // initWorkdir 两步式初始化。
 func initWorkdir(dir string, force bool, paperType, lang, journal string) error {
 	created := []string{}
+
+	// 允许初始化到尚不存在的目录（向导中输入新路径时常见）
+	if err := os.MkdirAll(dir, initDirPerm); err != nil {
+		return fmt.Errorf("init: 创建目录 %s 失败: %w", dir, err)
+	}
 
 	// 第一步：项目基础设施（幂等）
 	infraCreated, err := ensureProjectInfra(dir, force)
@@ -148,15 +156,21 @@ func initWorkdir(dir string, force bool, paperType, lang, journal string) error 
 func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	created := []string{}
 
-	// .env
-	if ok, err := writeIfAbsent(filepath.Join(dir, ".env"), envTemplate, force); err != nil {
+	// .env 永不覆盖（可能含用户 API key）：force 只刷新模板生成的其余文件
+	envPath := filepath.Join(dir, ".env")
+	if ok, err := writeIfAbsent(envPath, envTemplate, false); err != nil {
 		return nil, err
 	} else if ok {
 		created = append(created, ".env")
+	} else if added, err := ensureEnvWorkDir(envPath); err != nil {
+		return nil, err
+	} else if added {
+		// 已有 .env（可能是其他工具的配置）：只补 LITKIT_WORK_DIR，不覆盖原内容
+		created = append(created, ".env（补充 LITKIT_WORK_DIR）")
 	}
 
-	// .litkit/ 共享文件（verifier_models.json）
-	infraFiles, err := lint.InitProjectInfra(dir, force)
+	// .litkit/ 共享文件（verifier_models.json；已存在时永不覆盖，可能含 API key）
+	infraFiles, err := lint.InitProjectInfra(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +236,41 @@ func writeIfAbsent(path, content string, force bool) (bool, error) {
 	}
 	if err := os.WriteFile(path, []byte(content), initFilePerm); err != nil {
 		return false, fmt.Errorf("init: write %s: %w", path, err)
+	}
+	return true, nil
+}
+
+// ensureEnvWorkDir 在已有 .env 中补充缺失的 LITKIT_WORK_DIR（保留原内容）。
+// 项目可能已有其他工具的 .env；此时不能覆盖，但必须补上工作目录，
+// 否则 init 成功后续命令仍会报未设置 LITKIT_WORK_DIR。
+func ensureEnvWorkDir(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("init: read %s: %w", path, err)
+	}
+	for _, ln := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		t := strings.TrimPrefix(strings.TrimSpace(ln), "\uFEFF") // 兼容 UTF-8 BOM
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(t, "="); ok && strings.TrimSpace(k) == "LITKIT_WORK_DIR" {
+			if strings.TrimSpace(v) != "" {
+				return false, nil
+			}
+			// 空值视为缺失，继续补一行（后出现的键覆盖前者）
+		}
+	}
+	prefix := ""
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		prefix = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, initFilePerm)
+	if err != nil {
+		return false, fmt.Errorf("init: open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(prefix + "LITKIT_WORK_DIR=.\n"); err != nil {
+		return false, fmt.Errorf("init: append %s: %w", path, err)
 	}
 	return true, nil
 }

@@ -52,7 +52,7 @@ All sources provide abstracts (FR-SEARCH-03). Known upstream limitations: Semant
 
 ## Environment Variables
 
-All configuration is read from `.env` (customizable via `LITKIT_ENV_FILE`; discovery order is `LITKIT_WORK_DIR/.env` > upward search from the current directory > global `%AppData%\litkit\.env`, with process environment variables taking precedence); **no API key is required**:
+All configuration is read from the project-root `.env` (customizable via `LITKIT_ENV_FILE`; discovery order is `LITKIT_WORK_DIR/.env` > upward search from the current directory, with process environment variables taking precedence); **no API key is required**. litkit does not read a global `.env`: each project generates and maintains its own via `litkit init`:
 
 | Variable                                             | Description                                                                           |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -78,11 +78,13 @@ Download `litkit-<version>-windows-amd64-setup.exe` from [Releases](https://gith
 
 - Installs per-user to `%LocalAppData%\Programs\litkit` without administrator rights;
 - Adds `litkit` to the current user's `PATH`;
-- Creates a global config at `%AppData%\litkit\.env` (API keys, proxy) shared by all projects; a project-local `.env` takes precedence;
+- Configuration is per-project: run `litkit init` in a project to generate its `.env` (API keys, proxy); no global config is created;
 - **Upgrade**: run the newer installer over the old one; the library and config are preserved;
-- **Uninstall**: removes the `PATH` entry and keeps `%AppData%\litkit`.
+- **Uninstall**: removes the `PATH` entry and leaves existing project `.env` files and libraries untouched.
 
 Verify with `litkit --version` in a new terminal. Delete any old `litkit.exe` left inside project folders, since Windows prefers the current directory over `PATH`.
+
+> Upgrading from v1.1.0 or earlier: the old global `%AppData%\litkit\.env` is no longer read; run `litkit init` again inside each project. The project `.env` may contain secrets — make sure it is listed in the project `.gitignore`.
 
 ### Other platforms
 
@@ -97,9 +99,8 @@ cd app && go build -o litkit ./cmd/litkit
 ## Quick Start
 
 ```powershell
-$env:LITKIT_WORK_DIR = "$HOME\litkit-workspace"   # Linux/macOS: export LITKIT_WORK_DIR=...
-
-litkit init                                            # 1. Interactive init (work dir / type / language / journal); or pass --type empirical --lang zh
+# Run in the project root
+litkit init                                            # 1. Interactive wizard (work dir / type / language / journal); creates project .env + .litkit/
 litkit search "retrieval augmented generation" -n 3    # 2. Cross-source search (JSON out)
 litkit lib add --doi 10.5555/3295222.3295349           # 3. Resolve DOI and store
 litkit fetch <citeKey>                                 # 4. Fetch full text (Unpaywall → Sci-Hub)

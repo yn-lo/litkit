@@ -116,6 +116,121 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 	}
 }
 
+func TestInitWorkdir_createsMissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "papers", "new-project")
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); err != nil {
+		t.Errorf("应在新目录生成 .env：%v", err)
+	}
+}
+
+// TestInitWorkdir_appendsWorkDirToExistingEnv 项目已有 .env（其他工具）时，
+// 只补 LITKIT_WORK_DIR，不覆盖原内容，且重复 init 不重复追加。
+func TestInitWorkdir_appendsWorkDirToExistingEnv(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("DATABASE_URL=sqlite://local"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "DATABASE_URL=sqlite://local") {
+		t.Errorf("不应覆盖已有配置：%s", got)
+	}
+	if !strings.Contains(got, "\nLITKIT_WORK_DIR=.\n") {
+		t.Errorf("应追加 LITKIT_WORK_DIR：%q", got)
+	}
+	// 幂等：再次 init 不应重复追加
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir again: %v", err)
+	}
+	data, _ = os.ReadFile(envPath)
+	if n := strings.Count(string(data), "LITKIT_WORK_DIR="); n != 1 {
+		t.Errorf("LITKIT_WORK_DIR 应只出现一次，got %d：%q", n, string(data))
+	}
+}
+
+// TestInitWorkdir_forceKeepsEnv --force 不得覆盖已有 .env（可能含密钥）。
+func TestInitWorkdir_forceKeepsEnv(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	original := "LITKIT_WORK_DIR=.\nLITKIT_LLM_API_KEY=sk-secret\n"
+	if err := os.WriteFile(envPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	if err := initWorkdir(dir, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	data, _ := os.ReadFile(envPath)
+	if string(data) != original {
+		t.Errorf("--force 不应改动 .env：got %q", string(data))
+	}
+}
+
+// TestInitWorkdir_forceKeepsVerifierModels --force 不得清空可能含 API key 的 verifier_models.json。
+func TestInitWorkdir_forceKeepsVerifierModels(t *testing.T) {
+	dir := t.TempDir()
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	vmPath := filepath.Join(dir, ".litkit", "verifier_models.json")
+	custom := `{"models":[{"id":"x","enabled":true,"api_key":"sk-secret"}]}`
+	if err := os.WriteFile(vmPath, []byte(custom), 0o600); err != nil {
+		t.Fatalf("write verifier_models: %v", err)
+	}
+	if err := initWorkdir(dir, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir force: %v", err)
+	}
+	data, _ := os.ReadFile(vmPath)
+	if string(data) != custom {
+		t.Errorf("--force 不应覆盖 verifier_models.json：got %q", string(data))
+	}
+}
+
+// TestEnsureEnvWorkDir_bomKeyDetected BOM 后的 LITKIT_WORK_DIR 应被识别，不重复追加。
+func TestEnsureEnvWorkDir_bomKeyDetected(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("\uFEFFLITKIT_WORK_DIR=.\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	added, err := ensureEnvWorkDir(envPath)
+	if err != nil {
+		t.Fatalf("ensureEnvWorkDir: %v", err)
+	}
+	if added {
+		t.Error("BOM 后的工作目录应被识别，不应重复追加")
+	}
+}
+
+// TestEnsureEnvWorkDir_emptyValueTreatedAsMissing 空值的 LITKIT_WORK_DIR 视为未配置。
+func TestEnsureEnvWorkDir_emptyValueTreatedAsMissing(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("LITKIT_WORK_DIR=\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	added, err := ensureEnvWorkDir(envPath)
+	if err != nil {
+		t.Fatalf("ensureEnvWorkDir: %v", err)
+	}
+	if !added {
+		t.Fatal("空值应补写 LITKIT_WORK_DIR")
+	}
+	data, _ := os.ReadFile(envPath)
+	if !strings.HasSuffix(string(data), "\nLITKIT_WORK_DIR=.\n") {
+		t.Errorf("应追加非空工作目录：%q", string(data))
+	}
+}
+
 func TestInitWorkdir_typeReview(t *testing.T) {
 	dir := t.TempDir()
 	if err := initWorkdir(dir, false, lint.PaperTypeReview, lint.LangZH, ""); err != nil {
@@ -186,7 +301,11 @@ func TestInitWorkdir_noOverwriteWithoutForce(t *testing.T) {
 		t.Fatalf("再次 init: %v", err)
 	}
 	after, _ := os.ReadFile(envPath)
-	if string(after) != "# 用户自定义\n" {
-		t.Errorf("无 --force 不应覆盖用户 .env")
+	got := string(after)
+	if !strings.HasPrefix(got, "# 用户自定义\n") {
+		t.Errorf("无 --force 不应覆盖用户 .env：%q", got)
+	}
+	if !strings.Contains(got, "LITKIT_WORK_DIR=.\n") {
+		t.Errorf("应补充 LITKIT_WORK_DIR：%q", got)
 	}
 }

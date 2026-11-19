@@ -3,14 +3,13 @@
 // 所有密钥经本包统一读取，禁止硬编码（FR-CONFIG-01、NFR-SEC-01）。
 // .env 自动发现顺序（FR-CONFIG-02）：
 //
-//	LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env > 项目根 .env > 全局配置
+//	LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env > 项目根 .env
 //
+// 配置仅作用于项目：不加载全局配置（如 %AppData%\litkit\.env），
+// 每个项目通过 `litkit init` 生成自己的 .env。
 // .env 中声明的相对 LITKIT_WORK_DIR 锚定到该 .env 所在目录（而非进程 cwd），
 // 避免从其他目录（如 Start-Job / 子进程）加载同一 .env 时静默落到错误目录的空库。
-//
-// 全局配置位于 <用户配置目录>/litkit/.env（Windows: %AppData%\litkit\.env），
-// 由 Windows 安装向导生成，供安装版在多项目间共享 LLM/检索凭据；
-// 项目级 .env 优先于全局配置，进程环境变量优先于两者。
+// 进程环境变量优先于 .env。
 // .env.example 模板见仓库根（FR-CONFIG-03）。
 package config
 
@@ -61,42 +60,20 @@ type Config struct {
 	LLMTimeoutMS          int    // LLM 单次评分超时，默认 30000
 }
 
-// Load 发现并加载 .env，返回填充好的 Config。
+// Load 发现并加载项目级 .env，返回填充好的 Config。
 //
-// 已存在的进程环境变量优先于 .env 文件（godotenv.Load 不覆盖已设置变量）。
+// 已存在的进程环境变量优先于 .env 文件（不覆盖已设置变量）。
 func Load() (*Config, error) {
-	projectFile := discoverProjectEnvFile()
-	globalFile := GlobalEnvFile()
-	if globalFile == projectFile {
-		globalFile = ""
-	}
-	return loadFrom(globalFile, projectFile)
+	return loadFrom(discoverProjectEnvFile())
 }
 
-// DiscoverEnvFile 按 FR-CONFIG-02 优先级查找 .env 路径（项目级优先，其次全局配置）。
+// DiscoverEnvFile 按 FR-CONFIG-02 优先级查找项目级 .env 路径。
 // 未找到返回空串（不视为错误）。
 func DiscoverEnvFile() string {
-	if p := discoverProjectEnvFile(); p != "" {
-		return p
-	}
-	return GlobalEnvFile()
+	return discoverProjectEnvFile()
 }
 
-// GlobalEnvFile 返回全局配置文件路径（<用户配置目录>/litkit/.env），不存在时返回空串。
-// Windows 下即 %AppData%\litkit\.env，由安装向导创建。
-func GlobalEnvFile() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	p := filepath.Join(dir, "litkit", ".env")
-	if !fileExists(p) {
-		return ""
-	}
-	return p
-}
-
-// discoverProjectEnvFile 查询项目级 .env（不含全局配置）。
+// discoverProjectEnvFile 查找项目级 .env（不读取全局配置）。
 func discoverProjectEnvFile() string {
 	// 1. LITKIT_ENV_FILE 显式指定
 	if p := os.Getenv("LITKIT_ENV_FILE"); p != "" {
@@ -132,18 +109,14 @@ func discoverEnvFileFrom(start string) string {
 	return ""
 }
 
-// loadFrom 加载全局与项目级 .env（项目级优先，进程环境变量最高优先）并填充 Config。
-func loadFrom(globalFile, projectFile string) (*Config, error) {
-	workDirFile, err := loadEnvFiles(globalFile, projectFile)
+// loadFrom 加载项目级 .env（进程环境变量最高优先）并填充 Config。
+func loadFrom(projectFile string) (*Config, error) {
+	workDirFile, err := loadEnvFile(projectFile)
 	if err != nil {
 		return nil, err
 	}
-	envFile := projectFile
-	if envFile == "" {
-		envFile = globalFile
-	}
 	cfg := &Config{
-		EnvFile:               envFile,
+		EnvFile:               projectFile,
 		WorkDir:               resolveWorkDir(os.Getenv("LITKIT_WORK_DIR"), workDirFile),
 		Lang:                  getenvDefault("LITKIT_LANG", DefaultLang),
 		HTTPTimeoutMS:         getenvInt("LITKIT_HTTP_TIMEOUT_MS", DefaultHTTPTimeoutMS),
@@ -176,39 +149,32 @@ func loadFrom(globalFile, projectFile string) (*Config, error) {
 	return cfg, nil
 }
 
-// loadEnvFiles 按给定顺序合并 .env（后者覆盖前者），但不覆盖已存在的进程环境变量。
-// 先全局、后项目，保证项目配置优先于全局配置。
-// 返回为 LITKIT_WORK_DIR 提供值的 .env 路径；该值来自进程环境变量或各文件均未声明时为空。
-func loadEnvFiles(files ...string) (string, error) {
-	preset := make(map[string]struct{}, len(os.Environ()))
-	for _, kv := range os.Environ() {
-		k, _, _ := strings.Cut(kv, "=")
-		preset[k] = struct{}{}
+// loadEnvFile 加载项目级 .env，且不覆盖已存在的进程环境变量。
+// 返回为 LITKIT_WORK_DIR 提供值的 .env 路径；该值来自进程环境变量或文件未声明时为空。
+// 兼容 Windows 记事本 / PowerShell 5 保存的 UTF-8 BOM（否则首个键名会被污染）。
+func loadEnvFile(f string) (string, error) {
+	if f == "" {
+		return "", nil
 	}
-	_, workDirPreset := preset["LITKIT_WORK_DIR"]
+	data, err := os.ReadFile(f)
+	if err != nil {
+		return "", fmt.Errorf("load .env %q: %w", f, err)
+	}
+	text := strings.TrimPrefix(string(data), "\uFEFF")
+	kv, err := godotenv.Unmarshal(text)
+	if err != nil {
+		return "", fmt.Errorf("load .env %q: %w", f, err)
+	}
 	workDirFile := ""
-	merged := map[string]string{}
-	for _, f := range files {
-		if f == "" {
-			continue
-		}
-		kv, err := godotenv.Read(f)
-		if err != nil {
-			return "", fmt.Errorf("load .env %q: %w", f, err)
-		}
-		for k, v := range kv {
-			merged[k] = v
-		}
-		if _, ok := kv["LITKIT_WORK_DIR"]; ok && !workDirPreset {
-			workDirFile = f
-		}
-	}
-	for k, v := range merged {
-		if _, ok := preset[k]; ok {
+	for k, v := range kv {
+		if _, ok := os.LookupEnv(k); ok {
 			continue
 		}
 		if err := os.Setenv(k, v); err != nil {
 			return "", fmt.Errorf("set env %s: %w", k, err)
+		}
+		if k == "LITKIT_WORK_DIR" {
+			workDirFile = f
 		}
 	}
 	return workDirFile, nil
