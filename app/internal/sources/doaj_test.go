@@ -154,6 +154,16 @@ func TestDoajSource_buildURL(t *testing.T) {
 	if _, err := url.ParseQuery(strings.TrimPrefix(got[strings.LastIndex(got, "?")+1:], "")); err != nil {
 		t.Fatalf("query 部分应合法：%v", err)
 	}
+	// 年份字段为 bibjson.year；开区间 [N TO *] 会被 DOAJ 拒绝（HTTP 400）
+	since := d.buildURL("糖尿病", SearchOptions{MaxResults: 5, Since: 2020})
+	decoded, _ := url.PathUnescape(since)
+	if !strings.Contains(decoded, "bibjson.year:>=2020") || strings.Contains(decoded, "TO *") {
+		t.Errorf("Since 应使用 bibjson.year:>=N，got %q", since)
+	}
+	year := d.buildURL("糖尿病", SearchOptions{MaxResults: 5, Year: 2023})
+	if !strings.Contains(year, "bibjson.year:2023") {
+		t.Errorf("Year 应使用 bibjson.year:N，got %q", year)
+	}
 }
 
 func TestDoajSource_Search_endToEnd(t *testing.T) {

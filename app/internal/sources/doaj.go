@@ -81,9 +81,10 @@ func (d *DoajSource) Search(ctx context.Context, query string, opts SearchOption
 func (d *DoajSource) buildURL(query string, opts SearchOptions) string {
 	q := url.PathEscape(query)
 	if opts.Year != 0 {
-		q += url.PathEscape(" AND year:" + strconv.Itoa(opts.Year))
+		q += url.PathEscape(fmt.Sprintf(" AND bibjson.year:%d", opts.Year))
 	} else if opts.Since != 0 {
-		q += url.PathEscape(fmt.Sprintf(" AND year:[%d TO *]", opts.Since))
+		// 年份字段为 bibjson.year；开区间 `[N TO *]` 会被 DOAJ 拒绝（HTTP 400），用 >= 表达
+		q += url.PathEscape(fmt.Sprintf(" AND bibjson.year:>=%d", opts.Since))
 	}
 	return fmt.Sprintf("%s/search/articles/%s?pageSize=%d",
 		d.BaseURL, q, ensureMax(opts.MaxResults, defaultMaxResults))
