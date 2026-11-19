@@ -3,7 +3,8 @@
 // 正文中 [@token] 形式的占位符（Pandoc 风格）：
 //   - 裸 token 视为 citeKey，查本地库（先精确匹配，未命中再大写重试一次）
 //   - 带前缀 doi:/pmid:/arxiv:/title: 的 token 经 MetadataFetcher 现场反查，成功后 UpsertPaper 入库取 citeKey
-//   - 解析失败（库未命中、Fetch 未命中或错误）记入 Unresolved，不静默丢弃
+//   - 解析失败（库未命中、Fetch 未命中）记入 Unresolved，不静默丢弃
+//   - 运行错误（网络、解析、入库失败）向上返回，不伪装成 Unresolved
 //
 // 同一论文（ComputeID 去重）无论被引用几次只占一个编号，按首次出现顺序编号。
 
@@ -52,7 +53,7 @@ var idTypePrefixes = []string{"doi:", "pmid:", "arxiv:", "title:"}
 // ProcessManuscript 解析手稿中 [@token] 占位符并生成引用表。
 //
 // style 决定正文引用标记：GB7714/IEEE 用 "[n]"；APA 用 "(Author, Year)"。
-// per-token 解析失败只记入 Unresolved 不中断流水线；仅参数级错误（未知 style）返回 error。
+// 语义未命中（库中无此条目）只记入 Unresolved 不中断流水线；运行错误向上返回。
 func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, src string, style Style) (*ManuscriptResult, error) {
 	switch style {
 	case StyleGB7714, StyleAPA, StyleIEEE, StylePreview:
@@ -79,7 +80,10 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 	for i, m := range matches {
 		token := src[m[2]:m[3]]
 		p, err := resolvePaper(ctx, store, fetcher, token)
-		if err != nil || p == nil {
+		if err != nil {
+			return nil, err
+		}
+		if p == nil {
 			if !unseen[token] {
 				unseen[token] = true
 				res.Unresolved = append(res.Unresolved, token)
@@ -150,7 +154,13 @@ func ProcessManuscript(ctx context.Context, store PaperStore, fetcher Fetcher, s
 
 func expandCiteGroups(src string, style Style) string {
 	return bodyCiteRe.ReplaceAllStringFunc(src, func(raw string) string {
-		parts := strings.Split(raw[2:len(raw)-1], ",")
+		body := raw[2 : len(raw)-1]
+		// 带前缀 token（doi:/pmid:/arxiv:/title:）的 identifier 内可能含逗号，
+		// 整体视为单个引用，不参与分组拆分。
+		if _, _, ok := splitPrefixed(body); ok {
+			return raw
+		}
+		parts := strings.Split(body, ",")
 		if len(parts) == 1 {
 			return raw
 		}
@@ -195,7 +205,7 @@ func rangeStr(start, end int) string {
 	return strconv.Itoa(start) + "-" + strconv.Itoa(end)
 }
 
-// resolvePaper 解析单个 token 为论文；失败返回 (nil, nil)。
+// resolvePaper 解析单个 token 为论文；语义未命中返回 (nil, nil)，运行错误向上返回。
 //
 // 裸 token → 视为 citeKey 查库（先精确，未命中再 strings.ToUpper 一次）；
 // 带前缀 → MetadataFetcher.Fetch 现场反查，成功后 UpsertPaper 入库并以返回的 citeKey 补回。
@@ -205,12 +215,15 @@ func resolvePaper(ctx context.Context, store PaperStore, fetcher Fetcher, token 
 			return nil, nil
 		}
 		p, err := fetcher.Fetch(ctx, idType, ident)
-		if err != nil || p == nil {
+		if err != nil {
+			return nil, fmt.Errorf("manuscript: 反查 %s 失败: %w", token, err)
+		}
+		if p == nil {
 			return nil, nil
 		}
 		key, _, err := store.UpsertPaper(*p)
 		if err != nil {
-			return nil, nil
+			return nil, fmt.Errorf("manuscript: 入库 %s 失败: %w", token, err)
 		}
 		p.CiteKey = key
 		return p, nil

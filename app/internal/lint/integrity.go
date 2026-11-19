@@ -57,9 +57,8 @@ func checkRetractions(srcs []*Source, store *storage.Store, resolver RetractionR
 			lineNo := src.bodyIdx[i]
 			for _, m := range citeRe.FindAllString(ln, -1) {
 				inner := strings.TrimSuffix(strings.TrimPrefix(m, "[@"), "]")
-				for _, part := range strings.Split(inner, ",") {
-					key := strings.TrimSpace(part)
-					if key == "" || checked[key] {
+				for _, key := range splitCiteKeys(inner) {
+					if checked[key] {
 						continue
 					}
 					checked[key] = true
@@ -114,11 +113,7 @@ func checkCitationHealth(srcs []*Source, store *storage.Store, spec *ManuscriptS
 		for i, ln := range src.Body {
 			for _, m := range citeRe.FindAllString(ln, -1) {
 				inner := strings.TrimSuffix(strings.TrimPrefix(m, "[@"), "]")
-				for _, part := range strings.Split(inner, ",") {
-					k := strings.TrimSpace(part)
-					if k == "" {
-						continue
-					}
+				for _, k := range splitCiteKeys(inner) {
 					if _, ok := origin[k]; !ok {
 						origin[k] = citeOrigin{file: fi, line: src.bodyIdx[i]}
 					}

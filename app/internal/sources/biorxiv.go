@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -87,7 +86,7 @@ func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOpt
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("biorxiv search: HTTP %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := httpclient.ReadAllLimit(resp, maxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("biorxiv search: read body: %w", err)
 	}

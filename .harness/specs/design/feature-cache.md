@@ -18,7 +18,7 @@ owner: litkit-core
 ### 包含
 - 检索结果自动 upsert 入库（FR-LIB-01）：去重后带摘要论文入库，重复检索按 dedup_key 更新
 - 去重键确定性（原 FR-CACHE-02）：`dedup_key` = DOI > title+authors > paper_id
-- 库文件 `WORK_DIR/litkit.db`（FR-LIB-03）：随工作目录迁移，无 TTL
+- 库文件 `WORK_DIR/.litkit/litkit.db`（FR-LIB-03）：随工作目录迁移，无 TTL
 - 引用标识 cite_key（FR-LIB-06）：3 字母 a-zA-Z 唯一，入库自动分配；AI 引用与引用标记唯一入口
 - 引用标记 paper_refs（FR-LIB-07）：记录"哪句话引用哪篇文献"（cite_key + 句子指纹 + 手稿 + 行号）；同句重复引用幂等
 - 引用评分缓存 citation_scores（FR-LINT-08）：多模型对 (cite_key, sentence_hash) 的评分结果，主键 `(cite_key, sentence_hash, model_id, prompt_version)` 自然失效（改句子 → hash 变 → 自动不命中；改 prompt → version 升 → 旧分不命中），不做 TTL

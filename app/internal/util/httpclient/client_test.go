@@ -7,7 +7,22 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+// TestRetryWait_CapsRetryAfter：异常大的 Retry-After 不得让命令长时间挂起。
+func TestRetryWait_CapsRetryAfter(t *testing.T) {
+	c := New(Options{BackoffBaseMS: 10})
+	resp := &http.Response{Header: http.Header{}}
+	resp.Header.Set("Retry-After", "99999")
+	if got := c.retryWait(resp, 0); got != maxRetryAfter {
+		t.Errorf("Retry-After 应被钳制为 %v，got %v", maxRetryAfter, got)
+	}
+	resp.Header.Set("Retry-After", "2")
+	if got := c.retryWait(resp, 0); got != 2*time.Second {
+		t.Errorf("正常 Retry-After 应被尊重，got %v", got)
+	}
+}
 
 // newTestProxy 启动一个仅支持普通 HTTP 转发的测试代理，返回代理服务器与命中标记。
 func newTestProxy(t *testing.T) (*httptest.Server, *atomic.Bool) {

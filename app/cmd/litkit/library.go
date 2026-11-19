@@ -4,15 +4,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"litkit/internal/config"
 	"litkit/internal/core"
 	"litkit/internal/model"
 	"litkit/internal/storage"
@@ -41,7 +42,7 @@ func noStoreError() error {
 }
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
-func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
+func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lib",
 		Short: "本地文献库管理（add | get | list | search | rm | stats | path）",
@@ -51,7 +52,7 @@ func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 		newLibGetCmd(st),
 		newLibListCmd(st),
 		newLibSearchCmd(st),
-		newLibRmCmd(st),
+		newLibRmCmd(st, cfg),
 		newLibStatsCmd(st),
 		newLibPathCmd(st),
 	)
@@ -168,11 +169,10 @@ func addPaperByDOI(ctx context.Context, st *storage.Store, f *core.MetadataFetch
 
 // readManualPapers 读取元数据 JSON 文件（单对象或数组；容忍 UTF-8 BOM）。
 func readManualPapers(path string) ([]core.ManualPaperInput, error) {
-	data, err := os.ReadFile(path)
+	data, err := readFileTrimBOM(path)
 	if err != nil {
 		return nil, fmt.Errorf("lib add: 读取 %s 失败: %w", path, err)
 	}
-	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}) // 去除 UTF-8 BOM
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "[") {
 		var inputs []core.ManualPaperInput
@@ -212,6 +212,14 @@ func newLibGetCmd(st *storage.Store) *cobra.Command {
 	}
 }
 
+// validatePaging 校验分页参数；负数属参数错误（退出码 2）。
+func validatePaging(limit, offset int) error {
+	if limit < 0 || offset < 0 {
+		return &paramError{msg: fmt.Sprintf("分页参数不能为负数（limit=%d, offset=%d）", limit, offset)}
+	}
+	return nil
+}
+
 func newLibListCmd(st *storage.Store) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -225,6 +233,9 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 			limit, _ := cmd.Flags().GetInt("limit")
 			offset, _ := cmd.Flags().GetInt("offset")
 			full, _ := cmd.Flags().GetBool("full")
+			if err := validatePaging(limit, offset); err != nil {
+				return err
+			}
 			papers, err := st.ListPapers(source, sortBy, limit, offset)
 			if err != nil {
 				return err
@@ -255,6 +266,9 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 			limit, _ := cmd.Flags().GetInt("limit")
 			offset, _ := cmd.Flags().GetInt("offset")
 			full, _ := cmd.Flags().GetBool("full")
+			if err := validatePaging(limit, offset); err != nil {
+				return err
+			}
 			papers, err := st.SearchLocal(args[0], limit, offset)
 			if err != nil {
 				return err
@@ -271,24 +285,39 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 	return cmd
 }
 
-func newLibRmCmd(st *storage.Store) *cobra.Command {
+func newLibRmCmd(st *storage.Store, cfg *config.Config) *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <cite_key>",
 		Aliases: []string{"forget"},
-		Short:   "删除一篇论文及其引用标记",
+		Short:   "删除一篇论文及其引用标记，并清理已下载的 PDF",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if st == nil {
 				return noStoreError()
 			}
+			// 先取条目拿到规范 citeKey（输入可能大小写不一致），删除后清理其 PDF 产物。
+			paper, err := st.GetByCiteKey(args[0])
+			if err != nil {
+				return err
+			}
 			removed, err := st.Forget(args[0])
 			if err != nil {
 				return err
 			}
+			pdfRemoved := false
+			if removed && paper != nil && cfg != nil {
+				if dir := cfg.DownloadDir(); dir != "" {
+					path := filepath.Join(dir, paper.CiteKey+".pdf")
+					if err := os.Remove(path); err == nil {
+						pdfRemoved = true
+					}
+				}
+			}
 			return printJSON(struct {
-				CiteKey string `json:"citeKey"`
-				Removed bool   `json:"removed"`
-			}{CiteKey: args[0], Removed: removed})
+				CiteKey    string `json:"citeKey"`
+				Removed    bool   `json:"removed"`
+				PdfRemoved bool   `json:"pdfRemoved"`
+			}{CiteKey: args[0], Removed: removed, PdfRemoved: pdfRemoved})
 		},
 	}
 }

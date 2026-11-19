@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"litkit/internal/config"
 )
 
 func TestLibGetCmd_singleAndBatch(t *testing.T) {
@@ -56,6 +58,58 @@ func TestLibGetCmd_noArgsFails(t *testing.T) {
 	cmd.SetArgs(nil)
 	if err := cmd.Execute(); err == nil {
 		t.Error("不带 citeKey 应报错")
+	}
+}
+
+// TestLibRmCmd_removesDownloadedPDF lib rm 应同时清理该论文已落盘的 PDF（避免孤儿产物）。
+func TestLibRmCmd_removesDownloadedPDF(t *testing.T) {
+	s := newTestStoreCmd(t)
+	dir := t.TempDir()
+	meta := filepath.Join(dir, "paper.json")
+	if err := os.WriteFile(meta, []byte(`{"title":"待删文献","abstract":"摘要。","doi":"10.1/rm"}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	add := newLibAddCmd(s, nil)
+	add.SetArgs([]string{meta})
+	if err := add.Execute(); err != nil {
+		t.Fatalf("lib add: %v", err)
+	}
+	paper, err := s.GetByDOI("10.1/rm")
+	if err != nil || paper == nil {
+		t.Fatalf("论文应入库，err=%v", err)
+	}
+
+	dl := filepath.Join(dir, "downloads")
+	if err := os.MkdirAll(dl, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	pdf := filepath.Join(dl, paper.CiteKey+".pdf")
+	if err := os.WriteFile(pdf, []byte("%PDF-1.4"), 0o600); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		cmd := newLibRmCmd(s, &config.Config{WorkDir: dir, FetchDownloadDir: dl})
+		cmd.SetArgs([]string{paper.CiteKey})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("lib rm: %v", err)
+		}
+	})
+	var got struct {
+		Removed    bool `json:"removed"`
+		PDFRemoved bool `json:"pdfRemoved"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("解析输出: %v\n输出: %s", err, out)
+	}
+	if !got.Removed || !got.PDFRemoved {
+		t.Errorf("应删除条目与 PDF：%+v（输出 %s）", got, out)
+	}
+	if _, err := os.Stat(pdf); !os.IsNotExist(err) {
+		t.Errorf("PDF 应被删除，stat err=%v", err)
+	}
+	if p, _ := s.GetByCiteKey(paper.CiteKey); p != nil {
+		t.Error("条目应已从库中删除")
 	}
 }
 

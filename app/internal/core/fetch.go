@@ -5,7 +5,8 @@
 //  2. Unpaywall 按 DOI 解析最佳 OA PDF URL（需 LITKIT_UNPAYWALL_EMAIL，FR-FETCH-02）。
 //  3. Unpaywall 未命中则 Sci-Hub 兜底（默认开启，URL 可配；失败静默降级，FR-FETCH-03）。
 //  4. 下载 PDF → 落盘 <downloadDir>/<citeKey>.pdf。
-//  5. 纯 Go 抽取全文（ledongthuc/pdf，FR-FETCH-05）；扫描版 PDF 返回空文本并提示。
+//  5. 纯 Go 抽取全文（ledongthuc/pdf，FR-FETCH-05）；扫描版 PDF 返回空文本，
+//     以已落盘 PDF 作为缓存凭证，避免重复下载。
 //  6. 全文写入库（papers.fulltext，FR-FETCH-04），后续 Fetch 命中缓存。
 //
 // Sci-Hub 失败静默：任何一步失败仅跳过该源，不中断整体流程；仅当两个源都未命中时返回错误。
@@ -99,8 +100,18 @@ func (f *FulltextFetcher) Fetch(ctx context.Context, ref string) (*FetchResult, 
 	}
 
 	// 全文缓存命中：直接返回，零网络（FR-FETCH-04）
-	if ft, err := f.store.GetFulltext(p.CiteKey); err == nil && strings.TrimSpace(ft) != "" {
-		return &FetchResult{CiteKey: p.CiteKey, Fulltext: ft, Via: "cache"}, nil
+	if ft, err := f.store.GetFulltext(p.CiteKey); err == nil {
+		if strings.TrimSpace(ft) != "" {
+			return &FetchResult{CiteKey: p.CiteKey, Fulltext: ft, Via: "cache"}, nil
+		}
+		// 扫描版 PDF 抽取成功但无文本层：以已记录的 PDF 直链 + 落盘文件作为缓存凭证，
+		// 避免每次 fetch 重复下载（PdfURL 仅在抽取成功后写入，抽取失败仍会重试）。
+		if p.PdfURL != "" {
+			path := filepath.Join(f.downloadDir, p.CiteKey+".pdf")
+			if _, statErr := os.Stat(path); statErr == nil {
+				return &FetchResult{CiteKey: p.CiteKey, PdfPath: path, Fulltext: ft, Via: "cache"}, nil
+			}
+		}
 	}
 
 	if p.DOI == "" {
@@ -205,7 +216,7 @@ func (f *FulltextFetcher) resolveUnpaywallWithReason(ctx context.Context, doi st
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Sprintf("Unpaywall HTTP %d", resp.StatusCode)
 	}
-	data, err := httpclient.ReadAll(resp)
+	data, err := readLimited(resp.Body, maxMetaBytes)
 	if err != nil {
 		return "", fmt.Sprintf("Unpaywall 读取响应失败：%v", err)
 	}
@@ -257,7 +268,7 @@ func (f *FulltextFetcher) resolveSciHubWithReason(ctx context.Context, doi strin
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Sprintf("Sci-Hub HTTP %d", resp.StatusCode)
 	}
-	body, err := httpclient.ReadAll(resp)
+	body, err := readLimited(resp.Body, maxMetaBytes)
 	if err != nil {
 		return "", fmt.Sprintf("Sci-Hub 读取响应失败：%v", err)
 	}
@@ -315,6 +326,25 @@ func normalizeSciHubURL(u, base string) string {
 
 // ---- 下载与抽取 ----
 
+// 单次下载与抽取的字节上限（防超大响应 / PDF bomb 耗尽内存与磁盘）。
+const (
+	maxPDFBytes      = 50 << 20
+	maxFulltextBytes = 20 << 20
+	maxMetaBytes     = 5 << 20 // Unpaywall/Sci-Hub 元数据与页面响应上限
+)
+
+// readLimited 读取至多 limit 字节；超出返回错误而非静默截断。
+func readLimited(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("响应体超过上限 %d 字节", limit)
+	}
+	return data, nil
+}
+
 // downloadPDF 下载 PDF 并落盘为 <downloadDir>/<citeKey>.pdf；返回落盘路径。
 func (f *FulltextFetcher) downloadPDF(ctx context.Context, pdfURL, citeKey string) (string, error) {
 	if err := os.MkdirAll(f.downloadDir, dirPerm); err != nil {
@@ -334,7 +364,10 @@ func (f *FulltextFetcher) downloadPDF(ctx context.Context, pdfURL, citeKey strin
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	data, err := httpclient.ReadAll(resp)
+	if resp.ContentLength > maxPDFBytes {
+		return "", fmt.Errorf("PDF 大小 %d 超过上限 %d 字节", resp.ContentLength, maxPDFBytes)
+	}
+	data, err := readLimited(resp.Body, maxPDFBytes)
 	if err != nil {
 		return "", err
 	}
@@ -362,19 +395,27 @@ func looksLikePDF(data []byte) bool {
 
 // extractText 用 ledongthuc/pdf 抽取 PDF 全文（FR-FETCH-05）。
 // 扫描版 PDF（无文本层）返回空文本，不视为错误。
-func (f *FulltextFetcher) extractText(pdfPath string) (string, error) {
-	fh, r, err := pdf.Open(pdfPath)
+// 超长文本按 maxFulltextBytes 截断：报错会让已落盘 PDF 每次重下（无缓存凭证）。
+func (f *FulltextFetcher) extractText(pdfPath string) (text string, err error) {
+	// ledongthuc/pdf 对畸形/截断 PDF 可能 panic：转成错误，避免整个命令崩溃。
+	defer func() {
+		if rec := recover(); rec != nil {
+			text, err = "", fmt.Errorf("PDF 解析失败（文件可能损坏）: %v", rec)
+		}
+	}()
+	fh, reader, err := pdf.Open(pdfPath)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = fh.Close() }()
-	b, err := r.GetPlainText()
+	b, err := reader.GetPlainText()
 	if err != nil {
 		return "", err
 	}
-	data, err := io.ReadAll(b)
+	data, err := io.ReadAll(io.LimitReader(b, maxFulltextBytes))
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	// 截断可能落在多字节字符中间：丢弃非法尾字节，避免下游出现乱码。
+	return strings.TrimSpace(strings.ToValidUTF8(string(data), "")), nil
 }

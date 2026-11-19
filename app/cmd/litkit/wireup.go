@@ -4,10 +4,10 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"litkit/internal/config"
 	"litkit/internal/core"
@@ -77,10 +77,7 @@ func loadDeps() *deps {
 	// 全文获取（FR-FETCH）：PDF 默认落盘 <WorkDir>/downloads，可由 LITKIT_FETCH_DOWNLOAD_DIR 覆盖
 	fulltext := (*core.FulltextFetcher)(nil)
 	if store != nil {
-		downloadDir := cfg.FetchDownloadDir
-		if downloadDir == "" && cfg.WorkDir != "" {
-			downloadDir = filepath.Join(cfg.WorkDir, "downloads")
-		}
+		downloadDir := cfg.DownloadDir()
 		fulltext = core.NewFulltextFetcher(
 			store,
 			httpclient.New(httpclient.Options{TimeoutMS: cfg.HTTPTimeoutMS, MaxRetries: cfg.HTTPRetries, Proxy: proxy}),
@@ -109,4 +106,23 @@ func requireWorkDir(cfg *config.Config) error {
 		return errNoWorkDir
 	}
 	return nil
+}
+
+// defaultLang 返回命令 --lang 的默认值（LITKIT_LANG；为空时回落 zh）。
+// config.normalize 已保证 Load 后的值合法；手动构造的零值 Config 也可安全使用。
+func defaultLang(cfg *config.Config) string {
+	if cfg != nil && cfg.Lang != "" {
+		return cfg.Lang
+	}
+	return config.DefaultLang
+}
+
+// readFileTrimBOM 读取文本文件并去除 UTF-8 BOM（Windows 记事本 / PowerShell 5 常见）。
+// 所有面向用户的文本输入统一走此函数，避免 BOM 泄漏到产物或解析失败。
+func readFileTrimBOM(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}), nil
 }

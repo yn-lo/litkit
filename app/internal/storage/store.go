@@ -108,13 +108,20 @@ func (s *Store) Close() error { return s.db.Close() }
 // Path 返回库文件绝对路径。
 func (s *Store) Path() string { return s.path }
 
-// migrate 执行 schema/schema.sql（单文件管理全部 DDL）。
-// CREATE TABLE IF NOT EXISTS，幂等。
+// migrate 执行 schema/schema.sql（单文件管理全部 DDL），并在同一事务内补齐旧库新增列。
+// CREATE TABLE IF NOT EXISTS，幂等；任一步失败整体回滚，避免半迁移状态。
 func (s *Store) migrate() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("storage migrate: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // Commit 后 Rollback 返回 ErrTxDone，无副作用
+
 	entries, err := schemaFS.ReadDir("schema")
 	if err != nil {
 		return fmt.Errorf("storage migrate: read schema dir: %w", err)
 	}
+	var stmts []string
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
 			continue
@@ -123,17 +130,28 @@ func (s *Store) migrate() error {
 		if rerr != nil {
 			return fmt.Errorf("storage migrate: read %s: %w", e.Name(), rerr)
 		}
-		if _, xerr := s.db.Exec(string(data)); xerr != nil {
-			return fmt.Errorf("storage migrate: exec %s: %w", e.Name(), xerr)
+		stmts = append(stmts, string(data))
+	}
+	if err := runMigration(tx, stmts); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// runMigration 在同一事务内执行全部 schema DDL 与旧库补列；任一步失败由调用方回滚。
+func runMigration(tx *sql.Tx, stmts []string) error {
+	for i, q := range stmts {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("storage migrate: exec schema #%d: %w", i+1, err)
 		}
 	}
-	return s.ensureColumns()
+	return ensureColumns(tx)
 }
 
 // ensureColumns 为旧库补充新增列（ALTER TABLE ADD COLUMN 幂等：先查 PRAGMA table_info）。
-func (s *Store) ensureColumns() error {
+func ensureColumns(tx *sql.Tx) error {
 	const table = "papers"
-	rows, err := s.db.Query("PRAGMA table_info(" + table + ")")
+	rows, err := tx.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		return fmt.Errorf("storage ensure columns: %w", err)
 	}
@@ -165,7 +183,7 @@ func (s *Store) ensureColumns() error {
 	}
 	for _, a := range adds {
 		if !have[a.name] {
-			if _, err := s.db.Exec(a.ddl); err != nil {
+			if _, err := tx.Exec(a.ddl); err != nil {
 				return fmt.Errorf("storage ensure columns %s: %w", a.name, err)
 			}
 		}
@@ -385,8 +403,10 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 			return nil, err
 		}
 		if len(authorsJSON) > 0 {
+			// 历史脏数据（非 JSON）：视为无作者返回，不让单行损坏阻断整个查询。
+			// ponytail: 升级路径——迁移时清洗 authors 列后再移除容错。
 			if err := json.Unmarshal(authorsJSON, &p.Authors); err != nil {
-				return nil, fmt.Errorf("storage scan authors: %w", err)
+				p.Authors = nil
 			}
 		}
 		out = append(out, p)
@@ -540,6 +560,9 @@ func (s *Store) ListPapers(source, orderBy string, limit, offset int) ([]model.P
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
+	if offset < 0 {
+		return nil, errors.New("storage list: offset 不能为负数")
+	}
 	order := "id DESC"
 	switch orderBy {
 	case "year":
@@ -572,10 +595,14 @@ func (s *Store) SearchLocal(keyword string, limit, offset int) ([]model.Paper, e
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+	if offset < 0 {
+		return nil, errors.New("storage search local: offset 不能为负数")
+	}
 	pattern := "%" + escapeLike(keyword) + "%"
+	// json_valid 保护：历史脏数据（空串/非 JSON）视为无作者，不阻断标题/摘要命中。
 	rows, err := s.db.Query(`SELECT `+paperCols+` FROM papers
 		WHERE title LIKE ? ESCAPE '\' OR abstract LIKE ? ESCAPE '\'
-		   OR EXISTS (SELECT 1 FROM json_each(papers.authors)
+		   OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(papers.authors) THEN papers.authors ELSE '[]' END)
 		              WHERE json_extract(value, '$.family') LIKE ? ESCAPE '\'
 		                 OR json_extract(value, '$.given') LIKE ? ESCAPE '\')
 		ORDER BY year DESC, id DESC LIMIT ? OFFSET ?`,
@@ -594,30 +621,24 @@ func escapeLike(s string) string {
 }
 
 // Forget 删除一篇论文；返回是否实际删除（FR-LIB-02 删）。
-// 先精确匹配，未命中再按大小写不敏感删除。
+// 先精确匹配，未命中再大小写不敏感定位，但只删除定位到的那一行（避免误删大小写不同的另一条）。
 func (s *Store) Forget(citeKey string) (bool, error) {
-	n, err := s.deleteByCiteKey(citeKey, false)
-	if err != nil || n > 0 {
-		return n > 0, err
-	}
-	n, err = s.deleteByCiteKey(citeKey, true)
-	return n > 0, err
-}
-
-func (s *Store) deleteByCiteKey(citeKey string, nocase bool) (int64, error) {
-	q := "DELETE FROM papers WHERE cite_key = ?"
-	if nocase {
-		q = "DELETE FROM papers WHERE cite_key = ? COLLATE NOCASE"
-	}
-	res, err := s.db.Exec(q, citeKey)
+	p, err := s.GetByCiteKey(citeKey)
 	if err != nil {
-		return 0, fmt.Errorf("storage forget paper: %w", err)
+		return false, err
+	}
+	if p == nil {
+		return false, nil
+	}
+	res, err := s.db.Exec("DELETE FROM papers WHERE cite_key = ?", p.CiteKey)
+	if err != nil {
+		return false, fmt.Errorf("storage forget paper: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("storage forget rows: %w", err)
+		return false, fmt.Errorf("storage forget rows: %w", err)
 	}
-	return n, nil
+	return n > 0, nil
 }
 
 // Stats 返回文献库统计（lib stats）。

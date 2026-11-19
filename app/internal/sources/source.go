@@ -9,7 +9,6 @@ package sources
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -102,6 +101,9 @@ func (b BaseSource) Do(ctx context.Context, req *http.Request) (*http.Response, 
 	return b.http.Do(ctx, req)
 }
 
+// maxResponseBytes 单个检索/元数据响应体上限（防超大或恶意响应耗尽内存）。
+const maxResponseBytes = 10 << 20
+
 // get 执行已构造的 GET 请求并读回 body（校验 2xx）。
 // 非 2xx 返回含状态码错误；ctx 控制取消。
 func (b BaseSource) get(ctx context.Context, req *http.Request) ([]byte, error) {
@@ -113,7 +115,7 @@ func (b BaseSource) get(ctx context.Context, req *http.Request) ([]byte, error) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	return httpclient.ReadAllLimit(resp, maxResponseBytes)
 }
 
 // search 通用「GET JSON → parse」检索骨架，并为各源注入统一的错误前缀。

@@ -376,6 +376,101 @@ func TestLoad_negativeValuesClamped(t *testing.T) {
 	}
 }
 
+// TestLoad_invalidEnumsFallBackToDefaults 拼错的枚举值不应让后续命令以误导性参数错误失败。
+func TestLoad_invalidEnumsFallBackToDefaults(t *testing.T) {
+	unsetEnv(t, "LITKIT_LANG", "LITKIT_DEFAULT_SEARCH_MODE")
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, t.TempDir(), "LITKIT_LANG=fr\nLITKIT_DEFAULT_SEARCH_MODE=title\n"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Lang != DefaultLang {
+		t.Errorf("非法 Lang 应回落 %q，got %q", DefaultLang, cfg.Lang)
+	}
+	if cfg.SearchMode != DefaultSearchMode {
+		t.Errorf("非法 SearchMode 应回落 %q，got %q", DefaultSearchMode, cfg.SearchMode)
+	}
+}
+
+// TestLoad_nonPositiveValuesFallBack 非正的检索/超时配置统一钳制到默认值。
+func TestLoad_nonPositiveValuesFallBack(t *testing.T) {
+	t.Setenv("LITKIT_ENV_FILE", "")
+	t.Setenv("LITKIT_WORK_DIR", "")
+	t.Setenv("LITKIT_DEFAULT_RECENT_YEARS", "-2")
+	t.Setenv("LITKIT_DEFAULT_MAX_RESULTS", "0")
+	t.Setenv("LITKIT_SEARCH_TIMEOUT_MS", "-1")
+	t.Setenv("LITKIT_LLM_TIMEOUT_MS", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RecentYears != DefaultRecentYears {
+		t.Errorf("RecentYears=-2 应回落 %d，got %d", DefaultRecentYears, cfg.RecentYears)
+	}
+	if cfg.DefaultMaxResults != DefaultMaxResults {
+		t.Errorf("DefaultMaxResults=0 应回落 %d，got %d", DefaultMaxResults, cfg.DefaultMaxResults)
+	}
+	if cfg.SearchTimeoutMS != DefaultSearchTimeoutMS {
+		t.Errorf("SearchTimeoutMS=-1 应回落 %d，got %d", DefaultSearchTimeoutMS, cfg.SearchTimeoutMS)
+	}
+	if cfg.LLMTimeoutMS != DefaultLLMTimeoutMS {
+		t.Errorf("LLMTimeoutMS=0 应回落 %d，got %d", DefaultLLMTimeoutMS, cfg.LLMTimeoutMS)
+	}
+}
+
+// TestLoad_relativeDownloadDirAnchoredToEnvFile .env 中的相对下载目录应锚定 .env 目录，
+// 而不是执行命令时的 cwd（与 LITKIT_WORK_DIR 的锚定语义一致）。
+func TestLoad_relativeDownloadDirAnchoredToEnvFile(t *testing.T) {
+	unsetEnv(t, "LITKIT_WORK_DIR", "LITKIT_FETCH_DOWNLOAD_DIR")
+	project := t.TempDir()
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, project, "LITKIT_WORK_DIR=.\nLITKIT_FETCH_DOWNLOAD_DIR=pdfs\n"))
+	t.Chdir(t.TempDir()) // 模拟从其他目录调用
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(project, "pdfs")
+	if cfg.FetchDownloadDir != want {
+		t.Fatalf("相对下载目录应锚定 .env 目录：got %s want %s", cfg.FetchDownloadDir, want)
+	}
+	if cfg.DownloadDir() != want {
+		t.Errorf("DownloadDir 应返回锚定后的路径，got %s", cfg.DownloadDir())
+	}
+}
+
+// TestLoad_relativeDownloadDirFromProcessEnvUsesCwd 进程环境变量中的相对路径仍按 cwd 解析。
+func TestLoad_relativeDownloadDirFromProcessEnvUsesCwd(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	t.Setenv("LITKIT_ENV_FILE", writeEnv(t, cwd, "# 无配置项，仅确保加载的是项目文件\n"))
+	t.Setenv("LITKIT_FETCH_DOWNLOAD_DIR", "pdfs")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(cwd, "pdfs")
+	if cfg.FetchDownloadDir != want {
+		t.Fatalf("进程环境变量相对路径应按 cwd 解析：got %s want %s", cfg.FetchDownloadDir, want)
+	}
+}
+
+// TestConfig_DownloadDir 显式配置优先，否则回落 <WorkDir>/downloads。
+func TestConfig_DownloadDir(t *testing.T) {
+	if got := (&Config{WorkDir: "w"}).DownloadDir(); got != filepath.Join("w", "downloads") {
+		t.Errorf("默认下载目录应为 <WorkDir>/downloads，got %q", got)
+	}
+	if got := (&Config{WorkDir: "w", FetchDownloadDir: "x"}).DownloadDir(); got != "x" {
+		t.Errorf("显式下载目录应优先，got %q", got)
+	}
+	if got := (&Config{}).DownloadDir(); got != "" {
+		t.Errorf("WorkDir 为空时应返回空串，got %q", got)
+	}
+}
+
 func TestLoad_secretsFromEnv(t *testing.T) {
 	t.Setenv("LITKIT_ENV_FILE", "")
 	t.Setenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY", "key-xyz")

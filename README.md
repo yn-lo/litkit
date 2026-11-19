@@ -57,7 +57,7 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 | `LITKIT_DEFAULT_MAX_RESULTS` / `LITKIT_DEFAULT_RECENT_YEARS` / `LITKIT_DEFAULT_SEARCH_MODE` / `LITKIT_SEARCH_TIMEOUT_MS` | 可选，检索默认值：每源条数（5）/ 最近年数（3）/ 检索等级（tiab）/ 检索超时 |
 | `LITKIT_SEARCH_SOURCES` / `LITKIT_SEARCH_EXCLUDE_SOURCES` | 可选，默认检索源白名单 / 排除源（逗号分隔；显式 `-s` 时覆盖，未知源告警后忽略） |
 | `LITKIT_UNPAYWALL_EMAIL`                           | 可选，Unpaywall 合规邮箱（不设则跳过 OA 通道）          |
-| `LITKIT_SCI_HUB_URL` / `LITKIT_FETCH_DOWNLOAD_DIR` | 可选，Sci-Hub 镜像（默认 sci-hub.se）/ PDF 落盘目录（默认 `WORK_DIR/downloads`） |
+| `LITKIT_SCI_HUB_URL` / `LITKIT_FETCH_DOWNLOAD_DIR` | 可选，Sci-Hub 镜像（默认 sci-hub.se）/ PDF 落盘目录（默认 `WORK_DIR/downloads`；`.env` 中的相对路径锚定该 `.env` 目录） |
 | `LITKIT_LLM_API_KEY` / `LITKIT_LLM_BASE_URL` / `LITKIT_LLM_TIMEOUT_MS` | 可选，LLM 引用评分凭据、endpoint 与单次超时（默认 30000ms）。全局回落；推荐在 `.litkit/verifier_models.json` 按模型 `api_key`/`base_url` 配置（JSON 优先），也支持 `LITKIT_LLM_API_KEY_<模型ID大写>` 按模型命名约定回落 |
 
 完整清单与逐项注释见 [`app/.env.example`](app/.env.example)。
@@ -70,13 +70,13 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 
 - 安装到当前用户目录 `%LocalAppData%\Programs\litkit`，无需管理员权限；
 - 自动加入当前用户 `PATH`，任意目录可直接执行 `litkit`；
-- 配置随项目：在项目目录执行 `litkit init` 生成项目级 `.env`（API key、代理等只作用于该项目；不创建全局配置）；
+- 配置随项目：在项目目录执行 `litkit init` 生成项目级 `.env`（API key、代理等只作用于该项目；不创建全局配置），并在 `.gitignore` 追加受管忽略区块（`.env`、本地库、`verifier_models.json`、`outputs/`、`downloads/`）；
 - **升级**：下载新版本安装包覆盖安装即可，文献库与配置不受影响；
 - **卸载**：自动移除 `PATH` 条目，不删除项目内已有的 `.env` 与文献库。
 
 安装后新开终端执行 `litkit --version` 验证。若项目目录里还留着旧的 `litkit.exe`，Windows 会优先执行当前目录中的文件——请删除旧副本，`where litkit` 应只剩安装目录一条。
 
-> 从 v1.1.0 及更早版本升级：旧版 `%AppData%\litkit\.env` 不再读取，请在项目目录重新执行 `litkit init`。项目根 `.env` 可能含密钥，请确认已加入项目 `.gitignore`。
+> 从 v1.1.0 及更早版本升级：旧版 `%AppData%\litkit\.env` 不再读取，请在项目目录重新执行 `litkit init`。`litkit init` 会自动维护 `.gitignore` 受管区块（含 `.env`）；若项目已有 `.gitignore`，会保留原内容后追加。
 
 ### 其他平台
 

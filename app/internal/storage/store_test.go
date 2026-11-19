@@ -677,6 +677,45 @@ func TestSearchLocal_MatchesTitleAbstract(t *testing.T) {
 	}
 }
 
+// TestSearchLocal_InvalidAuthorsJSONDoesNotBlock：历史脏数据（authors 非 JSON）
+// 不应使整库检索失败；标题/摘要命中仍有效，作者匹配视为空。
+func TestSearchLocal_InvalidAuthorsJSONDoesNotBlock(t *testing.T) {
+	s := newTestStore(t)
+	citeKey, _, err := s.UpsertPaper(paper("Scan Legacy Paper", "10.1/badjson", "Wang"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE papers SET authors = '' WHERE cite_key = ?`, citeKey); err != nil {
+		t.Fatalf("写入脏数据: %v", err)
+	}
+	got, err := s.SearchLocal("legacy", 10, 0)
+	if err != nil {
+		t.Fatalf("脏数据不应阻断检索: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("标题关键词应命中 1 篇，got %d", len(got))
+	}
+	// 作者匹配按无效 JSON = 无作者处理，不应报错
+	if _, err := s.SearchLocal("Wang", 10, 0); err != nil {
+		t.Fatalf("作者检索不应因脏数据报错: %v", err)
+	}
+}
+
+// TestListPapers_NegativeOffset / TestSearchLocal_NegativeOffset：负 offset 拒绝。
+func TestListPapers_NegativeOffset(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.ListPapers("", "id", 10, -1); err == nil {
+		t.Fatal("负 offset 应返回错误")
+	}
+}
+
+func TestSearchLocal_NegativeOffset(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.SearchLocal("k", 10, -1); err == nil {
+		t.Fatal("负 offset 应返回错误")
+	}
+}
+
 // ---- 删除 ----
 
 func TestForget_RemovesPaper(t *testing.T) {
@@ -705,6 +744,39 @@ func TestForget_Missing(t *testing.T) {
 	}
 	if removed {
 		t.Fatal("不存在的 cite_key 应返回 removed=false")
+	}
+}
+
+// TestForget_OnlyDeletesMatchedRow：大小写不敏感回退只能删除定位到的一行，
+// 不得把仅大小写不同的另一篇一并删除。
+func TestForget_OnlyDeletesMatchedRow(t *testing.T) {
+	s := newTestStore(t)
+	k1, _, err := s.UpsertPaper(paper("Upper Case Paper", "10.1/up"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	k2, _, err := s.UpsertPaper(paper("Lower Case Paper", "10.1/low"))
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	// 人为制造仅大小写不同的两个 cite_key
+	if _, err := s.db.Exec(`UPDATE papers SET cite_key = 'abc' WHERE cite_key = ?`, k1); err != nil {
+		t.Fatalf("update k1: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE papers SET cite_key = 'ABC' WHERE cite_key = ?`, k2); err != nil {
+		t.Fatalf("update k2: %v", err)
+	}
+
+	removed, err := s.Forget("abc")
+	if err != nil || !removed {
+		t.Fatalf("Forget: removed=%v err=%v", removed, err)
+	}
+	n, err := s.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if n.Total != 1 {
+		t.Fatalf("应只删除 1 篇，剩余 %d 篇", n.Total)
 	}
 }
 

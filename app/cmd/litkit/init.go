@@ -17,25 +17,48 @@ import (
 )
 
 // envTemplate 工作目录 .env 模板（litkit init 生成，FR-CONFIG-03）。
+// 覆盖 app/.env.example 的全部配置项；TestEnvTemplate_matchesEnvExample 保证两者不漂移。
 const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-CONFIG-03）\n" +
 	"# 所有默认值均可在此调整；AI 经 .litkit/AGENTS.md 获知这些配置\n" +
+	"# 完整清单与逐项注释见 app/.env.example\n" +
 	"\n" +
+	"# --- 工作目录与配置 ---\n" +
 	"# 工作目录（必填：未设置时 litkit 拒绝执行，FR-LIB-03）\n" +
 	"LITKIT_WORK_DIR=.\n" +
-	"# 每源默认检索条数\n" +
-	"LITKIT_DEFAULT_MAX_RESULTS=5\n" +
-	"# 默认检索时间范围（最近 N 年，FR-SEARCH-13）\n" +
-	"LITKIT_DEFAULT_RECENT_YEARS=3\n" +
-	"# 默认检索等级：tiab（题目+摘要+关键词）| full（全文，FR-SEARCH-12）\n" +
-	"LITKIT_DEFAULT_SEARCH_MODE=tiab\n" +
+	"# 显式 .env 路径（默认按 WORK_DIR > CWD 向上溯源 查找）\n" +
+	"# LITKIT_ENV_FILE=\n" +
+	"# 默认写作语言模式（zh | en），作为 init/manuscript/verify 的 --lang 默认值\n" +
+	"# LITKIT_LANG=zh\n" +
+	"\n" +
+	"# --- HTTP 客户端 ---\n" +
+	"# 单请求超时（毫秒），默认 15000\n" +
+	"# LITKIT_HTTP_TIMEOUT_MS=15000\n" +
+	"# 429/5xx 重试次数，默认 2\n" +
+	"# LITKIT_HTTP_RETRIES=2\n" +
+	"# 显式代理（http/https/socks5，如本机 Clash：http://127.0.0.1:7890）\n" +
+	"# 设置后所有外呼（检索源/元数据/全文/LLM 评分）统一走代理\n" +
+	"# LITKIT_PROXY_URL=\n" +
+	"\n" +
+	"# --- 检索 ---\n" +
+	"# 每源默认检索条数，默认 5\n" +
+	"# LITKIT_DEFAULT_MAX_RESULTS=5\n" +
+	"# 默认检索时间范围（最近 N 年），默认 3；0=不限\n" +
+	"# LITKIT_DEFAULT_RECENT_YEARS=3\n" +
+	"# 默认检索等级：tiab（题目+摘要+关键词，默认）| full（全文）\n" +
+	"# LITKIT_DEFAULT_SEARCH_MODE=tiab\n" +
+	"# 整体检索超时（毫秒），默认 60000\n" +
+	"# LITKIT_SEARCH_TIMEOUT_MS=60000\n" +
 	"# 默认检索源白名单（逗号分隔；留空=全部源，可用源见 litkit sources）\n" +
 	"# LITKIT_SEARCH_SOURCES=\n" +
 	"# 默认排除源（逗号分隔；仅作用于未显式 -s 的检索）\n" +
 	"# LITKIT_SEARCH_EXCLUDE_SOURCES=\n" +
 	"# 可选：Semantic Scholar API key（配置后提速，避免共享池 429）\n" +
 	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n" +
+	"# 二期源激活（IEEE/ACM，本期不实现）\n" +
+	"# LITKIT_IEEE_API_KEY=\n" +
+	"# LITKIT_ACM_API_KEY=\n" +
 	"\n" +
-	"# LLM 引用评分（可选）\n" +
+	"# --- LLM 引用评分（可选）---\n" +
 	"# 推荐直接在 .litkit/verifier_models.json 每模型 api_key/base_url 配置（该副本勿提交 git）\n" +
 	"# 启用条件：models[].enabled=true 且有 api_key 即自动生效，无需总开关\n" +
 	"# 以下为 env 回落方式（JSON 未填时生效；按模型变量优先于全局）\n" +
@@ -43,7 +66,33 @@ const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-C
 	"# LITKIT_LLM_BASE_URL=https://api.openai.com/v1\n" +
 	"# 按模型命名约定：模型 id 大写、非字母数字转下划线（如 deepseek-chat → DEEPSEEK_CHAT）\n" +
 	"# LITKIT_LLM_API_KEY_DEEPSEEK_CHAT=sk-xxx\n" +
-	"# LITKIT_LLM_BASE_URL_DEEPSEEK_CHAT=https://api.deepseek.com/v1\n"
+	"# LITKIT_LLM_BASE_URL_DEEPSEEK_CHAT=https://api.deepseek.com/v1\n" +
+	"# LITKIT_LLM_API_KEY_QWEN_PLUS=sk-xxx\n" +
+	"# LITKIT_LLM_BASE_URL_QWEN_PLUS=https://dashscope.aliyuncs.com/compatible-mode/v1\n" +
+	"# 单次评分超时（毫秒），默认 30000\n" +
+	"# LITKIT_LLM_TIMEOUT_MS=30000\n" +
+	"\n" +
+	"# --- 全文获取（可选）---\n" +
+	"# Unpaywall OA 解析必需（https://unpaywall.org/products/api 免费申请）\n" +
+	"# LITKIT_UNPAYWALL_EMAIL=\n" +
+	"# Sci-Hub 兜底镜像（默认 https://sci-hub.se）\n" +
+	"# LITKIT_SCI_HUB_URL=https://sci-hub.se\n" +
+	"# 全文 PDF 落盘目录（默认 <LITKIT_WORK_DIR>/downloads；相对路径按 .env 目录解析）\n" +
+	"# LITKIT_FETCH_DOWNLOAD_DIR=\n"
+
+// gitignoreBlock litkit 在项目 .gitignore 中维护的受管区块（幂等追加）。
+const gitignoreBlock = "# >>> litkit（由 `litkit init` 生成，勿删） >>>\n" +
+	".env\n" +
+	".litkit/litkit.db\n" +
+	"*.db-shm\n" +
+	"*.db-wal\n" +
+	".litkit/verifier_models.json\n" +
+	"outputs/\n" +
+	"downloads/\n" +
+	"# <<< litkit <<<\n"
+
+// gitignoreMarker 受管区块起始标记（存在即视为已写入，避免重复追加）。
+const gitignoreMarker = "# >>> litkit（由 `litkit init` 生成，勿删） >>>"
 
 // 文件权限常量（mnd：避免魔法值）。
 const (
@@ -118,7 +167,7 @@ func newInitCmd(cfg *config.Config) *cobra.Command {
 	}
 	cmd.Flags().Bool("force", false, "覆盖已生成的模板文件（.env / verifier_models.json 除外，避免丢失密钥）")
 	cmd.Flags().String("type", lint.PaperTypeEmpirical, fmt.Sprintf("论文类型：%s", lint.PaperTypesLabel()))
-	cmd.Flags().String("lang", lint.LangZH, "撰写语言：zh | en")
+	cmd.Flags().String("lang", defaultLang(cfg), "撰写语言：zh | en（默认 LITKIT_LANG）")
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec，影响引用格式默认值）")
 	return cmd
 }
@@ -169,6 +218,13 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 		created = append(created, ".env（补充 LITKIT_WORK_DIR）")
 	}
 
+	// .gitignore 受管区块：避免 .env（密钥）/ 本地库 / 产物被提交
+	if ok, err := ensureGitignore(dir); err != nil {
+		return nil, err
+	} else if ok {
+		created = append(created, ".gitignore")
+	}
+
 	// .litkit/ 共享文件（verifier_models.json；已存在时永不覆盖，可能含 API key）
 	infraFiles, err := lint.InitProjectInfra(dir)
 	if err != nil {
@@ -198,14 +254,43 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	// loadDeps（PersistentPreRunE）可能已提前调用 storage.Open 创建了 db 文件，
 	// 此处再次 Open 确保测试路径（直接调用 initWorkdir）也能创建 db。
 	dbPath := storage.DBPath(dir)
+	dbExisted := fileExists(dbPath)
 	store, err := storage.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("init: storage open: %w", err)
 	}
 	_ = store.Close()
-	created = append(created, filepath.Join(".litkit", storage.DefaultDBName))
+	if !dbExisted {
+		created = append(created, filepath.Join(".litkit", storage.DefaultDBName))
+	}
 
 	return created, nil
+}
+
+// ensureGitignore 在项目 .gitignore 追加 litkit 受管区块；已存在区块时跳过。
+// 保留用户原有内容（可能是其他工具的忽略规则）。返回是否写入。
+func ensureGitignore(dir string) (bool, error) {
+	path := filepath.Join(dir, ".gitignore")
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("init: read %s: %w", path, err)
+	}
+	if strings.Contains(string(data), gitignoreMarker) {
+		return false, nil
+	}
+	prefix := ""
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		prefix = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, initFilePerm)
+	if err != nil {
+		return false, fmt.Errorf("init: open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(prefix + gitignoreBlock); err != nil {
+		return false, fmt.Errorf("init: append %s: %w", path, err)
+	}
+	return true, nil
 }
 
 // ensurePaperType 确保论文类型目录存在（.litkit/<type-lang>/ 的 manuscript-spec.yaml）。

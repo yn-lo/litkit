@@ -21,7 +21,7 @@ owner: litkit-core
 ### 1.2 子命令
 
 ```
-litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]
+litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--no-store] [--full]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -34,12 +34,14 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 | `-y, --year` | 精确年份过滤（源支持时） | 无 |
 | `--keep-no-abstract` | 保留无摘要论文（默认过滤，FR-SEARCH-03） | 关 |
 | `--exclude` | 逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库） | 无 |
+| `--no-store` | 探索模式：只检索不入库，不分配 citeKey（无需 `LITKIT_WORK_DIR`）；确认相关后去掉本选项正式检索 | 关 |
 | `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-02） | 关 |
 
 > 远程与本地检索均仅 keyword 模式（FR-SEARCH-07）。
 > `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-02）。
 > **检索词语言**：必须使用英文（各源英文语料为主，中文命中率极低，FR-SEARCH-11）。
 > **检索等级**：默认 `tiab`（题目+摘要+关键词），全文检索 `--mode full`（FR-SEARCH-12）；**时间范围**默认最近 3 年（FR-SEARCH-13）。
+> **探索模式**：`--no-store` 只返回结果不入库，适合拿不准检索词时试跑，避免弱相关文献污染文献库。
 
 输出：`{ total, sourceResults, errors, papers[] }`
 
@@ -49,14 +51,15 @@ litkit init [--force] [--type review|empirical|book|proposal] [--lang zh|en] [--
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
-| `--force` | 覆盖已存在的 `.env` / `.litkit/AGENTS.md` 等模板文件 | 关 |
+| `--force` | 覆盖已生成的模板文件（`.env` / `.litkit/verifier_models.json` **永不覆盖**，避免丢失密钥） | 关 |
 | `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `book`（书籍，中文编校细则）\| `proposal`（标书） | empirical |
-| `--lang` | 撰写语言 | zh |
+| `--lang` | 撰写语言 | zh（`LITKIT_LANG`） |
 | `--journal` | 目标期刊名称（写入 spec 的 `journal` 字段；当前仅留档，暂无规则读取） | 空 |
 
 > 初始化当前工作目录：生成 `.env`（默认配置）、`.litkit/`（`AGENTS.md` + `verifier_models.json` + `litkit.db`）、
-> `.agents/skills/`（litkit / academic-style / manuscript-format 技能）与 `.litkit/<type-lang>/manuscript-spec.yaml`。
-> 已存在文件默认不覆盖（`--force` 覆盖）。换新工作目录 → `litkit init`。
+> `.agents/skills/`（litkit / academic-style / manuscript-format 技能）、`.litkit/<type-lang>/manuscript-spec.yaml`，
+> 并在 `.gitignore` 追加 litkit 受管区块（`.env`、`.litkit/litkit.db*`、`.litkit/verifier_models.json`、`outputs/`、`downloads/`）。
+> 已存在文件默认不覆盖；`--force` 刷新模板，但 `.env` 与 `verifier_models.json` 永不覆盖。换新工作目录 → `litkit init`。
 > 撰写硬性规定即 `manuscript-spec.yaml` 顶部注释（单一事实源），`AGENTS.md` 只是指向它的地图，
 > 故改 yaml 阈值后无需重新渲染任何文件。
 > 交互式向导：旗标未显式传值且 stdin 是终端时，进入问答。
@@ -101,7 +104,7 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
-| `--lang` | 写作语言模式 | zh |
+| `--lang` | 写作语言模式 | zh（`LITKIT_LANG`） |
 | `-s, --style` | zh: gb7714-2025；en: apa / ieee | 按 lang |
 | `--preview` | 额外产出 preview 版本 md（与正常版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末仍追加编号引用列表 | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
@@ -144,6 +147,13 @@ litkit lib get <cite_key> [cite_key ...]
 > 按一个或多个 3 字母 citeKey 查询库内文献条目（大小写不敏感），返回**完整元数据（含摘要）**（AI 取引用详情用，FR-LIB）。
 > 未命中的键放入 `missing` 字段，命中的按输入顺序去重后放 `papers`。
 > 输出：`{ papers: [ Paper... ], missing: [ citeKey... ] }`。
+
+```
+litkit lib rm <cite_key>
+```
+
+> 删除一篇论文及其引用标记，并清理其已下载的 PDF（`<DOWNLOAD_DIR>/<citeKey>.pdf`，见 `LITKIT_FETCH_DOWNLOAD_DIR`）。
+> 输出：`{ citeKey, removed, pdfRemoved }`（`pdfRemoved=false` 表示未找到对应 PDF，不影响条目删除）。
 
 ```
 litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book|proposal] [--journal NAME]
@@ -193,13 +203,13 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
-| `--lang` | 写作语言模式 | zh |
+| `--lang` | 写作语言模式 | zh（`LITKIT_LANG`） |
 | `--mode` | 验证深度：`chapter`（结构+章节字数）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
 | `--type` | 论文类型：`review` \| `empirical` \| `book` \| `proposal`（空=从 spec 自动取） | 空 |
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
 | `--skip` | 跳过指定规则（逗号分隔，未知 ID 报错） | 无 |
 | `--check` / `--skip-check` | 仅运行/跳过指定检查类别（逗号分隔） | 无 |
-| `--report` | `json`（默认）\| `citation-refs`（附加 LLM 引用评分） | json |
+| `--report` | `json`（默认）\| `citation-refs`（附加 LLM 引用评分）；其他值报参数错误 | json |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/<type-lang>/manuscript-spec.yaml` 阈值配置）。显式类型/语言不会被自动检测覆盖；文件缺失时使用匹配预设，无可用预设（如 book/en）或规范文件无效时返回错误。
 > 查库类附加检查（R5.6 引用存在 / R5.7 撤稿 / R5.8 时效 / R5.9 自引）已纳入规则列表，归属 citation 类别，draft 起启用；同样遵循 `--rule`/`--skip` 和 `--check`/`--skip-check` 筛选：局部验证（如 `--rule R3.1` 或 `--check punctuation`）不会被缺失引用阻断。
@@ -256,12 +266,16 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_ACM_API_KEY | 二期激活 ACM 必需 | 启用 ACM 源 |
 | LITKIT_WORK_DIR | 必填 | 统一工作目录（库/输出默认在此）。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。测试固化目录：`e:\Codes\litkit\workspace` |
 | LITKIT_ENV_FILE | 可选 | 显式 .env 路径 |
-| LITKIT_LANG | 可选 | 默认写作语言模式（zh/en） |
+| LITKIT_LANG | 可选 | 默认写作语言模式（zh/en），作为 init / lint init / manuscript / verify 的 `--lang` 默认值 |
 | LITKIT_UNPAYWALL_EMAIL | 可选 | 全文 OA 解析必需（fetch，FR-FETCH-02） |
 | LITKIT_SCI_HUB_URL | 可选 | Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03） |
-| LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads） |
+| LITKIT_FETCH_DOWNLOAD_DIR | 可选 | 全文 PDF 落盘目录（默认 <WORK_DIR>/downloads；`.env` 中的相对路径锚定该 `.env` 目录） |
 | LITKIT_HTTP_TIMEOUT_MS | 可选 | 单请求超时（默认 15000） |
 | LITKIT_HTTP_RETRIES | 可选 | 429/5xx 重试次数（默认 2） |
+| LITKIT_DEFAULT_MAX_RESULTS | 可选 | 每源默认检索条数（默认 5） |
+| LITKIT_DEFAULT_RECENT_YEARS | 可选 | 默认检索时间范围（最近 N 年，默认 3；0=不限） |
+| LITKIT_DEFAULT_SEARCH_MODE | 可选 | 默认检索等级（tiab / full，默认 tiab） |
+| LITKIT_SEARCH_TIMEOUT_MS | 可选 | 整体检索超时（默认 60000） |
 | LITKIT_SEARCH_SOURCES | 可选 | 默认检索源白名单（逗号分隔；空=全部注册源）；显式 `-s` 时覆盖 |
 | LITKIT_SEARCH_EXCLUDE_SOURCES | 可选 | 默认排除源（逗号分隔）；仅作用于未显式 `-s` 的检索 |
 | LITKIT_PROXY_URL | 可选 | 显式代理（http/https/socks5）；设置后所有外呼统一走代理；不设置则直连并尊重标准 HTTPS_PROXY 环境变量 |
@@ -271,11 +285,16 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | LITKIT_LLM_BASE_URL_<模型ID> | 可选 | 按模型 env 回落 base URL（JSON base_url 优先） |
 | LITKIT_LLM_TIMEOUT_MS | 可选 | LLM 单次评分超时（默认 30000） |
 
+> 配置校验：非法枚举（`LITKIT_LANG` / `LITKIT_DEFAULT_SEARCH_MODE`）回落默认值；
+> 非正的条数/超时（`DEFAULT_MAX_RESULTS` / `DEFAULT_RECENT_YEARS` 为负 / `SEARCH_TIMEOUT_MS` / `LLM_TIMEOUT_MS`）
+> 统一钳制到默认值，避免单个笔误让命令在运行期以误导性参数错误失败。
+
 ### .env 发现顺序
 
 `LITKIT_ENV_FILE` 指定 > `WORK_DIR/.env` > 当前目录 `.env` > 项目根 `.env`
 
 仅加载项目级 `.env`，不读取全局配置；进程环境变量优先于 `.env`。
+`.env` 中的相对 `LITKIT_WORK_DIR` / `LITKIT_FETCH_DOWNLOAD_DIR` 锚定到该 `.env` 所在目录；进程环境变量中的相对值按 cwd 解析。
 
 ## 3. 数据交换格式
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -80,7 +79,7 @@ func (a *ArxivSource) Search(ctx context.Context, query string, opts SearchOptio
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("arxiv search: HTTP %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := httpclient.ReadAllLimit(resp, maxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("arxiv search: read body: %w", err)
 	}

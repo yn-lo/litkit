@@ -87,6 +87,17 @@ func TestReconstructOpenAlexAbstract_empty(t *testing.T) {
 	}
 }
 
+// TestReconstructOpenAlexAbstract_ignoresHugePositions：异常超大位置不得触发巨额分配。
+func TestReconstructOpenAlexAbstract_ignoresHugePositions(t *testing.T) {
+	idx := map[string][]int{
+		"safe": {0},
+		"evil": {1 << 30},
+	}
+	if got := reconstructOpenAlexAbstract(idx); got != "safe" {
+		t.Errorf("超大位置应被忽略，got %q", got)
+	}
+}
+
 func TestParseOpenAlexJSON(t *testing.T) {
 	papers, err := parseOpenAlexJSON([]byte(openAlexSample))
 	if err != nil {

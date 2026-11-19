@@ -37,7 +37,7 @@ internal/model · config · storage · util   叶子层（数据模型 / 配置 
 
 - **单一二进制分发**：模板与 CSL 样式经 `go:embed` 编译进二进制，用户无需安装运行时或依赖
 - **单一入口共享核心**：`litkit` CLI 为唯一入口；未来可扩展 HTTP/Web（入口层加适配器即可）
-- **数据落盘**：`WORK_DIR/litkit.db`（本地文献库，检索结果自动入库）、`WORK_DIR` 下输出文件
+- **数据落盘**：`WORK_DIR/.litkit/litkit.db`（本地文献库，检索结果自动入库）、`WORK_DIR` 下输出文件
 
 ## 关键约束
 

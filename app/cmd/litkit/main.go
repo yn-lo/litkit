@@ -19,6 +19,27 @@ type paramError struct{ msg string }
 
 func (e *paramError) Error() string { return e.msg }
 
+// exitError 表示以专用退出码结束且不打印错误消息（如部分成功、验证未通过）。
+type exitError struct{ code int }
+
+func (e *exitError) Error() string { return fmt.Sprintf("exit code %d", e.code) }
+
+// exitCodeOf 将命令错误映射为进程退出码。
+func exitCodeOf(err error) int {
+	if err == nil {
+		return 0
+	}
+	var pe *paramError
+	if errors.As(err, &pe) {
+		return 2
+	}
+	var ee *exitError
+	if errors.As(err, &ee) {
+		return ee.code
+	}
+	return 1
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -31,10 +52,13 @@ func run() int {
 		var pe *paramError
 		if errors.As(err, &pe) {
 			fmt.Fprintln(os.Stderr, "错误:", pe.msg)
-			return 2
+		} else {
+			var ee *exitError
+			if !errors.As(err, &ee) {
+				fmt.Fprintln(os.Stderr, "错误:", err.Error())
+			}
 		}
-		fmt.Fprintln(os.Stderr, "错误:", err.Error())
-		return 1
+		return exitCodeOf(err)
 	}
 	return 0
 }
@@ -64,6 +88,10 @@ func newRootCmd(d *deps) *cobra.Command {
 			return &paramError{msg: "请使用 --help 查看使用方法"}
 		},
 	}
+	// flag 解析错误同属参数错误（退出码 2），与 paramError 契约一致。
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &paramError{msg: err.Error()}
+	})
 	root.AddCommand(
 		newInitCmd(d.cfg),
 		newSearchCmd(d.searcher, d.registry, d.cfg),
@@ -72,7 +100,7 @@ func newRootCmd(d *deps) *cobra.Command {
 		newFetchCmd(d.store, d.fulltext),
 		newManuscriptCmd(d.store, d.fetcher, d.cfg),
 		newExportCmd(),
-		newLibraryCmd(d.store, d.fetcher),
+		newLibraryCmd(d.store, d.fetcher, d.cfg),
 		newRulesCmd(),
 		newFixCmd(d.cfg),
 		newLintCmd(d.cfg),

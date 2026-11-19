@@ -868,6 +868,30 @@ func TestCheckCiteKeys_DedupePerKey(t *testing.T) {
 	}
 }
 
+// TestCheckCiteKeys_PrefixedTokenNotFlagged：doi:/title: 等反查 token 不是 citeKey，
+// 不应被误报为"不在库中"（A 类违规会误使 verify 退出 1）。
+func TestCheckCiteKeys_PrefixedTokenNotFlagged(t *testing.T) {
+	s := newTestStore(t)
+	src := mustParse(t, "正文[@doi:10.1/real]与[@title:Smith, J. 2024]。\n")
+	if got := CheckCiteKeys(src, s); len(got) != 0 {
+		t.Fatalf("带前缀 token 不应报缺失，got %+v", got)
+	}
+}
+
+// TestCheckCiteKeys_MixedGroupChecksBareKey：混合组中的裸 key 仍要校验，前缀项跳过。
+func TestCheckCiteKeys_MixedGroupChecksBareKey(t *testing.T) {
+	s := newTestStore(t)
+	realKey, _, err := s.UpsertPaper(model.Paper{Title: "Real", DOI: "10.1/mixed"})
+	if err != nil {
+		t.Fatalf("UpsertPaper: %v", err)
+	}
+	src := mustParse(t, "混合[@"+realKey+", doi:10.1/x]与缺失[@zzz, doi:10.1/y]。\n")
+	violations := CheckCiteKeys(src, s)
+	if len(violations) != 1 || !strings.Contains(violations[0].Problem, "zzz") {
+		t.Fatalf("应仅报裸 key zzz 缺失，got %+v", violations)
+	}
+}
+
 func TestRunFilesWithStore_ExitHintPromotesToFix(t *testing.T) {
 	s := newTestStore(t)
 	dir := t.TempDir()

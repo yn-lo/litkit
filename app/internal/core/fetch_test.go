@@ -155,6 +155,18 @@ func TestExtractTextFromMinimalPDF(t *testing.T) {
 	}
 }
 
+// TestExtractText_CorruptPDFDoesNotPanic：畸形 PDF 应返回错误而非让进程崩溃。
+func TestExtractText_CorruptPDFDoesNotPanic(t *testing.T) {
+	f := &FulltextFetcher{downloadDir: t.TempDir()}
+	path := filepath.Join(t.TempDir(), "corrupt.pdf")
+	if err := os.WriteFile(path, []byte("%PDF-1.4\n1 0 obj\n<< >>\nendobj\ntrailer\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := f.extractText(path); err == nil {
+		t.Fatal("畸形 PDF 应返回错误")
+	}
+}
+
 // ---- 缓存命中（FR-FETCH-04）----
 
 func TestFetch_CacheHitNoNetwork(t *testing.T) {
@@ -282,6 +294,61 @@ func TestFetch_AllSourcesFailReportsReason(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Sci-Hub") {
 		t.Fatalf("错误应包含 Sci-Hub 失败原因，got %v", msg)
+	}
+}
+
+// TestFetch_EmptyTextScannedPDFCachesViaPdfURL：扫描版 PDF 抽取为空文本时，
+// 应写缓存 + 记录 PdfURL，第二次 Fetch 以落盘 PDF 为凭证命中缓存（零网络）。
+func TestFetch_EmptyTextScannedPDFCachesViaPdfURL(t *testing.T) {
+	s := newFetchTestStore(t)
+	env := newFetchTestEnv(t, s)
+	env.paperBytes = buildMinimalPDF("") // 无文本内容 → 抽取为空
+	citeKey := insertPaper(t, s, "10.1/oa")
+
+	res, err := env.fetcher.Fetch(t.Context(), citeKey)
+	if err != nil {
+		t.Fatalf("扫描版 PDF 抽取空文本不应报错: %v", err)
+	}
+	if res.Fulltext != "" {
+		t.Fatalf("空文本应原样返回，got %q", res.Fulltext)
+	}
+	if _, err := os.Stat(res.PdfPath); err != nil {
+		t.Fatalf("PDF 应已落盘：%v", err)
+	}
+	if cached, _ := s.GetFulltext(citeKey); cached != "" {
+		t.Fatalf("fulltext 应为空字符串，got %q", cached)
+	}
+	if url, _ := s.GetByCiteKey(citeKey); url == nil || url.PdfURL == "" {
+		t.Fatal("PdfURL 应已记录作为缓存凭证")
+	}
+
+	// 第二次 fetch：零网络命中缓存
+	env.upCount, env.sciCount, env.pdfCount = 0, 0, 0
+	res2, err := env.fetcher.Fetch(t.Context(), citeKey)
+	if err != nil {
+		t.Fatalf("第二次 fetch 不应报错: %v", err)
+	}
+	if res2.Via != "cache" {
+		t.Fatalf("第二次应命中缓存，got %q", res2.Via)
+	}
+	if env.upCount != 0 || env.sciCount != 0 || env.pdfCount != 0 {
+		t.Fatalf("扫描版缓存命中不应发起网络请求，up=%d sci=%d pdf=%d", env.upCount, env.sciCount, env.pdfCount)
+	}
+}
+
+// TestDownloadPDF_SizeLimit：超限响应应报错且不落盘。
+func TestDownloadPDF_SizeLimit(t *testing.T) {
+	s := newFetchTestStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write(make([]byte, maxPDFBytes+1)) // Content-Length 超限
+	}))
+	defer srv.Close()
+
+	f := &FulltextFetcher{store: s, client: httpclient.New(httpclient.Options{TimeoutMS: 5000}), downloadDir: t.TempDir()}
+	_, err := f.downloadPDF(t.Context(), srv.URL+"/big.pdf", "abc")
+	if err == nil {
+		t.Fatal("超限 PDF 应报错")
 	}
 }
 

@@ -73,7 +73,7 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("force", false, "覆盖已存在的文件")
-	cmd.Flags().String("lang", lint.LangZH, "撰写语言 zh|en")
+	cmd.Flags().String("lang", defaultLang(cfg), "撰写语言 zh|en（默认 LITKIT_LANG）")
 	cmd.Flags().String("type", lint.PaperTypeEmpirical, fmt.Sprintf("论文类型 %s", lint.PaperTypesLabel()))
 	cmd.Flags().String("journal", "", "目标期刊名称（写入 spec）")
 	return cmd

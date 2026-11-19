@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -285,6 +286,161 @@ func TestInitWorkdir_typeProposal(t *testing.T) {
 	}
 	if len(spec.SectionList()) == 0 {
 		t.Error("proposal 应有章节清单")
+	}
+}
+
+// TestInitWorkdir_createsGitignore 初始化应写入受管 .gitignore 区块，防止密钥/库/产物被提交。
+func TestInitWorkdir_createsGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("应生成 .gitignore：%v", err)
+	}
+	got := string(data)
+	for _, want := range []string{gitignoreMarker, ".env", ".litkit/litkit.db", ".litkit/verifier_models.json", "outputs/", "downloads/"} {
+		if !strings.Contains(got, want) {
+			t.Errorf(".gitignore 应含 %q：%s", want, got)
+		}
+	}
+}
+
+// TestEnsureGitignore_preservesExistingAndIsIdempotent 保留用户已有规则，重复 init 不重复追加。
+func TestEnsureGitignore_preservesExistingAndIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(path, []byte("node_modules/"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	created, err := ensureGitignore(dir)
+	if err != nil {
+		t.Fatalf("ensureGitignore: %v", err)
+	}
+	if !created {
+		t.Error("首次应写入受管区块")
+	}
+	created, err = ensureGitignore(dir)
+	if err != nil {
+		t.Fatalf("ensureGitignore again: %v", err)
+	}
+	if created {
+		t.Error("已有区块时不应重复写入")
+	}
+	data, _ := os.ReadFile(path)
+	got := string(data)
+	if !strings.Contains(got, "node_modules/") {
+		t.Errorf("不应丢失用户规则：%q", got)
+	}
+	if n := strings.Count(got, gitignoreMarker); n != 1 {
+		t.Errorf("受管区块应只出现一次，got %d", n)
+	}
+}
+
+// TestEnsureProjectInfra_reportsDBOnlyWhenCreated 重跑 init 不应再声称创建了数据库。
+func TestEnsureProjectInfra_reportsDBOnlyWhenCreated(t *testing.T) {
+	dir := t.TempDir()
+	created, err := ensureProjectInfra(dir, false)
+	if err != nil {
+		t.Fatalf("ensureProjectInfra: %v", err)
+	}
+	dbEntry := filepath.Join(".litkit", "litkit.db")
+	if !containsStr(created, dbEntry) {
+		t.Errorf("首次应报告创建数据库：%v", created)
+	}
+	created, err = ensureProjectInfra(dir, false)
+	if err != nil {
+		t.Fatalf("ensureProjectInfra again: %v", err)
+	}
+	if containsStr(created, dbEntry) {
+		t.Errorf("重跑不应再报告创建数据库：%v", created)
+	}
+}
+
+// envKeyRe 提取模板中的 LITKIT_* 键（含注释行）。
+var envKeyRe = regexp.MustCompile(`(?m)^\s*#?\s*(LITKIT_[A-Z0-9_]+)=`)
+
+func envKeysOf(s string) map[string]bool {
+	keys := map[string]bool{}
+	for _, m := range envKeyRe.FindAllStringSubmatch(s, -1) {
+		keys[m[1]] = true
+	}
+	return keys
+}
+
+// TestEnvTemplate_matchesEnvExample init 生成的 .env 必须覆盖 .env.example 的全部配置项，
+// 防止新配置只写进文档、init 用户看不到。
+func TestEnvTemplate_matchesEnvExample(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	want := envKeysOf(string(data))
+	got := envKeysOf(envTemplate)
+	for k := range want {
+		if !got[k] {
+			t.Errorf("envTemplate 缺少配置项 %s（请同步 app/.env.example）", k)
+		}
+	}
+	for k := range got {
+		if !want[k] {
+			t.Errorf("envTemplate 多出配置项 %s（请同步 app/.env.example）", k)
+		}
+	}
+}
+
+// TestLangDefaultsFollowConfig LITKIT_LANG 应作为相关命令 --lang 的默认值。
+func TestLangDefaultsFollowConfig(t *testing.T) {
+	cfg := &config.Config{Lang: lint.LangEN}
+	cases := []struct {
+		name string
+		flag func() (string, error)
+	}{
+		{"init", func() (string, error) { return newInitCmd(cfg).Flags().GetString("lang") }},
+		{"lint init", func() (string, error) { return newLintInitCmd(cfg).Flags().GetString("lang") }},
+		{"manuscript", func() (string, error) { return newManuscriptCmd(nil, nil, cfg).Flags().GetString("lang") }},
+		{"verify", func() (string, error) { return newVerifyCmd(cfg, nil, nil).Flags().GetString("lang") }},
+	}
+	for _, tc := range cases {
+		got, err := tc.flag()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got != lint.LangEN {
+			t.Errorf("%s: --lang 默认值应为 %q，got %q", tc.name, lint.LangEN, got)
+		}
+	}
+	if got := defaultLang(nil); got != config.DefaultLang {
+		t.Errorf("nil cfg 应回落 %q，got %q", config.DefaultLang, got)
+	}
+}
+
+// TestVerifyCmd_rejectsUnknownReport --report 拼错不应静默降级为 json。
+func TestVerifyCmd_rejectsUnknownReport(t *testing.T) {
+	cmd := newVerifyCmd(&config.Config{WorkDir: t.TempDir(), Lang: lint.LangZH}, nil, nil)
+	cmd.SetArgs([]string{"x.md", "--report", "citations-refs"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("未知 --report 应报参数错误")
+	}
+	if code := exitCodeOf(err); code != 2 {
+		t.Errorf("应为参数错误（退出码 2），got %d（%v）", code, err)
+	}
+}
+
+// TestReadFileTrimBOM 输入文本统一去除 UTF-8 BOM。
+func TestReadFileTrimBOM(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "draft.md")
+	if err := os.WriteFile(path, []byte("\uFEFF# 标题\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	data, err := readFileTrimBOM(path)
+	if err != nil {
+		t.Fatalf("readFileTrimBOM: %v", err)
+	}
+	if string(data) != "# 标题\n" {
+		t.Errorf("BOM 应被去除，got %q", string(data))
 	}
 }
 

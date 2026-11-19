@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -296,7 +295,7 @@ func (s *LLMScorer) Score(ctx context.Context, sentence, abstract string) (float
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := httpclient.ReadAllLimit(resp, maxMetaBytes)
 		return 0, "", fmt.Errorf("scorer: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 

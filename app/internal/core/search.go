@@ -7,11 +7,13 @@
 //   - 无摘要过滤：默认丢弃 Abstract 空串的论文（FR-SEARCH-03）
 //   - 结果入库：去重后的论文 upsert 进本地文献库（FR-LIB-01/06），
 //     带摘要的论文自动分配 cite_key 并回填到输出；入库失败不阻断检索
+//   - 探索模式：NoStore 时不写库（不分配 citeKey），供 AI 试检索词
 
 package core
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -44,6 +46,9 @@ type SearchOptions struct {
 	// Exclude 排除词列表：标题或摘要命中任一排除词（大小写不敏感）的论文被剔除，
 	// 且在入库之前执行（先排除后入库）。
 	Exclude []string `json:"exclude,omitempty"`
+	// NoStore 探索模式：只检索不入库，返回的论文不分配 citeKey。
+	// 用于 AI 拿不准检索词时先试跑，避免弱相关文献污染文献库。
+	NoStore bool `json:"noStore,omitempty"`
 }
 
 // applyDefaults 填充默认值。
@@ -135,9 +140,11 @@ func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions)
 	}
 	// 排除筛查（先排除后入库）
 	merged = filterExcluded(merged, opts.Exclude)
-	// 入库：仅带摘要论文（FR-LIB-01）；失败不阻断检索（透明降级）
-	if s.store != nil {
-		merged = s.persist(merged)
+	// 入库：仅带摘要论文（FR-LIB-01）；失败不阻断检索，但必须可见（否则 citeKey 为空却无提示）
+	if s.store != nil && !opts.NoStore {
+		var perrs []model.SourceError
+		merged, perrs = s.persist(merged)
+		result.Errors = append(result.Errors, perrs...)
 	}
 	// 默认年份倒序（最新在前）；year=0 排末尾（FR-SEARCH-05）
 	sortPapersByYearDesc(merged)
@@ -185,18 +192,28 @@ func ShortError(errMsg string) string {
 
 // persist 将去重后的论文 upsert 进文献库，并回填 cite_key（FR-LIB-06）。
 //
-// 入库失败静默忽略（检索结果不受影响）。
-func (s *Searcher) persist(papers []model.Paper) []model.Paper {
+// 入库失败不阻断检索，但以一条聚合的 Source="storage" 错误上报（避免静默丢失 citeKey）。
+func (s *Searcher) persist(papers []model.Paper) ([]model.Paper, []model.SourceError) {
+	failed := 0
+	var firstErr error
 	for i := range papers {
 		if !papers[i].HasAbstract() {
 			continue
 		}
 		citeKey, _, err := s.store.UpsertPaper(papers[i])
-		if err == nil {
-			papers[i].CiteKey = citeKey
+		if err != nil {
+			failed++
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
+		papers[i].CiteKey = citeKey
 	}
-	return papers
+	if failed == 0 {
+		return papers, nil
+	}
+	return papers, []model.SourceError{{Source: "storage", Error: fmt.Sprintf("%d 篇入库失败: %v", failed, firstErr)}}
 }
 
 // selectSources 按 names 过滤；names 为空时返回全部。

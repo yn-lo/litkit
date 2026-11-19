@@ -5,10 +5,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -80,11 +78,10 @@ func newExportCmd() *cobra.Command {
 // readPapersFile 读取 papers.json：兼容裸数组与 {"papers": [...]} 两种形态。
 // 兼容 Windows 工具常见的 UTF-8 BOM 前缀。
 func readPapersFile(path string) ([]model.Paper, error) {
-	data, err := os.ReadFile(path)
+	data, err := readFileTrimBOM(path)
 	if err != nil {
 		return nil, fmt.Errorf("export: 读取 %s 失败: %w", path, err)
 	}
-	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
 	var papers []model.Paper
 	if err := json.Unmarshal(data, &papers); err == nil {
 		return dedupPapers(papers), nil

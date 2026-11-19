@@ -89,7 +89,7 @@ DOI（非空）> Title（归一化）> ID（source:externalId）
 
 ## 4. 入库键与引用标识（internal/storage）
 
-文献库以 SQLite 存储（`WORK_DIR/litkit.db`），schema 由 `schema/schema.sql` 统一管理。
+文献库以 SQLite 存储（`WORK_DIR/.litkit/litkit.db`），schema 由 `schema/schema.sql` 统一管理。
 
 ```
 dedup_key（入库唯一键，FR-LIB-01）：

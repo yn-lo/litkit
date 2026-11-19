@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -226,7 +225,7 @@ func (p *PubmedSource) esearch(ctx context.Context, query string, opts SearchOpt
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("esearch HTTP %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := httpclient.ReadAllLimit(resp, maxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("esearch read body: %w", err)
 	}
@@ -255,7 +254,7 @@ func (p *PubmedSource) efetch(ctx context.Context, ids []string) ([]byte, error)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("efetch HTTP %d", resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	return httpclient.ReadAllLimit(resp, maxResponseBytes)
 }
 
 // parsePubmedESearch 解析 esearch 响应，提取 PMID 列表。

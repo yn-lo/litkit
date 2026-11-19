@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -105,7 +104,7 @@ func (s *SemanticScholarSource) doSearch(ctx context.Context, query string, opts
 		// 403 等非 2xx 返回状态码，调用方判断是否降级
 		return nil, resp.StatusCode, nil
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := httpclient.ReadAllLimit(resp, maxResponseBytes)
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("read body: %w", err)
 	}

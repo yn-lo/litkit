@@ -55,7 +55,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			if err != nil {
 				return err
 			}
-			src, err := os.ReadFile(args[0])
+			src, err := readFileTrimBOM(args[0])
 			if err != nil {
 				return fmt.Errorf("manuscript: 读取手稿失败: %w", err)
 			}
@@ -100,7 +100,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			})
 		},
 	}
-	cmd.Flags().String("lang", "zh", "写作语言模式 zh|en")
+	cmd.Flags().String("lang", defaultLang(cfg), "写作语言模式 zh|en（默认 LITKIT_LANG）")
 	cmd.Flags().StringP("style", "s", "", "引用样式（zh: gb7714-2025；en: apa / ieee）")
 	cmd.Flags().Bool("preview", false, "额外生成 preview 版本 md（与正常版并存）：内联自描述标记 [@doi:{DOI} — 标题]/[@标题]")
 	cmd.Flags().Bool("docx", false, "生成 Word（需 Pandoc）")

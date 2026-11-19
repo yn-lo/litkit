@@ -33,6 +33,34 @@ type searchOutputFull struct {
 	Papers        []model.Paper            `json:"papers"`
 }
 
+// searchOutcomeError 依据检索结果映射退出码：
+// 部分源失败但仍有源成功（含零结果）→ 3；全部源失败 → 1；否则 nil。
+func searchOutcomeError(res *model.SearchResult) error {
+	srcErrs := sourceErrors(res.Errors)
+	if len(srcErrs) == 0 {
+		return nil
+	}
+	if len(res.SourceResults) > 0 {
+		return &exitError{code: exitCodePartialFailure}
+	}
+	// 网络类失败时追加代理提示（AI-first：错误消息即文档，agent 只读得到 stderr）。
+	if hasNetworkError(srcErrs) {
+		return fmt.Errorf("search: 所有源均失败（检测到网络类错误；网络受限环境可在 .env 设 LITKIT_PROXY_URL=http://127.0.0.1:7890 启用代理，详见 litkit --help）")
+	}
+	return fmt.Errorf("search: 所有源均失败")
+}
+
+// sourceErrors 过滤掉本地入库（storage）错误，只保留检索源错误。
+func sourceErrors(errs []model.SourceError) []model.SourceError {
+	out := make([]model.SourceError, 0, len(errs))
+	for _, e := range errs {
+		if e.Source != "storage" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // shortErrors 将完整源错误压缩为精简原因（FR-IFACE-04）。
 // 完整错误保留在 --full 输出与日志中；AI 需要细查时重跑 search --full。
 func shortErrors(errs []model.SourceError) []model.SourceError {
@@ -113,7 +141,7 @@ func resolveSearchSources(explicit string, cfg *config.Config, registered []stri
 // 退出码：3 表示部分源失败但部分成功（api.md §1.1）。
 func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]",
+		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--no-store] [--full]",
 		Short: "跨源并发检索文献",
 		Long: `跨源并发检索文献，默认输出精简视图（citeKey/title/firstAuthor/year/abstract），
 面向 AI agent 调用（FR-IFACE-04）。结果按 DOI→title→id 三级去重，年份倒序。
@@ -132,6 +160,10 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 
 --full 输出完整元数据（含 doi/pmid/arxivId/url/venue/全部作者）与完整错误。
 
+--no-store 探索模式：结果只返回、不入库，citeKey 为空。检索词拿不准时先试跑，
+确认相关后再去掉本选项正式检索入库，避免弱相关文献污染文献库。
+本模式无需 LITKIT_WORK_DIR。
+
 网络：检索源默认直连。网络受限环境（报 TLS handshake timeout / connection
 timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部外呼走代理，
 配置详见 litkit --help。`,
@@ -146,15 +178,19 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 			years, _ := cmd.Flags().GetInt("years")
 			keepNoAbstract, _ := cmd.Flags().GetBool("keep-no-abstract")
 			excludeFlag, _ := cmd.Flags().GetString("exclude")
+			noStore, _ := cmd.Flags().GetBool("no-store")
 			full, _ := cmd.Flags().GetBool("full")
 
 			if err := validateSearchParams(query, maxResults, years, sinceFlag, year, mode); err != nil {
 				return err
 			}
 
-			// 工作目录必须显式设置（FR-LIB-03）：结果需自动入库回填 citeKey
-			if err := requireWorkDir(cfg); err != nil {
-				return err
+			// 工作目录必须显式设置（FR-LIB-03）：结果需自动入库回填 citeKey；
+			// --no-store 不入库，无需工作目录。
+			if !noStore {
+				if err := requireWorkDir(cfg); err != nil {
+					return err
+				}
 			}
 
 			opts := core.SearchOptions{
@@ -163,14 +199,8 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 				Since:          computeSince(sinceFlag, years),
 				Mode:           mode,
 				KeepNoAbstract: keepNoAbstract,
-			}
-			if excludeFlag != "" {
-				for _, e := range strings.Split(excludeFlag, ",") {
-					e = strings.TrimSpace(e)
-					if e != "" {
-						opts.Exclude = append(opts.Exclude, e)
-					}
-				}
+				Exclude:        config.SplitList(excludeFlag),
+				NoStore:        noStore,
 			}
 			names, warns := resolveSearchSources(sourcesFlag, cfg, reg.Names())
 			for _, w := range warns {
@@ -190,6 +220,9 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 			res, err := s.Search(cmd.Context(), query, opts)
 			if err != nil {
 				return err
+			}
+			if noStore {
+				fmt.Fprintln(os.Stderr, "litkit: --no-store 探索模式：结果未入库，citeKey 为空")
 			}
 
 			if full {
@@ -216,19 +249,9 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 					return perr
 				}
 			}
-			// 部分源失败但部分成功：退出码 3（api.md §1.1）
-			if len(res.Errors) > 0 && res.Total > 0 {
-				os.Exit(exitCodePartialFailure)
-			}
-			// 全部源失败：返回错误，由 main 以退出码 1 结束。
-			// 网络类失败时追加代理提示（AI-first：错误消息即文档，agent 只读得到 stderr）。
-			if len(res.Errors) > 0 {
-				if hasNetworkError(res.Errors) {
-					return fmt.Errorf("search: 所有源均失败（检测到网络类错误；网络受限环境可在 .env 设 LITKIT_PROXY_URL=http://127.0.0.1:7890 启用代理，详见 litkit --help）")
-				}
-				return fmt.Errorf("search: 所有源均失败")
-			}
-			return nil
+			// 部分源失败但部分成功：退出码 3（api.md §1.1）。
+			// 仅统计检索源错误；本地入库（storage）错误已在输出中可见，不算源失败。
+			return searchOutcomeError(res)
 		},
 	}
 	cmd.Flags().StringP("sources", "s", "", "逗号分隔源列表（litkit sources 查看）")
@@ -239,6 +262,7 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 	cmd.Flags().IntP("year", "y", 0, "精确年份过滤（源支持时）")
 	cmd.Flags().Bool("keep-no-abstract", false, "保留无摘要论文（默认过滤，FR-SEARCH-03）")
 	cmd.Flags().String("exclude", "", "逗号分隔排除词：标题或摘要命中任一排除词即剔除（本地召回后筛查，先排除后入库）")
+	cmd.Flags().Bool("no-store", false, "只检索不入库（探索模式：不分配 citeKey；无需 LITKIT_WORK_DIR）")
 	cmd.Flags().Bool("full", false, "输出完整元数据（默认精简视图，FR-IFACE-04）")
 	return cmd
 }

@@ -15,6 +15,8 @@ litkit search "<英文关键词>" [选项]
 | `--mode` | `tiab` | 检索等级：tiab（题目+摘要+关键词）/ full（全文） |
 | `--years` | `3` | 最近 N 年 |
 | `--since` | - | 起始年份（优先于 --years） |
+| `--exclude` | - | 排除词（标题/摘要命中即剔除，先排除后入库） |
+| `--no-store` | 关 | 探索模式：只检索不入库（citeKey 为空） |
 
 ## 默认源配置
 
@@ -32,7 +34,8 @@ LITKIT_SEARCH_EXCLUDE_SOURCES=crossref,doaj              # 排除源
 - 检索词**必须英文**（各源英文语料为主）
 - 默认 tiab 模式；结果不足时用 `--mode full` 全文检索
 - 默认最近 3 年；可 `--years 10` 或 `--since 2015` 放宽
-- 检索结果自动入库，返回 citeKey/title/firstAuthor/year/abstract
+- 检索词拿不准时先加 `--no-store` 试跑（不入库、无 citeKey），确认相关后再正式检索
+- 正式检索自动入库，返回 citeKey/title/firstAuthor/year/abstract
 
 ## 文献库管理
 

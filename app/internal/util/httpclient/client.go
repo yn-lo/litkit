@@ -124,14 +124,7 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request) (*http.Response,
 
 // sleepForRetry 等待退避时间。返回 false 表示 ctx 已取消。
 func (c *Client) sleepForRetry(ctx context.Context, resp *http.Response, attempt int) bool {
-	wait := c.backoffDuration(attempt)
-	// 优先尊重 Retry-After 头
-	if ra := resp.Header.Get("Retry-After"); ra != "" {
-		if secs, perr := strconv.Atoi(ra); perr == nil && secs > 0 {
-			wait = time.Duration(secs) * time.Second
-		}
-	}
-	timer := time.NewTimer(wait)
+	timer := time.NewTimer(c.retryWait(resp, attempt))
 	defer timer.Stop()
 	select {
 	case <-timer.C:
@@ -139,6 +132,23 @@ func (c *Client) sleepForRetry(ctx context.Context, resp *http.Response, attempt
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// maxRetryAfter Retry-After 等待上限：防止异常响应让命令挂起数小时。
+const maxRetryAfter = 30 * time.Second
+
+// retryWait 计算本次重试等待时长（优先 Retry-After，受 maxRetryAfter 约束）。
+func (c *Client) retryWait(resp *http.Response, attempt int) time.Duration {
+	wait := c.backoffDuration(attempt)
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, perr := strconv.Atoi(ra); perr == nil && secs > 0 {
+			wait = time.Duration(secs) * time.Second
+			if wait > maxRetryAfter {
+				wait = maxRetryAfter
+			}
+		}
+	}
+	return wait
 }
 
 func (c *Client) backoffDuration(attempt int) time.Duration {
@@ -160,6 +170,22 @@ func shouldRetry(status int) bool {
 // ReadAll 读取并关闭响应体，返回字节切片。
 // 失败时仍确保 Body 关闭，便于调用方错误分支处理。
 func ReadAll(resp *http.Response) ([]byte, error) {
+	return ReadAllLimit(resp, 0)
+}
+
+// ReadAllLimit 读取并关闭响应体，最多 limit 字节（0=不限）；超限返回错误而非截断。
+// 用于网络边界防御超大/恶意响应耗尽内存。
+func ReadAllLimit(resp *http.Response, limit int64) ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
-	return io.ReadAll(resp.Body)
+	if limit <= 0 {
+		return io.ReadAll(resp.Body)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("响应体超过上限 %d 字节", limit)
+	}
+	return data, nil
 }

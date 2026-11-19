@@ -85,6 +85,9 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			if paperType != "" && !lint.IsValidPaperType(paperType) {
 				return &paramError{msg: fmt.Sprintf("verify: 无效 type %q（可选 %s）", paperType, lint.PaperTypesLabel())}
 			}
+			if reportFlag != "json" && reportFlag != "citation-refs" {
+				return &paramError{msg: fmt.Sprintf("verify: 无效 --report %q（可选 json|citation-refs）", reportFlag)}
+			}
 
 			// 加载阈值配置
 			spec, err := loadVerifySpec(cfg.WorkDir, paperType, lang)
@@ -131,7 +134,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			}
 
 			// 引用评分（FR-LINT-08）
-			if strings.Contains(reportFlag, "citation-refs") && store != nil {
+			if reportFlag == "citation-refs" && store != nil {
 				cr := runCitationRelevance(args, store, cfg, spec)
 				report.CitationRefs = cr
 			}
@@ -140,12 +143,12 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			fmt.Println(string(out))
 
 			if report.ExitHint == "fix_and_rerun" {
-				os.Exit(1)
+				return &exitError{code: 1}
 			}
 			return nil
 		},
 	}
-	cmd.Flags().String("lang", "zh", "写作语言 zh|en")
+	cmd.Flags().String("lang", defaultLang(cfg), "写作语言 zh|en（默认 LITKIT_LANG）")
 	cmd.Flags().String("mode", "draft", "验证模式 chapter|draft|final（递增启用规则）")
 	cmd.Flags().String("type", "", fmt.Sprintf("论文类型 %s（空=从已有 spec 自动检测）", lint.PaperTypesLabel()))
 	cmd.Flags().String("rule", "", "仅运行指定规则（逗号分隔，如 R2.1,R7.1）")

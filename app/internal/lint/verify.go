@@ -188,6 +188,38 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 	return report, nil
 }
 
+// citeKeyPrefixes 与手稿反查前缀一致：这些 token 不是 citeKey（由 manuscript 阶段解析）。
+var citeKeyPrefixes = []string{"doi:", "pmid:", "arxiv:", "title:"}
+
+// splitCiteKeys 拆分 [@a,b] 内的裸 citeKey。
+// 整括号以反查前缀开头时整体跳过（identifier 内可含逗号，与 manuscript 口径一致）；
+// 其余按逗号拆分，逐项跳过带前缀 token。
+func splitCiteKeys(inner string) []string {
+	inner = strings.TrimSpace(inner)
+	if hasCiteKeyPrefix(inner) {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(inner, ",") {
+		k := strings.TrimSpace(part)
+		if k == "" || hasCiteKeyPrefix(k) {
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
+func hasCiteKeyPrefix(s string) bool {
+	lower := strings.ToLower(s)
+	for _, p := range citeKeyPrefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // CheckCiteKeys 校验文件正文中 [@citeKey] 是否存在于本地文献库（引用防伪，R5.6）。
 //
 // 纯函数 lint.Run 无 IO；此校验在注册表声明筛选元数据，由 RunFilesWithStore 执行。
@@ -202,9 +234,8 @@ func CheckCiteKeys(src *Source, store *storage.Store) []Violation {
 		lineNo := src.bodyIdx[i]
 		for _, m := range citeRe.FindAllStringSubmatch(ln, -1) {
 			inner := strings.TrimSuffix(strings.TrimPrefix(m[0], "[@"), "]")
-			for _, part := range strings.Split(inner, ",") {
-				key := strings.TrimSpace(part)
-				if key == "" || checked[key] {
+			for _, key := range splitCiteKeys(inner) {
+				if checked[key] {
 					continue
 				}
 				checked[key] = true

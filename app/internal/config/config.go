@@ -23,16 +23,24 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// 枚举取值（normalize 校验用）。
+const (
+	langZH         = "zh"
+	langEN         = "en"
+	searchModeTiab = "tiab"
+	searchModeFull = "full"
+)
+
 // Defaults 默认值常量。
 const (
-	DefaultLang            = "zh"
+	DefaultLang            = langZH
 	DefaultHTTPTimeoutMS   = 15000
 	DefaultHTTPRetries     = 2
-	DefaultMaxResults      = 5      // 每源默认检索条数
-	DefaultRecentYears     = 3      // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
-	DefaultSearchMode      = "tiab" // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
-	DefaultSearchTimeoutMS = 60000  // 默认整体检索超时（含全部源并发 + 重试）
-	DefaultLLMTimeoutMS    = 30000  // 默认 LLM 单次评分超时（FR-LINT-08）
+	DefaultMaxResults      = 5              // 每源默认检索条数
+	DefaultRecentYears     = 3              // 默认检索时间范围（最近 N 年，FR-SEARCH-13）
+	DefaultSearchMode      = searchModeTiab // 默认检索等级：tiab=题目+摘要（+关键词，源支持时）；full=全文
+	DefaultSearchTimeoutMS = 60000          // 默认整体检索超时（含全部源并发 + 重试）
+	DefaultLLMTimeoutMS    = 30000          // 默认 LLM 单次评分超时（FR-LINT-08）
 )
 
 // Config litkit 运行配置。全部经环境变量读取（FR-CONFIG-01）。
@@ -54,7 +62,7 @@ type Config struct {
 	ACMAPIKey             string
 	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
 	SciHubURL             string // Sci-Hub 兜底镜像（默认 https://sci-hub.se，FR-FETCH-03）
-	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads）
+	FetchDownloadDir      string // 全文 PDF 落盘目录（默认 <WorkDir>/downloads；.env 中相对路径锚定该 .env 目录）
 	LLMAPIKey             string // LLM 评分 API key（FR-LINT-08，全局回落）
 	LLMBaseURL            string // LLM API base URL（自托管 / 代理 endpoint，全局回落）
 	LLMTimeoutMS          int    // LLM 单次评分超时，默认 30000
@@ -111,13 +119,13 @@ func discoverEnvFileFrom(start string) string {
 
 // loadFrom 加载项目级 .env（进程环境变量最高优先）并填充 Config。
 func loadFrom(projectFile string) (*Config, error) {
-	workDirFile, err := loadEnvFile(projectFile)
+	fromFile, err := loadEnvFile(projectFile)
 	if err != nil {
 		return nil, err
 	}
 	cfg := &Config{
 		EnvFile:               projectFile,
-		WorkDir:               resolveWorkDir(os.Getenv("LITKIT_WORK_DIR"), workDirFile),
+		WorkDir:               resolveWorkDir(os.Getenv("LITKIT_WORK_DIR"), anchorFile(projectFile, fromFile, "LITKIT_WORK_DIR")),
 		Lang:                  getenvDefault("LITKIT_LANG", DefaultLang),
 		HTTPTimeoutMS:         getenvInt("LITKIT_HTTP_TIMEOUT_MS", DefaultHTTPTimeoutMS),
 		HTTPRetries:           getenvInt("LITKIT_HTTP_RETRIES", DefaultHTTPRetries),
@@ -133,58 +141,107 @@ func loadFrom(projectFile string) (*Config, error) {
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),
 		UnpaywallEmail:        os.Getenv("LITKIT_UNPAYWALL_EMAIL"),
 		SciHubURL:             getenvDefault("LITKIT_SCI_HUB_URL", "https://sci-hub.se"),
-		FetchDownloadDir:      os.Getenv("LITKIT_FETCH_DOWNLOAD_DIR"),
+		FetchDownloadDir:      resolveDir(os.Getenv("LITKIT_FETCH_DOWNLOAD_DIR"), anchorFile(projectFile, fromFile, "LITKIT_FETCH_DOWNLOAD_DIR")),
 		LLMAPIKey:             os.Getenv("LITKIT_LLM_API_KEY"),
 		LLMBaseURL:            os.Getenv("LITKIT_LLM_BASE_URL"),
 		LLMTimeoutMS:          getenvInt("LITKIT_LLM_TIMEOUT_MS", DefaultLLMTimeoutMS),
 	}
-	// 负数/零值下界钳制：负重试次数会使 httpclient 重试循环不执行而返回 nil 响应；
-	// 非正超时会退化为无超时
-	if cfg.HTTPRetries < 0 {
-		cfg.HTTPRetries = 0
-	}
-	if cfg.HTTPTimeoutMS <= 0 {
-		cfg.HTTPTimeoutMS = DefaultHTTPTimeoutMS
-	}
+	cfg.normalize()
 	return cfg, nil
 }
 
+// normalize 校验并钳制配置值：非法值回落默认，避免单个笔误让命令在运行期
+// 以误导性的参数错误失败（如负的 RecentYears 会让每次 search 报 --years 非法），
+// 或让超时类配置静默失效（非正超时 = 立即过期 / 无超时）。
+func (c *Config) normalize() {
+	if c.Lang != langZH && c.Lang != langEN {
+		c.Lang = DefaultLang
+	}
+	if c.SearchMode != searchModeTiab && c.SearchMode != searchModeFull {
+		c.SearchMode = DefaultSearchMode
+	}
+	if c.DefaultMaxResults <= 0 {
+		c.DefaultMaxResults = DefaultMaxResults
+	}
+	if c.RecentYears < 0 {
+		c.RecentYears = DefaultRecentYears
+	}
+	if c.SearchTimeoutMS <= 0 {
+		c.SearchTimeoutMS = DefaultSearchTimeoutMS
+	}
+	// 负重试次数会使 httpclient 重试循环不执行而返回 nil 响应
+	if c.HTTPRetries < 0 {
+		c.HTTPRetries = 0
+	}
+	if c.HTTPTimeoutMS <= 0 {
+		c.HTTPTimeoutMS = DefaultHTTPTimeoutMS
+	}
+	if c.LLMTimeoutMS <= 0 {
+		c.LLMTimeoutMS = DefaultLLMTimeoutMS
+	}
+}
+
+// DownloadDir 返回全文 PDF 落盘目录：显式配置优先，否则 <WorkDir>/downloads。
+// WorkDir 也为空时返回空串（调用方自行跳过）。
+func (c *Config) DownloadDir() string {
+	if c.FetchDownloadDir != "" {
+		return c.FetchDownloadDir
+	}
+	if c.WorkDir != "" {
+		return filepath.Join(c.WorkDir, "downloads")
+	}
+	return ""
+}
+
 // loadEnvFile 加载项目级 .env，且不覆盖已存在的进程环境变量。
-// 返回为 LITKIT_WORK_DIR 提供值的 .env 路径；该值来自进程环境变量或文件未声明时为空。
+// 返回实际由该文件设置成功的键集合（用于判断相对路径应锚定到 .env 还是 cwd）。
 // 兼容 Windows 记事本 / PowerShell 5 保存的 UTF-8 BOM（否则首个键名会被污染）。
-func loadEnvFile(f string) (string, error) {
+func loadEnvFile(f string) (map[string]bool, error) {
+	fromFile := map[string]bool{}
 	if f == "" {
-		return "", nil
+		return fromFile, nil
 	}
 	data, err := os.ReadFile(f)
 	if err != nil {
-		return "", fmt.Errorf("load .env %q: %w", f, err)
+		return nil, fmt.Errorf("load .env %q: %w", f, err)
 	}
 	text := strings.TrimPrefix(string(data), "\uFEFF")
 	kv, err := godotenv.Unmarshal(text)
 	if err != nil {
-		return "", fmt.Errorf("load .env %q: %w", f, err)
+		return nil, fmt.Errorf("load .env %q: %w", f, err)
 	}
-	workDirFile := ""
 	for k, v := range kv {
 		if _, ok := os.LookupEnv(k); ok {
 			continue
 		}
 		if err := os.Setenv(k, v); err != nil {
-			return "", fmt.Errorf("set env %s: %w", k, err)
+			return nil, fmt.Errorf("set env %s: %w", k, err)
 		}
-		if k == "LITKIT_WORK_DIR" {
-			workDirFile = f
-		}
+		fromFile[k] = true
 	}
-	return workDirFile, nil
+	return fromFile, nil
+}
+
+// anchorFile 返回相对路径应锚定的 .env 路径：仅当该键实际来自 .env 时返回，
+// 否则返回空串，让进程环境变量中的相对值继续按 cwd 解析（符合环境变量语义）。
+func anchorFile(projectFile string, fromFile map[string]bool, key string) string {
+	if fromFile[key] {
+		return projectFile
+	}
+	return ""
 }
 
 // resolveWorkDir 把 .env 声明的相对工作目录锚定到该 .env 所在目录；
 // 进程环境变量中的相对值仍按 cwd 解析（符合环境变量语义）。
 func resolveWorkDir(wd, envFile string) string {
-	if wd == "" || filepath.IsAbs(wd) {
-		return wd
+	return resolveDir(wd, envFile)
+}
+
+// resolveDir 把相对路径锚定到 envFile 所在目录（envFile 为空时按 cwd）；
+// 空值或绝对路径原样返回。
+func resolveDir(p, envFile string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
 	}
 	base := getCwd()
 	if envFile != "" {
@@ -193,7 +250,7 @@ func resolveWorkDir(wd, envFile string) string {
 	if abs, err := filepath.Abs(base); err == nil {
 		base = abs
 	}
-	return filepath.Clean(filepath.Join(base, wd))
+	return filepath.Clean(filepath.Join(base, p))
 }
 
 // SplitList 解析逗号分隔列表：trim、去掉空项、按出现顺序去重。

@@ -116,10 +116,14 @@ func parseOpenAlexJSON(data []byte) ([]model.Paper, error) {
 	return papers, nil
 }
 
+// maxAbstractPosition 摘要倒排位置上限：防御异常/恶意响应触发超大切片分配。
+const maxAbstractPosition = 10000
+
 // reconstructOpenAlexAbstract 由倒排索引重建摘要原文。
 //
 // 输入：{word: [positions]}；输出：按位置拼接的字符串。
-// ponytail: 用最大位置分配切片，O(N) 重建，适合 OpenAlex 摘要规模（< 1k 词）。
+// ponytail: 用最大位置分配切片，O(N) 重建，适合 OpenAlex 摘要规模（< 1k 词）；
+// 位置超过 maxAbstractPosition 的项直接忽略。
 func reconstructOpenAlexAbstract(idx map[string][]int) string {
 	if len(idx) == 0 {
 		return ""
@@ -127,7 +131,7 @@ func reconstructOpenAlexAbstract(idx map[string][]int) string {
 	maxPos := -1
 	for _, positions := range idx {
 		for _, p := range positions {
-			if p > maxPos {
+			if p >= 0 && p <= maxAbstractPosition && p > maxPos {
 				maxPos = p
 			}
 		}

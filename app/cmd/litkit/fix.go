@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -63,7 +64,7 @@ func newFixCmd(cfg *config.Config) *cobra.Command {
 				if info, err := os.Stat(p); err == nil {
 					perm = info.Mode()
 				}
-				if err := os.WriteFile(p, []byte(fixed), perm); err != nil {
+				if err := writeFileAtomic(p, []byte(fixed), perm); err != nil {
 					return fmt.Errorf("fix: 写入 %s 失败: %w", p, err)
 				}
 				files[p] = rep
@@ -76,6 +77,28 @@ func newFixCmd(cfg *config.Config) *cobra.Command {
 	cmd.Flags().String("rule", "", "仅修正指定规则（逗号分隔，如 R3.1,R3.2）")
 	cmd.Flags().String("skip", "", "跳过指定规则（逗号分隔）")
 	return cmd
+}
+
+// writeFileAtomic 先写同目录临时文件再重命名替换：中断或磁盘满时原稿保持完整。
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".litkit-fix-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // filterFixRules 按 --rule/--skip 与 spec 的 lang/type 过滤可修规则。

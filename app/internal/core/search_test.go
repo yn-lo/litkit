@@ -357,6 +357,53 @@ func TestSearch_StoreNil_NoUpsert(t *testing.T) {
 	}
 }
 
+// TestSearch_NoStoreSkipsPersist：探索模式只返回结果，不写库、不分配 citeKey。
+func TestSearch_NoStoreSkipsPersist(t *testing.T) {
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
+	reg := newFakeRegistry(srcA)
+	store, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
+	if err != nil {
+		t.Fatalf("Open store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := NewSearcher(reg, store, 0, 0)
+
+	res, _ := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5, NoStore: true})
+	if len(res.Papers) != 1 {
+		t.Fatalf("NoStore 时应正常返回 1 篇，got %d", len(res.Papers))
+	}
+	if res.Papers[0].CiteKey != "" {
+		t.Fatalf("NoStore 时不应分配 cite_key，got %q", res.Papers[0].CiteKey)
+	}
+	st, err := store.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.Total != 0 {
+		t.Fatalf("NoStore 不应写库，got %d 篇", st.Total)
+	}
+}
+
+// TestSearch_PersistFailureIsReported：入库失败必须以 storage 错误上报，不能静默留下空 citeKey。
+func TestSearch_PersistFailureIsReported(t *testing.T) {
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperWithAbstract("A1", "10.1/a1", "abs")}}
+	reg := newFakeRegistry(srcA)
+	store, err := storage.Open(filepath.Join(t.TempDir(), "litkit.db"))
+	if err != nil {
+		t.Fatalf("Open store: %v", err)
+	}
+	_ = store.Close() // 关闭后 UpsertPaper 必失败
+	s := NewSearcher(reg, store, 0, 0)
+
+	res, err := s.Search(context.Background(), "query", SearchOptions{MaxResults: 5})
+	if err != nil {
+		t.Fatalf("入库失败不应中断检索: %v", err)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Source != "storage" {
+		t.Fatalf("入库失败应上报 Source=storage 的错误，got %+v", res.Errors)
+	}
+}
+
 func TestSearch_KeepNoAbstract_NoUpsert(t *testing.T) {
 	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{paperNoAbstract("NoAbs", "10.1/noabs")}}
 	reg := newFakeRegistry(srcA)

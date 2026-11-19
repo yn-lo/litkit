@@ -86,7 +86,7 @@ func (f *MetadataFetcher) get(ctx context.Context, idType, u string) ([]byte, er
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("metadata %s: HTTP %d", idType, resp.StatusCode)
 	}
-	data, err := httpclient.ReadAll(resp)
+	data, err := httpclient.ReadAllLimit(resp, maxMetaBytes)
 	if err != nil {
 		return nil, fmt.Errorf("metadata %s: 读取响应: %w", idType, err)
 	}

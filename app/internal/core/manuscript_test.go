@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -384,5 +385,105 @@ func TestProcessManuscript_CollapseAPA(t *testing.T) {
 	want := "(Vaswani, 2017)(Bengio, 2015)"
 	if res.Text != want {
 		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
+
+// fakeFetcher 可配置反查结果与错误的 Fetcher 替身。
+type fakeFetcher struct {
+	paper  *model.Paper
+	err    error
+	called int
+}
+
+func (f *fakeFetcher) Fetch(_ context.Context, idType, identifier string) (*model.Paper, error) {
+	f.called++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.paper, nil
+}
+
+// fakeErrStore 在 GetByCiteKey / UpsertPaper 上返回可配置错误的存储替身。
+type fakeErrStore struct {
+	*fakeStore
+	getErr    error
+	upsertErr error
+}
+
+func (f *fakeErrStore) GetByCiteKey(citeKey string) (*model.Paper, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.fakeStore.GetByCiteKey(citeKey)
+}
+
+func (f *fakeErrStore) UpsertPaper(p model.Paper) (string, bool, error) {
+	if f.upsertErr != nil {
+		return "", false, f.upsertErr
+	}
+	return f.fakeStore.UpsertPaper(p)
+}
+
+func TestProcessManuscript_PropagatesRuntimeErrors(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name  string
+		store PaperStore
+		fetch Fetcher
+		src   string
+	}{
+		{
+			name:  "GetByCiteKey 错误",
+			store: &fakeErrStore{fakeStore: newFakeStore(), getErr: errors.New("db locked")},
+			fetch: nil,
+			src:   "[@a1]",
+		},
+		{
+			name:  "Fetch 反查错误",
+			store: newFakeStore(),
+			fetch: &fakeFetcher{err: errors.New("network down")},
+			src:   "[@doi:10.1/x]",
+		},
+		{
+			name:  "UpsertPaper 错误",
+			store: &fakeErrStore{fakeStore: newFakeStore(), upsertErr: errors.New("disk full")},
+			fetch: &fakeFetcher{paper: &pOne},
+			src:   "[@doi:10.1/one]",
+		},
+	}
+	for _, tc := range cases {
+		_, err := ProcessManuscript(ctx, tc.store, tc.fetch, tc.src, StyleGB7714)
+		if err == nil {
+			t.Errorf("%s: 运行错误应向上返回，而不是记为 Unresolved", tc.name)
+		}
+	}
+}
+
+func TestProcessManuscript_FetchMissIsUnresolved(t *testing.T) {
+	// 反查返回 (nil, nil)（未命中）仍应记入 Unresolved 而不报错
+	store := newFakeStore()
+	res, err := ProcessManuscript(context.Background(), store, &fakeFetcher{}, "[@doi:10.1/none]", StyleGB7714)
+	if err != nil {
+		t.Fatalf("未命中不应报错: %v", err)
+	}
+	if len(res.Unresolved) != 1 || res.Unresolved[0] != "doi:10.1/none" {
+		t.Errorf("Unresolved = %v, want [doi:10.1/none]", res.Unresolved)
+	}
+}
+
+func TestExpandCiteGroups_PrefixedTokenKeepsComma(t *testing.T) {
+	// 带前缀 token 内的逗号（含于标题/DOI）不应被分组拆分
+	src := "[@a1][@title:Smith, J. 2024]"
+	got := expandCiteGroups(src, StyleGB7714)
+	if !strings.Contains(got, "[@title:Smith, J. 2024]") {
+		t.Errorf("带前缀 token 应保持原样，got %q", got)
+	}
+	if strings.Contains(got, "[@ Smith") {
+		t.Errorf("带前缀 token 不应被逗号拆分，got %q", got)
+	}
+	// 裸 token 分组行为不变（bodyCiteRe 只匹配 3-5 个纯字母的裸 citeKey）
+	got = expandCiteGroups("[@abc,def]", StyleGB7714)
+	if !strings.Contains(got, "[@abc]") || !strings.Contains(got, "[@def]") {
+		t.Errorf("裸 token 分组应拆分，got %q", got)
 	}
 }

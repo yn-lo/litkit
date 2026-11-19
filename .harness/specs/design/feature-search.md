@@ -20,6 +20,7 @@ owner: litkit-core
 - 跨源并发检索、单源失败隔离、DOI→title→id 三级去重（内存层）
 - 每源令牌桶限速（≥10 次/分钟）+ 429/503 指数退避重试
 - 检索结果去重后 upsert 进本地文献库（FR-LIB-01），回填 cite_key（FR-LIB-06）；无独立缓存层
+- 探索模式 `--no-store`：只检索不入库（不分配 citeKey，无需工作目录），供 AI 试检索词
 - 结果默认年份倒序（FR-SEARCH-10）：最新在前，year=0 排末尾
 - 默认输出 PaperSummary（citeKey/title/firstAuthor/year/abstract，FR-IFACE-02）；`--full` 输出完整 Paper
 
@@ -58,6 +59,7 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - 去重优先级：内存层 DOI（非空）> Title（归一化）> ID；入库层 dedup_key 为 DOI > title+第一作者签名 > paper_id（FR-CACHE-02）
 - 每源限速器取合规限速保守值（arXiv ≥3s/次）
 - 检索结果必须含摘要：无摘要论文默认过滤（`--keep-no-abstract` 显式保留）（FR-SEARCH-03）
+- 默认自动入库；`--no-store` 显式关闭入库（探索模式，返回的 citeKey 为空）
 - 新增源不修改核心层（FR-SRC-18）
 
 ## 测试要求
