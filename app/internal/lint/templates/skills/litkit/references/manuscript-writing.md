@@ -87,7 +87,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> [选项]
 
 | 选项 | 默认值 | 说明 |
 |---|---|---|
-| `--type` | 自动检测 | 论文类型：review / empirical |
+| `--type` | 自动检测 | 论文类型：review / empirical / qualitative / book / proposal |
 | `--lang` | `zh` | 写作语言：zh / en |
 | `--mode` | `draft` | 验证模式：chapter / draft / final（递增启用规则） |
 | `--check` | 全部 | 仅运行指定检查类别（逗号分隔） |

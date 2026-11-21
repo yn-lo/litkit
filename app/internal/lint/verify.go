@@ -14,7 +14,7 @@ const exitPass = "pass"
 type Options struct {
 	Lang           string     // "zh" / "en"
 	Mode           Mode       // chapter / draft / final
-	PaperType      string     // review / empirical（空=不过滤类型）
+	PaperType      string     // review / empirical / qualitative / book / proposal（空=不过滤类型）
 	Only           []string   // --rule 仅运行指定规则（空=全部）
 	Skip           []string   // --skip 跳过指定规则
 	OnlyCategories []Category // --check 仅运行指定检查类别（空=全部）

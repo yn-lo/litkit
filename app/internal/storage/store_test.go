@@ -51,6 +51,34 @@ func TestUpsertPaper_SparseUpdatePreservesMetadata(t *testing.T) {
 	}
 }
 
+func TestUpsertPaper_PersistsLanguage(t *testing.T) {
+	s := newTestStore(t)
+	p := paper("Language", "10.1/lang", "Smith")
+	p.Language = "ja"
+	key, _, err := s.UpsertPaper(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetByCiteKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Language != "ja" {
+		t.Fatalf("Language 未持久化: %q", got.Language)
+	}
+	// 稀疏更新不得清空已有语言。
+	if _, _, err := s.UpsertPaper(model.Paper{DOI: p.DOI, Abstract: "updated"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetByCiteKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Language != "ja" {
+		t.Fatalf("稀疏更新清空了 Language: %q", got.Language)
+	}
+}
+
 func TestUpsertPaper_IdentityUpgrade(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		t.Run(map[bool]string{false: "add_doi", true: "missing_doi"}[reverse], func(t *testing.T) {

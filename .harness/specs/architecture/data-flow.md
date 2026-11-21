@@ -27,10 +27,10 @@ CLI → core.Search(ctx, ...)
 2. 每个占位符经 core.Metadata(ctx, ...) 取元数据（含摘要）
    doi → CrossRef；pmid → PubMed；arxiv → arXiv Atom；title → CrossRef
 3. 生成 citationMap（占位符 → 条目）
-4. 按 lang/style 渲染：zh → GB/T 7714—2025（内置格式化器，含预印本[PP]/数据集[DS]类型）
-                              en → APA 7th / IEEE（内置格式化器）
-5. 输出 BibTeX / RIS / references.txt
-6. 可选：经 Pandoc + CSL 生成 docx（缺失则跳过）
+4. 按 lang/style 用 CSL 引擎渲染（citeproc-js，goja 内嵌）：
+   内置 GB/T 7714—2025 / APA 7th / IEEE，或 WORK_DIR/styles 下的用户 .csl
+5. 输出 formatted.md（正文 + 文末参考文献列表）/ BibTeX / RIS
+6. 可选：经 Pandoc 将 formatted.md 转为 docx（缺失则跳过）
 7. 未解析占位符归入 unresolved（不静默丢失）
 ```
 

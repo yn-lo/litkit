@@ -46,13 +46,13 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 输出：`{ total, sourceResults, errors, papers[] }`
 
 ```
-litkit init [--force] [--type review|empirical|book|proposal] [--lang zh|en] [--journal NAME]
+litkit init [--force] [--type review|empirical|qualitative|book|proposal] [--lang zh|en] [--journal NAME]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--force` | 覆盖已生成的模板文件（`.env` / `.litkit/verifier_models.json` **永不覆盖**，避免丢失密钥） | 关 |
-| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `book`（书籍，中文编校细则）\| `proposal`（标书） | empirical |
+| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `qualitative`（质性研究，主题呈现）\| `book`（书籍，中文编校细则）\| `proposal`（标书） | empirical |
 | `--lang` | 撰写语言 | zh（`LITKIT_LANG`） |
 | `--journal` | 目标期刊名称（写入 spec 的 `journal` 字段；当前仅留档，暂无规则读取） | 空 |
 
@@ -105,14 +105,29 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--lang` | 写作语言模式 | zh（`LITKIT_LANG`） |
-| `-s, --style` | zh: gb7714-2025；en: apa / ieee | 按 lang |
-| `--preview` | 额外产出 preview 版本 md（与正常版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末仍追加编号引用列表 | 关 |
+| `-s, --style` | 引用样式：`gb7714-2025` / `apa` / `ieee` / `.csl` 路径 / `WORK_DIR/styles/<name>.csl` | 按 lang |
+| `--preview` | 额外产出草稿/调试视图 md（与正常版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末附核对清单；**不经过 CSL 引擎** | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
 | `-o, --output-dir` | 输出目录（默认 WORK_DIR/outputs） | WORK_DIR/outputs |
 
 产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`；`--preview` 时额外产出 `{base}_{ts}.preview.md`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
 
-裸句柄支持单引 `[@AAA]` 和组合 `[@AAA,BBB]`；组合中的各句柄分别查库，编号样式沿用相邻引用的折叠规则（如 `[1-2]`）。带前缀的 `[@title:...]` 等标识符中的逗号保留原义。
+正式引用样式统一由 CSL 引擎渲染（内置样式经 `go:embed` 随二进制分发）。裸句柄支持单引 `[@AAA]` 和组合 `[@AAA,BBB]`；相邻引用作为一个引用簇交给 CSL 排序/合并（GB/T 如 `[1-3]`，APA 如 `(A, 2020; B, 2021)`）。带前缀的 `[@title:...]` 等标识符中的逗号保留原义。
+
+```
+litkit styles list
+litkit styles show <name>
+litkit styles export <name> [-o dir]
+```
+
+| 参数 | 说明 | 默认 |
+|---|---|---|
+| `list` | 列出内置样式与 `WORK_DIR/styles/*.csl`；同名冲突会标记 `conflict` | — |
+| `show` | 输出指定样式的原始 CSL（JSON：`{name, builtin, content}`） | — |
+| `export` | 将内置样式导出为 `<name>-custom.csl`（内置名保留，不覆盖） | `WORK_DIR/styles` |
+
+> 内置样式：`gb7714-2025`、`apa`、`ieee`。用户样式放入 `WORK_DIR/styles/`，以文件名 stem 引用（如 `journal-x.csl` → `--style journal-x`）。
+> 内置名保留：用户目录中的同名文件不会覆盖内置样式，只在 `styles list` 中标记冲突。
 
 ```
 litkit export <papers.json> [-f bibtex|ris|text] [-s style]   # 输入仅接受 [Paper...] 或 {"papers":[...]}
@@ -156,7 +171,7 @@ litkit lib rm <cite_key>
 > 输出：`{ citeKey, removed, pdfRemoved }`（`pdfRemoved=false` 表示未找到对应 PDF，不影响条目删除）。
 
 ```
-litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|book|proposal] [--journal NAME]
+litkit lint init [project_dir] [--force] [--lang zh|en] [--type review|empirical|qualitative|book|proposal] [--journal NAME]
 litkit rules
 ```
 
@@ -197,7 +212,7 @@ litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
 > 输出：`{ files: { "<path>": { applied: { "R3.1": 1, ... } } } }`（applied = 规则 ID → 修正行数）。
 
 ```
-litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book|proposal] [--rule R2.1,R7.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|qualitative|book|proposal] [--rule R2.1,R7.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -205,7 +220,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `<file.md> ...` | 待验证 Markdown 文件（支持多文件） | 必填 |
 | `--lang` | 写作语言模式 | zh（`LITKIT_LANG`） |
 | `--mode` | 验证深度：`chapter`（结构+章节字数）\| `draft`（+数据/标点/引用）\| `final`（+字数/行文） | draft |
-| `--type` | 论文类型：`review` \| `empirical` \| `book` \| `proposal`（空=从 spec 自动取） | 空 |
+| `--type` | 论文类型：`review` \| `empirical` \| `qualitative` \| `book` \| `proposal`（空=从 spec 自动取） | 空 |
 | `--rule` | 仅运行指定规则（逗号分隔，如 `R2.1,R7.1`） | 全部 |
 | `--skip` | 跳过指定规则（逗号分隔，未知 ID 报错） | 无 |
 | `--check` / `--skip-check` | 仅运行/跳过指定检查类别（逗号分隔） | 无 |

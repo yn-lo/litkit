@@ -10,7 +10,7 @@
 //
 //	入口层 cmd/litkit                         允许依赖 服务层/适配层/叶子层
 //	服务层 internal/core·lint                允许依赖 适配层/叶子层
-//	适配层 internal/sources                   允许依赖 叶子层
+//	适配层 internal/sources·csl                允许依赖 叶子层
 //	叶子层 internal/model·config·storage·util·buildinfo 只允许依赖其他叶子层
 //
 // 额外规则：
@@ -46,7 +46,7 @@ const (
 var (
 	entryPrefixes   = []string{}
 	servicePrefixes = []string{"internal/core", "internal/lint"}
-	adapterPrefixes = []string{"internal/sources"}
+	adapterPrefixes = []string{"internal/sources", "internal/csl"}
 	leafPrefixes    = []string{"internal/model", "internal/config", "internal/storage", "internal/util", "internal/buildinfo"}
 )
 

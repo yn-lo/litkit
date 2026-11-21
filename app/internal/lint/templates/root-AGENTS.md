@@ -18,8 +18,8 @@
 ## 论文类型
 
 每种类型在 `.litkit/<type-lang>/` 下有独立阈值配置（`manuscript-spec.yaml`）。
-查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical|book|proposal --lang zh|en`
-类型说明：review（综述）/ empirical（四段式实证）/ book（书籍专著）/ proposal（学术标书/课题申请书，中文）
+查看已注册类型：`ls .litkit/`；追加：`litkit init --type review|empirical|qualitative|book|proposal --lang zh|en`
+类型说明：review（综述）/ empirical（四段式实证）/ qualitative（质性研究，主题呈现）/ book（书籍专著）/ proposal（学术标书/课题申请书，中文）
 
 ## 检索策略
 

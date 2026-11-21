@@ -66,15 +66,19 @@ func TestRound2_GroupedCitations(t *testing.T) {
 		s := newFakeStore()
 		s.papers["AAA"] = mustPaper("AAA", "One", 2024, nil, "10.1/one")
 		s.papers["BBB"] = mustPaper("BBB", "Two", 2024, nil, "10.1/two")
-		got, err := ProcessManuscript(context.Background(), s, nil, "结论[@AAA,BBB]。", StyleGB7714)
+		resolved, err := ResolveManuscript(context.Background(), s, nil, "结论[@AAA,BBB]。")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Papers) != 2 || len(got.Unresolved) != 0 || got.Text != "结论[1-2]。" {
+		got, err := FormatManuscript(resolved, mustStyle(t, "zh", "gb7714-2025"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Papers) != 2 || len(got.Unresolved) != 0 || got.Text != "结论[1,2]。" {
 			t.Fatalf("group failed resolution: %+v", got)
 		}
 		prefixed := "引用[@title:One, Two]。"
-		if expandCiteGroups(prefixed, StyleGB7714) != prefixed {
+		if expandCiteGroups(prefixed) != prefixed {
 			t.Fatal("title identifier comma was split as citation group")
 		}
 	})
@@ -141,10 +145,11 @@ func TestAPAAuthorsBoundary(t *testing.T) {
 
 func TestRound2_APAReferenceAuthorsAndDate(t *testing.T) {
 	p := model.Paper{Title: "Study", Authors: []model.Author{{Family: "Alpha", Given: "A"}, {Family: "Beta", Given: "B"}, {Family: "Gamma", Given: "C"}, {Family: "Delta", Given: "D"}}}
-	got, err := FormatReference(p, StyleAPA, 0)
+	entries, err := RenderReferenceList([]model.Paper{p}, mustStyle(t, "en", "apa"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := entries
 	if !strings.Contains(got, "Delta, D.") || strings.Contains(got, "et al.") || !strings.Contains(got, "(n.d.).") {
 		t.Fatalf("APA7 four-author undated reference invalid: %s", got)
 	}

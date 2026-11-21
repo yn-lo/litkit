@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,5 +78,23 @@ func TestValidateRuleIDs(t *testing.T) {
 	}
 	if err := validateRuleIDs(""); err != nil {
 		t.Fatalf("空 --rule 不应报错：%v", err)
+	}
+}
+
+// TestExitCodeOfUsageErrors cobra 的参数/子命令错误应映射为退出码 2。
+func TestExitCodeOfUsageErrors(t *testing.T) {
+	cases := []error{
+		errors.New("accepts 1 arg(s), received 0"),
+		errors.New(`unknown command "foo" for "litkit styles"`),
+		errors.New("unknown flag: --x"),
+		errors.New("flag needs an argument: --style"),
+	}
+	for _, err := range cases {
+		if got := exitCodeOf(err); got != 2 {
+			t.Errorf("exitCodeOf(%q) = %d, want 2", err, got)
+		}
+	}
+	if got := exitCodeOf(errors.New("network down")); got != 1 {
+		t.Errorf("普通运行错误 exitCodeOf = %d, want 1", got)
 	}
 }

@@ -26,10 +26,6 @@ type CiteSentence struct {
 	Line         int    // 在正文中的行号（1 起）
 }
 
-// bodyCiteRe 匹配正文中的裸 [@citeKey] 占位符（与 manuscript.go placeholderRe 一致）。
-// 3-5 字母以支持 cite_key 空间耗尽升 4/5。
-var bodyCiteRe = regexp.MustCompile(`\[@([a-zA-Z]{3,5}(?:\s*,\s*[a-zA-Z]{3,5})*)\]`)
-
 // codeBlockRe 匹配 Markdown 代码块（``` 或 ~~~），排除其中内容。
 var codeBlockRe = regexp.MustCompile("(?s)```.*?```|~~~.*?~~~")
 

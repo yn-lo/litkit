@@ -32,6 +32,11 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # 随归档分发许可证与第三方声明（citeproc-js 为 CPAL/AGPL，CSL 为 CC BY-SA）。
+    files:
+      - ../LICENSE
+      - internal/csl/assets/NOTICE.md
+      - internal/csl/assets/CITEPROC-LICENSE.txt
   # 裸二进制直传：不打包归档，直接上传 litkit / litkit.exe 到 Release
   # （Windows 用户无需解压 zip 即可下载 exe；其余平台保留 tar.gz + 裸二进制两种形态）
   - id: raw-binary

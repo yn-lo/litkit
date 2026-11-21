@@ -21,7 +21,7 @@ owner: litkit-core
 - `litkit init`：生成 `.litkit/`（AGENTS.md 使用地图 / verifier_models.json / litkit.db）
   与 `.agents/skills/`（litkit、academic-style、manuscript-format），并按 `--type`/`--lang`
   生成 `.litkit/<type-lang>/manuscript-spec.yaml`（FR-LINT-01）
-  - `--type review|empirical|book|proposal` 论文类型 preset（阈值切换，规则代码零差异）
+  - `--type review|empirical|qualitative|book|proposal` 论文类型 preset（阈值切换，规则代码零差异）
   - `--lang zh|en` 撰写语言
   - `--journal` 目标期刊（写入 spec 的 `journal` 字段）
 - 通用规则体系 R0-R10：每条规则含定义、违规示例、验证方法（A/S/M）、langs 标注（FR-LINT-04）

@@ -50,14 +50,14 @@ owner: litkit-core
 | 任务 | 对应 FR |
 |---|---|
 | core/metadata：doi/pmid/arxiv/title → Paper | FR-REF-01/02 |
-| 引用渲染：内置格式化器（GB/T 7714—2025 / APA / IEEE，原生实现；CSL 留 P1） | FR-REF-03/04/07 |
+| 引用渲染：CSL 引擎（citeproc-js/goja；内置 GB/T 7714—2025 / APA / IEEE + 用户 .csl） | FR-REF-03/04/07 |
 | BibTeX / RIS 生成 | FR-REF-05/06 |
 | core/manuscript：`[@citeKey]` 占位符解析、citation_map、unresolved | FR-REF-08/09 |
 | Pandoc docx 可选转换与降级 | FR-REF-11 |
 | `litkit metadata` / `litkit manuscript` / `litkit export` | FR-REF-10 |
 | core/library：SQLite 入库（含摘要）、增删查 | FR-LIB-01/02/03 |
 
-**产出**：`litkit manuscript draft.md --lang zh` 产出 formatted.md + refs.bib + refs.ris + references.txt。
+**产出**：`litkit manuscript draft.md --lang zh` 产出 formatted.md + refs.bib + refs.ris。
 
 **验收**：GB/T 7714 中英文混排样例通过；未解析占位符出现在 unresolved。
 
@@ -69,7 +69,7 @@ owner: litkit-core
 |---|---|
 | internal/lint：ManuscriptSpec 解析/校验、`.litkit/` 生成、撰写硬性规定（spec yaml 顶部注释） | FR-LINT-01/07/10 |
 | templates/：manuscript-spec.yaml（含撰写硬性规定注释）、verifier_models.json、AGENTS.md（使用地图）、skills/（litkit / academic-style / manuscript-format） | FR-LINT-01/06/10 |
-| `litkit init`：--type review/empirical/book/proposal（preset 阈值）、--lang zh/en、--journal NAME（目标期刊）、--force | FR-LINT-01/09 |
+| `litkit init`：--type review/empirical/qualitative/book/proposal（preset 阈值）、--lang zh/en、--journal NAME（目标期刊）、--force | FR-LINT-01/09 |
 | zh 规则集实现（全半角/引号/句式冗余/的地得/AI 痕迹） | FR-LINT-02/04 |
 | en 规则集实现（语法/时态/冠词/措辞/AI 痕迹） | FR-LINT-03/04 |
 | `litkit verify`：--lang/--type/--mode/--rule/--skip，46 条规则（30A+16S），三维过滤（lang x type x mode），三值 exitHint | FR-LINT-05 |

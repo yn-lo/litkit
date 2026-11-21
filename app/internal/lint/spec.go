@@ -14,10 +14,11 @@ import (
 
 // 论文类型常量（FR-LINT：preset 阈值切换，规则代码零差异）。
 const (
-	PaperTypeReview    = "review"    // 综述
-	PaperTypeEmpirical = "empirical" // 四段式实证
-	PaperTypeBook      = "book"      // 书籍（医学书稿编校细则，yueshu.md）
-	PaperTypeProposal  = "proposal"  // 学术标书（课题申请书）
+	PaperTypeReview      = "review"      // 综述
+	PaperTypeEmpirical   = "empirical"   // 四段式实证
+	PaperTypeQualitative = "qualitative" // 质性研究（主题呈现，问答式叙事规范）
+	PaperTypeBook        = "book"        // 书籍（医学书稿编校细则，yueshu.md）
+	PaperTypeProposal    = "proposal"    // 学术标书（课题申请书）
 )
 
 // 引用模式常量（citation_mode）：inline=正文内联引用（默认）；endnote=正文不内联、文末参考文献。
@@ -37,7 +38,7 @@ const (
 // ManuscriptSpec 撰写规范配置（.litkit/<type>/manuscript-spec.yaml）。
 // 用户可手动修改；AI 直接读取此文件，无需额外步骤。
 type ManuscriptSpec struct {
-	PaperType string   `yaml:"paper_type"` // review | empirical | book | proposal
+	PaperType string   `yaml:"paper_type"` // review | empirical | qualitative | book | proposal
 	Lang      string   `yaml:"lang"`       // zh | en
 	Journal   string   `yaml:"journal"`    // 目标期刊（写入留档；当前无规则读取）
 	Sections  []string `yaml:"sections"`   // 当前论文类型的章节清单
@@ -92,7 +93,7 @@ type WordCounts struct {
 // CitationSpec 引用阈值与样式。
 type CitationSpec struct {
 	Count []int  `yaml:"count"`
-	Style string `yaml:"style"` // gbt7714 | apa | ieee
+	Style string `yaml:"style"` // gb7714-2025 | apa | ieee
 	// RunLimit 连续引用聚集上限（R5.3）：连续 RunLimit+1 个引用连串违规；0/缺省=3。
 	RunLimit int `yaml:"run_limit"`
 	// MaxAgeYears 引用时效硬判定跨度（R5.8 第二档）：文献年份早于当前年-跨度视为跨度过大；0/缺省=10。
@@ -185,9 +186,9 @@ func LoadSpec(path string) (*ManuscriptSpec, error) {
 // Validate 校验规范字段合法性（信任边界输入校验）。
 func (s *ManuscriptSpec) Validate() error {
 	switch s.PaperType {
-	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook, PaperTypeProposal:
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeQualitative, PaperTypeBook, PaperTypeProposal:
 	default:
-		return fmt.Errorf("paper_type 必须为 review|empirical|book|proposal，got %q", s.PaperType)
+		return fmt.Errorf("paper_type 必须为 review|empirical|qualitative|book|proposal，got %q", s.PaperType)
 	}
 	switch s.CitationMode {
 	case "", CitationModeInline, CitationModeEndnote:
@@ -329,7 +330,7 @@ func TypeLangDir(paperType, lang string) string {
 // IsValidPaperType 判断是否为已注册论文类型。
 func IsValidPaperType(t string) bool {
 	switch t {
-	case PaperTypeReview, PaperTypeEmpirical, PaperTypeBook, PaperTypeProposal:
+	case PaperTypeReview, PaperTypeEmpirical, PaperTypeQualitative, PaperTypeBook, PaperTypeProposal:
 		return true
 	}
 	return false
@@ -337,5 +338,5 @@ func IsValidPaperType(t string) bool {
 
 // PaperTypesLabel 返回论文类型枚举的展示标签（用于帮助文本与参数错误提示）。
 func PaperTypesLabel() string {
-	return "review|empirical|book|proposal"
+	return "review|empirical|qualitative|book|proposal"
 }

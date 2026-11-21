@@ -11,8 +11,8 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 - **Cross-source search**: concurrent search + dedup across arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex / Crossref / DOAJ; abstract-only workflow (no PDF download, no full-text extraction); `crossref`/`doaj` add Chinese-language retrieval.
 - **Library ingestion**: resolve metadata by DOI / PMID / arXiv / title; `lib add --doi` resolves and stores; local SQLite library management.
 - **Full-text fetch**: by citeKey / DOI — Unpaywall OA first → Sci-Hub fallback; PDF saved to disk + full text cached (zero network on re-fetch).
-- **Standards-compliant citations**: export BibTeX / RIS / text in GB/T 7714—2025 / APA / IEEE styles.
-- **Manuscript typesetting**: `[@citeKey]` placeholders resolved to citation numbers; `--preview` emits a self-describing review copy, `--docx` converts to Word.
+- **Standards-compliant citations**: CSL rendering (embedded citeproc-js); built-in GB/T 7714—2025 / APA / IEEE, custom `.csl` supported; export BibTeX / RIS / text.
+- **Manuscript typesetting**: resolves `[@citeKey]` placeholders via the selected CSL style; `--preview` produces an independent debug/draft view, `--docx` converts to Word.
 - **Compliance gate**: mechanical rule checks (language / structure / statistics / punctuation / citations / prose / word counts) across three `verify` modes; `fix` auto-corrects the fixable ones.
 
 **AI-first**: responses default to the minimal field set AI needs (citeKey / title / firstAuthor / year / abstract); full metadata is fetched on demand; the CLI outputs JSON consumable by AI shells.
@@ -33,8 +33,9 @@ litkit is a Go-based paper toolkit (Go 1.26 / cobra / SQLite) with a CLI-only in
 | Source list            | `sources` lists the registered search sources and their rate limits                                                       |
 | Metadata lookup        | `metadata doi\|pmid\|arxiv\|title <id>` (query only); `lib add --doi <DOI>` resolve and store                            |
 | Full-text fetch        | `fetch <citeKey\|doi>`: Unpaywall OA → Sci-Hub fallback; PDF to disk + full-text cache (zero network on re-fetch)         |
-| Citations              | `export <papers.json> -f bibtex\|ris\|text`; styles GB/T 7714—2025 / APA / IEEE                                           |
-| Manuscript typesetting | `manuscript <draft.md>`: `[@citeKey]` → `[1][2]`; `--preview` / `--docx` / `-o`                                            |
+| Citations              | `export <papers.json> -f bibtex\|ris\|text`; CSL styles GB/T 7714—2025 / APA / IEEE / custom `.csl`                       |
+| Manuscript typesetting | `manuscript <draft.md> [-s style]`: `[@citeKey]` → `[1]`/`(Author, Year)`; `--preview` / `--docx` / `-o`                   |
+| Style management       | `styles list\|show\|export`; user styles in `WORK_DIR/styles/*.csl`                                                        |
 | Compliance gate        | `lint init` scaffolds constraints; `verify --mode chapter\|draft\|final` (lang × type × mode filtering); `--report citation-refs` LLM citation scoring; `fix` auto-corrects fixable rules |
 | Rule inspection        | `rules` lists all rules (ID / category / langs and paper types / verification method A·S·M)                                |
 | Library management     | `lib add\|get\|list\|search\|rm\|stats\|path`                                                                              |

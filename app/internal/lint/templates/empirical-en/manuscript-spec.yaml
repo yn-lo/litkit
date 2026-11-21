@@ -22,7 +22,7 @@ word_counts:
   paragraph: [100, 400]     # Per-paragraph word count [min, max]
 citation:
   count: [20, 40]           # Total citation count [min, max]
-  style: apa                # Citation style: gbt7714 | apa | ieee
+  style: apa                # Citation style: gb7714-2025 | apa | ieee
   run_limit: 3              # Max consecutive citations (R5.3): run_limit+1 in a row is a violation; 0=default 3
   max_age_years: 10         # R5.8 Citation currency (hard): flag refs older than this many years, per-item; 0=default 10
   warn_age_years: 5         # R5.8 Citation currency (soft): aggregate warn counts older than this; 0=default 5

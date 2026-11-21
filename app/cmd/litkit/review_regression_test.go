@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,28 @@ import (
 	"litkit/internal/model"
 	"litkit/internal/storage"
 )
+
+// TestWriteManuscriptArtifacts_PandocMissing 覆盖 FR-REF-11：Pandoc 缺失时
+// 仅跳过 docx，md/bib/ris 仍正常生成且不报错。
+func TestWriteManuscriptArtifacts_PandocMissing(t *testing.T) {
+	old := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { lookPath = old })
+
+	res := &core.ManuscriptResult{Text: "body", Papers: []model.Paper{{Title: "T"}}}
+	files, err := writeManuscriptArtifacts(t.TempDir(), "draft", "20260101_000000", res, "参考文献", true)
+	if err != nil {
+		t.Fatalf("Pandoc 缺失不应报错: %v", err)
+	}
+	if _, ok := files["formatted.docx"]; ok {
+		t.Fatal("Pandoc 缺失时不应生成 docx")
+	}
+	for _, name := range []string{core.ManuscriptFormatted, core.ManuscriptBib, core.ManuscriptRIS} {
+		if _, ok := files[name]; !ok {
+			t.Errorf("Pandoc 缺失时仍应生成 %s", name)
+		}
+	}
+}
 
 func round2ScoringFixture(t *testing.T) (*config.Config, *storage.Store, string, string) {
 	t.Helper()

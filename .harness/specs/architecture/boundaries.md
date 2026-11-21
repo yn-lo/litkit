@@ -19,9 +19,9 @@ litkit 采用四层单向依赖架构，核心目的是：
 ```
 入口层（cmd/litkit）
    ↓
-服务层（internal/core）
+服务层（internal/core·lint）
    ↓
-适配层（internal/sources）
+适配层（internal/sources · internal/csl）
    ↓
 叶子层（internal/model · config · storage · util）
 ```
@@ -39,8 +39,9 @@ litkit 采用四层单向依赖架构，核心目的是：
 - 业务流程编排：跨源并发检索、去重合并、本地库 keyword 检索、元数据反查、引用渲染、手稿流水线、约束验证、文献库
 - 唯一的事务与业务编排点
 
-### 适配层（internal/sources）
-- 每个学术源一个适配器，统一实现 `PaperSource` 接口
+### 适配层（internal/sources · internal/csl）
+- `internal/sources`：每个学术源一个适配器，统一实现 `PaperSource` 接口
+- `internal/csl`：CSL 渲染适配器（citeproc-js 会话、Paper→CSL-JSON 映射、样式注册表）
 - 所有源复用同一降级 / 限速公共逻辑（源基类）
 - 禁止反向 import 入口层或服务层
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,20 @@ func exitCodeOf(err error) int {
 	if errors.As(err, &ee) {
 		return ee.code
 	}
+	// Cobra 的参数/子命令校验错误同属参数错误（退出码 2），与 api.md §1.1 一致。
+	if isUsageError(err) {
+		return 2
+	}
 	return 1
+}
+
+// isUsageError 判断 cobra 的用法类错误（参数个数、未知子命令/旗标）。
+func isUsageError(err error) bool {
+	s := err.Error()
+	return strings.HasPrefix(s, "unknown command") ||
+		strings.Contains(s, "arg(s)") ||
+		strings.HasPrefix(s, "unknown flag") ||
+		strings.Contains(s, "flag needs an argument")
 }
 
 func main() {
@@ -99,7 +113,8 @@ func newRootCmd(d *deps) *cobra.Command {
 		newMetadataCmd(d.fetcher),
 		newFetchCmd(d.store, d.fulltext),
 		newManuscriptCmd(d.store, d.fetcher, d.cfg),
-		newExportCmd(),
+		newExportCmd(d.cfg),
+		newStylesCmd(d.cfg),
 		newLibraryCmd(d.store, d.fetcher, d.cfg),
 		newRulesCmd(),
 		newFixCmd(d.cfg),

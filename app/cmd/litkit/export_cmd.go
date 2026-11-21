@@ -1,16 +1,16 @@
 // export_cmd.go 实现 `litkit export` 命令（FR-REF-10）。
 //
 // 读取 papers.json（数组或 {"papers":[...]}），按格式导出：
-// bibtex | ris | text（text 需 --style 指定引用样式）。
+// bibtex | ris | text（text 需 --style 指定引用样式，CSL 渲染）。
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
+	"litkit/internal/config"
 	"litkit/internal/core"
 	"litkit/internal/model"
 )
@@ -23,7 +23,7 @@ type exportOutput struct {
 }
 
 // newExportCmd 构造 `litkit export <papers.json>`。
-func newExportCmd() *cobra.Command {
+func newExportCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export <papers.json>",
 		Short: "批量导出引用（bibtex | ris | text）",
@@ -50,28 +50,20 @@ func newExportCmd() *cobra.Command {
 				content = core.RISFromPapers(papers)
 			case "text":
 				// text 需要引用样式；缺省回落 APA（api.md：-s 可选）
-				style, err := resolveStyle("en", styleFlag)
+				style, err := core.ResolveStyle("en", styleFlag, userStylesDir(cfg))
+				if err != nil {
+					return &paramError{msg: err.Error()}
+				}
+				content, err = core.RenderReferenceList(papers, style)
 				if err != nil {
 					return err
 				}
-				var b strings.Builder
-				for i, p := range papers {
-					if i > 0 {
-						b.WriteString("\n\n")
-					}
-					line, err := core.FormatReference(p, style, i+1)
-					if err != nil {
-						return err
-					}
-					b.WriteString(line)
-				}
-				content = b.String()
 			}
 			return printJSON(exportOutput{Format: format, Count: len(papers), Content: content})
 		},
 	}
 	cmd.Flags().StringP("format", "f", "bibtex", "导出格式 bibtex|ris|text")
-	cmd.Flags().StringP("style", "s", "", "引用样式（text 格式用）")
+	cmd.Flags().StringP("style", "s", "", "引用样式（text 格式用）：gb7714-2025|apa|ieee 或 .csl 路径")
 	return cmd
 }
 

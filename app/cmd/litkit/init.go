@@ -109,7 +109,7 @@ const (
 // --type + --lang 必填（终端下可交互输入）。
 func newInitCmd(cfg *config.Config) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init --type review|empirical|book --lang zh|en [--journal NAME]",
+		Use:   "init --type review|empirical|qualitative|book|proposal --lang zh|en [--journal NAME]",
 		Short: "初始化项目（.env + .litkit/ 目录）并注册论文类型",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -391,13 +391,16 @@ func runInitWizard(typeVal, langVal, journalVal string, changedType, changedLang
 		fmt.Println("  1) empirical（四段式实证，默认）")
 		fmt.Println("  2) review（综述）")
 		fmt.Println("  3) book（书籍，中文编校细则）")
-		fmt.Print("选择 [1/2/3]: ")
+		fmt.Println("  4) qualitative（质性研究，主题呈现，适用 zh/en）")
+		fmt.Print("选择 [1/2/3/4]: ")
 		if scanner.Scan() {
 			switch strings.TrimSpace(scanner.Text()) {
 			case "2", "review":
 				typeVal = lint.PaperTypeReview
 			case "3", "book":
 				typeVal = lint.PaperTypeBook
+			case "4", "qualitative":
+				typeVal = lint.PaperTypeQualitative
 			default:
 				typeVal = lint.PaperTypeEmpirical
 			}

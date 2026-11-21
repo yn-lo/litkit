@@ -1,6 +1,6 @@
 ---
 name: manuscript-format
-description: 学术论文叙事格式（"科研八股文"）总技能，中英文通用（同一类型的八股叙事中英同构）：按文稿类型细分叙事格式见 references/（实证/综述/书稿）。起草/规划/修改论文时，动笔前先读本技能并按类型读对应 reference；硬性阈值以 litkit verify 为准。
+description: 学术论文叙事格式（"科研八股文"）总技能，中英文通用（同一类型的八股叙事中英同构）：按文稿类型细分叙事格式见 references/（实证/质性/综述/书稿）。起草/规划/修改论文时，动笔前先读本技能并按类型读对应 reference；硬性阈值以 litkit verify 为准。
 ---
 
 # 稿件叙事格式（Manuscript Format）
@@ -33,6 +33,7 @@ description: 学术论文叙事格式（"科研八股文"）总技能，中英�
 | 文稿类型 | 叙事文档 | 适用场景（章节命名对照） |
 |---|---|---|
 | 实证 empirical | [references/empirical.md](references/empirical.md) | 原始研究：zh「引言→资料与方法→结果→讨论→结论」/ en「Introduction→Methods→Results→Discussion→Conclusion」 |
+| 质性 qualitative | [references/qualitative.md](references/qualitative.md) | 访谈/观察类质性研究（主题呈现，问答体逐条核对）：zh「引言→方法→结果→讨论→结论」/ en「Introduction→Methods→Results→Discussion→Conclusion」 |
 | 综述 review | [references/review.md](references/review.md) | 叙事性综述：zh「引言→文献检索方法→主题分析→讨论与展望→结论」/ en「Introduction→Literature Search→Thematic Synthesis→Discussion & Outlook→Conclusion」 |
 | 书稿 book | [references/book.md](references/book.md) | 书籍/专著：中文编号体系，章节为自洽论证单元 |
 

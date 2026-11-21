@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"litkit/internal/config"
 	"litkit/internal/core"
@@ -115,6 +116,14 @@ func defaultLang(cfg *config.Config) string {
 		return cfg.Lang
 	}
 	return config.DefaultLang
+}
+
+// userStylesDir 返回用户 CSL 样式目录（WORK_DIR/styles）；未设置工作目录时为空。
+func userStylesDir(cfg *config.Config) string {
+	if cfg == nil || cfg.WorkDir == "" {
+		return ""
+	}
+	return filepath.Join(cfg.WorkDir, "styles")
 }
 
 // readFileTrimBOM 读取文本文件并去除 UTF-8 BOM（Windows 记事本 / PowerShell 5 常见）。

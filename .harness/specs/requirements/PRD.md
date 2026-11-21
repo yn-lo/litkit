@@ -162,8 +162,8 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-REF-04 | 英文模式引用样式：APA 7th / IEEE | P0 | 编号列表输出 |
 | FR-REF-05 | 生成 BibTeX | P0 | `@article{...}` 含 author/title/year/journal/volume/number/pages/doi/url |
 | FR-REF-06 | 生成 RIS | P0 | 兼容 Zotero/Mendeley/EndNote |
-| FR-REF-07 | 内置 CSL 样式经 citeproc 引擎渲染 | P1 | 内置 5 个 .csl；核心样式（GB/T 7714 / APA / IEEE）优先走原生格式化器，CSL 仅用于原生未覆盖样式；`--docx` 按 style 选用 |
-| FR-REF-08 | `manuscript` 完整流水线 | P0 | Markdown → formatted.md + refs.bib + refs.ris + references.txt +（可选）docx |
+| FR-REF-07 | 所有正式引用样式由 CSL 渲染 | P0 | 内置 3 个 .csl（GB/T 7714—2025 / APA / IEEE）经 go:embed 编译进二进制；`--style` 支持内置名 / `.csl` 路径 / `WORK_DIR/styles/<name>.csl`；preview/草稿视图不走 CSL；提供 `styles list|show|export` |
+| FR-REF-08 | `manuscript` 完整流水线 | P0 | Markdown → formatted.md + refs.bib + refs.ris +（可选）docx |
 | FR-REF-09 | 未解析占位符归入 unresolved 列表 | P1 | 不静默丢失 |
 | FR-REF-10 | `litkit export` 批量导出 | P1 | bibtex/ris/text 三格式 |
 | FR-REF-11 | docx 转换依赖 Pandoc，缺失时优雅降级 | P1 | 跳过 docx，其余产物正常 |
@@ -172,11 +172,11 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
-| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 在工作目录生成 `.env` 与 `.litkit/`（`litkit.db` + `AGENTS.md` + `verifier_models.json`）及 `.agents/skills/`（litkit / academic-style / manuscript-format 三个技能），并按 `--type`/`--lang` 生成 `.litkit/<type-lang>/manuscript-spec.yaml`（模板 go:embed 编译进二进制）；支持 `--type review\|empirical\|book\|proposal`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--force`；交互式向导（stdin 是终端时） |
+| FR-LINT-01 | `litkit init` 初始化宿主项目撰写约束 | P0 | 在工作目录生成 `.env` 与 `.litkit/`（`litkit.db` + `AGENTS.md` + `verifier_models.json`）及 `.agents/skills/`（litkit / academic-style / manuscript-format 三个技能），并按 `--type`/`--lang` 生成 `.litkit/<type-lang>/manuscript-spec.yaml`（模板 go:embed 编译进二进制）；支持 `--type review\|empirical\|qualitative\|book\|proposal`（preset 阈值切换）、`--lang zh\|en`、`--journal NAME`（目标期刊，写入 spec）、`--force`；交互式向导（stdin 是终端时） |
 | FR-LINT-02 | zh 专属规则 | P0 | 覆盖：全半角标点、中文引号、句式冗余（"进行""通过…使"）、"的/地/得"、"了/着/过"、AI 痕迹；规则标注 langs: zh |
 | FR-LINT-03 | en 专属规则 | P0 | 覆盖：语法一致性、时态、冠词/单复数、学术措辞、AI 痕迹；规则标注 langs: en |
 | FR-LINT-04 | 规则体系结构 | P0 | 每条规则含：定义、违规示例、验证方法（A 自动 / S 半自动 / M 人工）、langs 标注、types 标注（空=全部类型；如 empirical 仅实证论文触发）；**规则代码单套按 langs x types 过滤，不设多套系统** |
-| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical\|book\|proposal`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
+| FR-LINT-05 | `verify` 自动验证命令 | P0 | 支持 `--lang zh\|en`、`--type review\|empirical\|qualitative\|book\|proposal`（空=从 spec 自动取）、`--rule`、`--mode`（chapter/draft/final）；三维过滤（lang x type x mode）；报错含三要素 |
 | FR-LINT-06 | 人工审查清单（M 类规则） | P1 | 由 `verify` 输出的 `manualChecklist` 字段承载（不落独立文件，避免与规则集脱同步），M 类不自动判 fail |
 | FR-LINT-07 | 可变标准配置 manuscript-spec.yaml | P1 | 字数、引用数、章节、标题层级、引用样式阈值可配置；**manuscript-spec.yaml 即单一事实源**（含顶部「撰写硬性规定」注释），改后立即生效，无需重渲染任何文件 |
 | FR-LINT-08 | 引用相关性 LLM 评分 | P3（三期） | LLM 对文稿中引用文献的句子与该文献摘要的相关性评分；多模型交叉打分 + 增量缓存避免重复验证。已实现：Scorer 接口（ScorerEngine 多模型扇出 + 增量缓存）、ExtractCiteSentences（引用句抽取）、CheckNumericConsistency（数字集合规则）、citation_scores 表（SQLite 缓存）、`litkit verify --report citation-refs` 输出。**门槛**：成功模型数 `< scoring.min_models`（默认 2）不出分；按模型 `weight` 加权；无摘要文献不参与评分。待完成：人工标注集阈值校准。**能力边界**：锚点驱动（以 `[@citeKey]` 为锚点抽句），只评"已有引用↔文献"的匹配度，不检测"该有引用却无引用"的缺引用情形（间接兜底见 design/feature-lint.md） |
@@ -275,7 +275,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | HTTP | net/http（标准库） | 零依赖；超时/重试自封装 |
 | XML/Atom | encoding/xml（标准库） | arXiv Atom / PubMed EUtils |
 | HTML | 标准库正则/xml（goquery 依赖已移除） | 需 HTML 抓取的源（预留，二期） |
-| 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL | 3 种核心样式原生实现；Zotero 已发布 GB/T 7714—2025 CSL 样式（numeric/author-date/note）；5 个 .csl 经 Pandoc |
+| 引用渲染 | CSL 引擎（citeproc-js，goja 内嵌）+ BibTeX/RIS | 内置 GB/T 7714—2025 / APA / IEEE 样式；preview/草稿视图为独立 Go 实现 |
 | 存储 | modernc.org/sqlite v1.54+ | 纯 Go（无 CGO），SQLite 3.53，FTS5 内建，交叉编译友好 |
 | .env | joho/godotenv | .env 文件解析 |
 | 并发/限速 | goroutine + errgroup + golang.org/x/time/rate | 多源并发检索，单源失败隔离；每源令牌桶限速 |
@@ -292,7 +292,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 ### 7.1 CLI
 
 ```
-litkit init         --type empirical|review|book|proposal --lang zh|en [--journal NAME]
+litkit init         --type empirical|review|qualitative|book|proposal --lang zh|en [--journal NAME]
 litkit search       <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--full]
 litkit metadata     <id_type> <identifier>          # doi | pmid | arxiv | title
 litkit fetch        <cite_key|doi>                  # 全文获取（Unpaywall OA → Sci-Hub 兜底）
@@ -300,8 +300,8 @@ litkit sources
 litkit manuscript   <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o output_dir]
 litkit export       <papers.json> [-f bibtex|ris|text] [-s style]
 litkit lib          add | get | list | search | rm | stats | path
-litkit lint init    [project_dir] [--force] [--type review|empirical|book|proposal] [--lang zh|en] [--journal NAME]
-litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|book|proposal]
+litkit lint init    [project_dir] [--force] [--type review|empirical|qualitative|book|proposal] [--lang zh|en] [--journal NAME]
+litkit verify       <manuscript> [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|qualitative|book|proposal]
                     [--rule R2.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
 litkit fix          <file.md> [--rule R3.1] [--skip R2.1]
 litkit rules

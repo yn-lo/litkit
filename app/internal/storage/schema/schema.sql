@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS papers (
     publisher    TEXT NOT NULL DEFAULT '',  -- 出版社（书籍 [M] 用）
     city         TEXT NOT NULL DEFAULT '',  -- 出版地（书籍 [M] 用）
     institution  TEXT NOT NULL DEFAULT '',  -- 学位授予机构（学位论文 [D] 用）
-    access_date  TEXT NOT NULL DEFAULT ''   -- 网页访问日期（网页用）
+    access_date  TEXT NOT NULL DEFAULT '',  -- 网页访问日期（网页用）
+    language     TEXT NOT NULL DEFAULT ''   -- 文献语言（zh-CN/en），CSL 双语样式用
 );
 
 CREATE INDEX IF NOT EXISTS idx_papers_doi     ON papers(doi);

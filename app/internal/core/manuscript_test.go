@@ -42,7 +42,7 @@ func (f *fakeStore) UpsertPaper(p model.Paper) (string, bool, error) {
 
 // mustPaper 构造带稳定 ID 的论文（ID 由 ComputeID 生成）。
 func mustPaper(citeKey, title string, year int, authors []model.Author, doi string) model.Paper {
-	p := model.Paper{CiteKey: citeKey, Title: title, Authors: authors, Year: year, DOI: doi}
+	p := model.Paper{CiteKey: citeKey, Title: title, Authors: authors, Year: year, DOI: doi, DocType: model.DocTypeArticle}
 	p.ID = p.ComputeID()
 	return p
 }
@@ -52,15 +52,26 @@ var (
 	pTwo = mustPaper("a2", "Deep Learning", 2015, []model.Author{{Given: "Yoshua", Family: "Bengio"}}, "10.2/two")
 )
 
-func TestProcessManuscript_GB7714(t *testing.T) {
+// process 解析并渲染手稿，返回正式样式结果。
+func process(t *testing.T, store PaperStore, fetcher Fetcher, src, styleName string) *ManuscriptResult {
+	t.Helper()
+	resolved, err := ResolveManuscript(context.Background(), store, fetcher, src)
+	if err != nil {
+		t.Fatalf("ResolveManuscript err = %v", err)
+	}
+	res, err := FormatManuscript(resolved, mustStyle(t, "zh", styleName))
+	if err != nil {
+		t.Fatalf("FormatManuscript err = %v", err)
+	}
+	return res
+}
+
+func TestFormatManuscript_GB7714(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2] 后文。", StyleGB7714)
-	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
-	}
+	res := process(t, store, nil, "前文 [@a1] 与 [@a2] 后文。", "gb7714-2025")
 	if res.Text != "前文 [1] 与 [2] 后文。" {
 		t.Errorf("Text = %q，期望 %q", res.Text, "前文 [1] 与 [2] 后文。")
 	}
@@ -73,16 +84,16 @@ func TestProcessManuscript_GB7714(t *testing.T) {
 	if len(res.Unresolved) != 0 {
 		t.Errorf("Unresolved 应为空：%v", res.Unresolved)
 	}
+	if len(res.Bibliography) != 2 {
+		t.Errorf("Bibliography 应有 2 条，实际 %d", len(res.Bibliography))
+	}
 }
 
-func TestProcessManuscript_DuplicateToken(t *testing.T) {
+func TestFormatManuscript_DuplicateToken(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] 与 [@a1]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
-	}
+	res := process(t, store, nil, "[@a1] 与 [@a1]", "gb7714-2025")
 	if res.Text != "[1] 与 [1]" {
 		t.Errorf("Text = %q，期望 %q", res.Text, "[1] 与 [1]")
 	}
@@ -94,13 +105,8 @@ func TestProcessManuscript_DuplicateToken(t *testing.T) {
 	}
 }
 
-func TestProcessManuscript_Unresolved(t *testing.T) {
-	store := newFakeStore()
-
-	res, err := ProcessManuscript(context.Background(), store, nil, "见 [@zzz]。", StyleGB7714)
-	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
-	}
+func TestFormatManuscript_Unresolved(t *testing.T) {
+	res := process(t, newFakeStore(), nil, "见 [@zzz]。", "gb7714-2025")
 	if len(res.Unresolved) != 1 || res.Unresolved[0] != "zzz" {
 		t.Errorf("Unresolved = %v，期望 [zzz]", res.Unresolved)
 	}
@@ -112,36 +118,23 @@ func TestProcessManuscript_Unresolved(t *testing.T) {
 	}
 }
 
-func TestProcessManuscript_APAInline(t *testing.T) {
+func TestFormatManuscript_APAInline(t *testing.T) {
 	store := newFakeStore()
 	store.papers["v3"] = mustPaper("v3", "Attention", 2017, []model.Author{{Family: "Vaswani"}, {Family: "Shazeer"}, {Family: "Parmar"}}, "10.3/v3")
 	store.papers["v2"] = mustPaper("v2", "Neural", 2017, []model.Author{{Family: "Vaswani"}, {Family: "Shazeer"}}, "10.4/v2")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@v3] 与 [@v2]", StyleAPA)
-	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
-	}
-	if res.Text != "(Vaswani et al., 2017) 与 (Vaswani & Shazeer, 2017)" {
-		t.Errorf("Text = %q，期望 %q", res.Text, "(Vaswani et al., 2017) 与 (Vaswani & Shazeer, 2017)")
+	res := process(t, store, nil, "[@v3] 与 [@v2]", "apa")
+	want := "(Vaswani et al., 2017) 与 (Vaswani & Shazeer, 2017)"
+	if res.Text != want {
+		t.Errorf("Text = %q，期望 %q", res.Text, want)
 	}
 }
 
-func TestProcessManuscript_UnknownStyle(t *testing.T) {
-	store := newFakeStore()
-	_, err := ProcessManuscript(context.Background(), store, nil, "x", Style("csl"))
-	if err == nil {
-		t.Errorf("未知 style 应返回 error")
-	}
-}
-
-func TestProcessManuscript_CaseInsensitiveCiteKey(t *testing.T) {
+func TestFormatManuscript_CaseInsensitiveCiteKey(t *testing.T) {
 	store := newFakeStore()
 	store.papers["ABC"] = mustPaper("ABC", "Alpha", 2020, []model.Author{{Family: "A"}}, "10.5/alpha")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@abc]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
-	}
+	res := process(t, store, nil, "[@abc]", "gb7714-2025")
 	if res.Text != "[1]" {
 		t.Errorf("Text = %q，期望 %q", res.Text, "[1]")
 	}
@@ -150,15 +143,16 @@ func TestProcessManuscript_CaseInsensitiveCiteKey(t *testing.T) {
 	}
 }
 
-func TestProcessManuscript_Preview(t *testing.T) {
+func TestFormatPreview(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne // 有 DOI
 	store.papers["a2"] = mustPaper("a2", "No DOI Paper", 2019, []model.Author{{Family: "Smith"}}, "")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。", StylePreview)
+	resolved, err := ResolveManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。")
 	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
+		t.Fatalf("ResolveManuscript err = %v", err)
 	}
+	res := FormatPreview(resolved)
 	want := "前文 [@doi:10.1/one — Attention Is All You Need] 与 [@No DOI Paper]。"
 	if res.Text != want {
 		t.Errorf("Text = %q，期望 %q", res.Text, want)
@@ -166,21 +160,24 @@ func TestProcessManuscript_Preview(t *testing.T) {
 	if res.CitationMap["a1"] != "[@doi:10.1/one — Attention Is All You Need]" {
 		t.Errorf("CitationMap[a1] = %q", res.CitationMap["a1"])
 	}
+	if len(res.Bibliography) != 2 {
+		t.Errorf("preview 核对清单应有 2 条，实际 %d", len(res.Bibliography))
+	}
 }
 
 func TestWriteManuscriptOutputs_AllStylesGetReferenceList(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1]", StylePreview)
+	resolved, err := ResolveManuscript(context.Background(), store, nil, "[@a1]")
 	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
+		t.Fatalf("ResolveManuscript err = %v", err)
 	}
+	res := FormatPreview(resolved)
 	ts := "20260805_120000"
-	files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", ts, res, StylePreview)
+	files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", ts, res, "参考文献")
 	if err != nil {
 		t.Fatalf("WriteManuscriptOutputs err = %v", err)
 	}
-	// 所有样式（含 preview）均应生成 formatted.md 且文末含参考文献列表
 	path, ok := files[ManuscriptFormatted]
 	if !ok {
 		t.Fatalf("应生成 %s", ManuscriptFormatted)
@@ -193,34 +190,37 @@ func TestWriteManuscriptOutputs_AllStylesGetReferenceList(t *testing.T) {
 	if !strings.Contains(content, "[1]") {
 		t.Errorf("preview 模式 formatted.md 应含编号引用")
 	}
-	// references.txt 已删除，不应存在
 	refsFile := filepath.Join(filepath.Dir(path), "manuscript_"+ts+".txt")
 	if _, err := os.Stat(refsFile); err == nil {
 		t.Errorf("references.txt 不应生成")
 	}
 }
 
-// 英文样式（APA/IEEE）的文末文献节标题应为 References 而非中文标题。
+// 英文模式的文末文献节标题应为 References 而非中文标题。
 func TestFormattedHeadingEnglishStyles(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 
-	for _, style := range []Style{StyleAPA, StyleIEEE} {
-		res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 后文。", style)
+	for _, name := range []string{"apa", "ieee"} {
+		resolved, err := ResolveManuscript(context.Background(), store, nil, "前文 [@a1] 后文。")
 		if err != nil {
-			t.Fatalf("%s: ProcessManuscript err = %v", style, err)
+			t.Fatalf("%s: ResolveManuscript err = %v", name, err)
 		}
-		files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", "20260924_120000", res, style)
+		res, err := FormatManuscript(resolved, mustStyle(t, "en", name))
 		if err != nil {
-			t.Fatalf("%s: WriteManuscriptOutputs err = %v", style, err)
+			t.Fatalf("%s: FormatManuscript err = %v", name, err)
+		}
+		files, err := WriteManuscriptOutputs(t.TempDir(), "manuscript", "20260924_120000", res, RefListHeading("en"))
+		if err != nil {
+			t.Fatalf("%s: WriteManuscriptOutputs err = %v", name, err)
 		}
 		b, _ := os.ReadFile(files[ManuscriptFormatted])
 		content := string(b)
 		if !strings.Contains(content, "# References") {
-			t.Errorf("%s: formatted.md 应含 # References 标题，got:\n%s", style, content)
+			t.Errorf("%s: formatted.md 应含 # References 标题，got:\n%s", name, content)
 		}
 		if strings.Contains(content, "参考文献") {
-			t.Errorf("%s: 英文样式不应出现中文标题“参考文献”", style)
+			t.Errorf("%s: 英文模式不应出现中文标题“参考文献”", name)
 		}
 	}
 }
@@ -230,12 +230,13 @@ func TestWritePreviewOutput(t *testing.T) {
 	store.papers["a1"] = pOne
 	store.papers["a2"] = mustPaper("a2", "No DOI Paper", 2019, []model.Author{{Family: "Smith"}}, "")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。", StylePreview)
+	resolved, err := ResolveManuscript(context.Background(), store, nil, "前文 [@a1] 与 [@a2]。")
 	if err != nil {
-		t.Fatalf("ProcessManuscript err = %v", err)
+		t.Fatalf("ResolveManuscript err = %v", err)
 	}
+	res := FormatPreview(resolved)
 	ts := "20260830_120000"
-	p, err := WritePreviewOutput(t.TempDir(), "manuscript", ts, res)
+	p, err := WritePreviewOutput(t.TempDir(), "manuscript", ts, res, "参考文献")
 	if err != nil {
 		t.Fatalf("WritePreviewOutput err = %v", err)
 	}
@@ -252,38 +253,15 @@ func TestWritePreviewOutput(t *testing.T) {
 	}
 }
 
-// ---- 编号折叠（相邻引用合并）----
+// ---- 引用簇（相邻引用由 CSL 合并/排序）----
 
-func TestCollapseNumbers(t *testing.T) {
-	cases := []struct {
-		nums []int
-		want string
-	}{
-		{[]int{1}, "1"},
-		{[]int{1, 2}, "1-2"},
-		{[]int{1, 2, 3}, "1-3"},
-		{[]int{1, 3}, "1,3"},
-		{[]int{1, 3, 4, 5}, "1,3-5"},
-		{[]int{1, 3, 5}, "1,3,5"},
-		{[]int{1, 2, 4, 5, 7}, "1-2,4-5,7"},
-	}
-	for _, c := range cases {
-		if got := collapseNumbers(c.nums); got != c.want {
-			t.Errorf("collapseNumbers(%v) = %q, want %q", c.nums, got, c.want)
-		}
-	}
-}
-
-func TestProcessManuscript_CollapseConsecutive(t *testing.T) {
+func TestFormatManuscript_ClusterConsecutive(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2][@a3]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	res := process(t, store, nil, "[@a1][@a2][@a3]", "gb7714-2025")
 	if res.Text != "[1-3]" {
 		t.Errorf("Text = %q, want [1-3]", res.Text)
 	}
@@ -292,24 +270,20 @@ func TestProcessManuscript_CollapseConsecutive(t *testing.T) {
 	}
 }
 
-func TestProcessManuscript_CollapseNonConsecutive(t *testing.T) {
+func TestFormatManuscript_ClusterNonConsecutive(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
 
-	// a1→1, a2→2, a3→3; group [@a1][@a3] → [1,3]
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] x [@a2] x [@a1][@a3]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	res := process(t, store, nil, "[@a1] x [@a2] x [@a1][@a3]", "gb7714-2025")
 	want := "[1] x [2] x [1,3]"
 	if res.Text != want {
 		t.Errorf("Text = %q, want %q", res.Text, want)
 	}
 }
 
-func TestProcessManuscript_CollapseMixed(t *testing.T) {
+func TestFormatManuscript_ClusterMixed(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
@@ -317,74 +291,74 @@ func TestProcessManuscript_CollapseMixed(t *testing.T) {
 	store.papers["a4"] = mustPaper("a4", "Paper Four", 2020, []model.Author{{Family: "Li"}}, "10.4/four")
 	store.papers["a5"] = mustPaper("a5", "Paper Five", 2021, []model.Author{{Family: "Zhang"}}, "10.5/five")
 
-	// a1→1, a2→2, a3→3, a4→4, a5→5; group [@a1][@a3][@a4][@a5] → [1,3-5]
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] x [@a2] x [@a1][@a3][@a4][@a5]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	res := process(t, store, nil, "[@a1] x [@a2] x [@a1][@a3][@a4][@a5]", "gb7714-2025")
 	want := "[1] x [2] x [1,3-5]"
 	if res.Text != want {
 		t.Errorf("Text = %q, want %q", res.Text, want)
 	}
 }
 
-func TestProcessManuscript_CollapseSpaceSeparated(t *testing.T) {
+func TestFormatManuscript_ClusterSpaceSeparated(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1] [@a2]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if res.Text != "[1-2]" {
-		t.Errorf("Text = %q, want [1-2]", res.Text)
+	res := process(t, store, nil, "[@a1] [@a2]", "gb7714-2025")
+	if res.Text != "[1,2]" {
+		t.Errorf("Text = %q, want [1,2]", res.Text)
 	}
 }
 
-func TestProcessManuscript_CollapseUnresolvedBreaksGroup(t *testing.T) {
+func TestFormatManuscript_ClusterUnresolvedBreaksGroup(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@zzz][@a2]", StyleGB7714)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	res := process(t, store, nil, "[@a1][@zzz][@a2]", "gb7714-2025")
 	want := "[1][@zzz][2]"
 	if res.Text != want {
 		t.Errorf("Text = %q, want %q", res.Text, want)
 	}
 }
 
-func TestProcessManuscript_CollapseIEEE(t *testing.T) {
+func TestFormatManuscript_ClusterIEEE(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 	store.papers["a3"] = mustPaper("a3", "Paper Three", 2019, []model.Author{{Family: "Wang"}}, "10.3/three")
 
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2][@a3]", StyleIEEE)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if res.Text != "[1-3]" {
-		t.Errorf("Text = %q, want [1-3]", res.Text)
+	res := process(t, store, nil, "[@a1][@a2][@a3]", "ieee")
+	if res.Text != "[1], [2], [3]" {
+		t.Errorf("Text = %q, want %q", res.Text, "[1], [2], [3]")
 	}
 }
 
-func TestProcessManuscript_CollapseAPA(t *testing.T) {
+func TestFormatManuscript_ClusterAPA(t *testing.T) {
 	store := newFakeStore()
 	store.papers["a1"] = pOne
 	store.papers["a2"] = pTwo
 
-	// APA 用 author-year，不折叠
-	res, err := ProcessManuscript(context.Background(), store, nil, "[@a1][@a2]", StyleAPA)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	want := "(Vaswani, 2017)(Bengio, 2015)"
+	res := process(t, store, nil, "[@a1][@a2]", "apa")
+	// APA 会按作者字母序重排同一引用簇。
+	want := "(Bengio, 2015; Vaswani, 2017)"
 	if res.Text != want {
 		t.Errorf("Text = %q, want %q", res.Text, want)
+	}
+}
+
+func TestResolveManuscript_NilStore(t *testing.T) {
+	if _, err := ResolveManuscript(context.Background(), nil, nil, "[@a1]"); err == nil {
+		t.Fatal("nil store 应返回错误而不是 panic")
+	}
+}
+
+func TestFormatManuscript_ClusterDuplicateToken(t *testing.T) {
+	store := newFakeStore()
+	store.papers["a1"] = pOne
+
+	res := process(t, store, nil, "[@a1] [@a1]", "gb7714-2025")
+	if res.Text != "[1]" {
+		t.Errorf("Text = %q，同一论文的重复引用应去重为 [1]", res.Text)
 	}
 }
 
@@ -424,7 +398,7 @@ func (f *fakeErrStore) UpsertPaper(p model.Paper) (string, bool, error) {
 	return f.fakeStore.UpsertPaper(p)
 }
 
-func TestProcessManuscript_PropagatesRuntimeErrors(t *testing.T) {
+func TestResolveManuscript_PropagatesRuntimeErrors(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
 		name  string
@@ -452,29 +426,29 @@ func TestProcessManuscript_PropagatesRuntimeErrors(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		_, err := ProcessManuscript(ctx, tc.store, tc.fetch, tc.src, StyleGB7714)
+		_, err := ResolveManuscript(ctx, tc.store, tc.fetch, tc.src)
 		if err == nil {
 			t.Errorf("%s: 运行错误应向上返回，而不是记为 Unresolved", tc.name)
 		}
 	}
 }
 
-func TestProcessManuscript_FetchMissIsUnresolved(t *testing.T) {
+func TestResolveManuscript_FetchMissIsUnresolved(t *testing.T) {
 	// 反查返回 (nil, nil)（未命中）仍应记入 Unresolved 而不报错
 	store := newFakeStore()
-	res, err := ProcessManuscript(context.Background(), store, &fakeFetcher{}, "[@doi:10.1/none]", StyleGB7714)
+	resolved, err := ResolveManuscript(context.Background(), store, &fakeFetcher{}, "[@doi:10.1/none]")
 	if err != nil {
 		t.Fatalf("未命中不应报错: %v", err)
 	}
-	if len(res.Unresolved) != 1 || res.Unresolved[0] != "doi:10.1/none" {
-		t.Errorf("Unresolved = %v, want [doi:10.1/none]", res.Unresolved)
+	if len(resolved.Unresolved) != 1 || resolved.Unresolved[0] != "doi:10.1/none" {
+		t.Errorf("Unresolved = %v, want [doi:10.1/none]", resolved.Unresolved)
 	}
 }
 
 func TestExpandCiteGroups_PrefixedTokenKeepsComma(t *testing.T) {
 	// 带前缀 token 内的逗号（含于标题/DOI）不应被分组拆分
 	src := "[@a1][@title:Smith, J. 2024]"
-	got := expandCiteGroups(src, StyleGB7714)
+	got := expandCiteGroups(src)
 	if !strings.Contains(got, "[@title:Smith, J. 2024]") {
 		t.Errorf("带前缀 token 应保持原样，got %q", got)
 	}
@@ -482,7 +456,7 @@ func TestExpandCiteGroups_PrefixedTokenKeepsComma(t *testing.T) {
 		t.Errorf("带前缀 token 不应被逗号拆分，got %q", got)
 	}
 	// 裸 token 分组行为不变（bodyCiteRe 只匹配 3-5 个纯字母的裸 citeKey）
-	got = expandCiteGroups("[@abc,def]", StyleGB7714)
+	got = expandCiteGroups("[@abc,def]")
 	if !strings.Contains(got, "[@abc]") || !strings.Contains(got, "[@def]") {
 		t.Errorf("裸 token 分组应拆分，got %q", got)
 	}

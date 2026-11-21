@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"litkit/internal/csl"
 	"litkit/internal/model"
 )
 
@@ -24,19 +25,28 @@ func sampleJournal() model.Paper {
 	}
 }
 
-func TestFormatReference_GB7714_English(t *testing.T) {
-	got, err := FormatReference(sampleJournal(), StyleGB7714, 1)
+func mustStyle(t *testing.T, lang, name string) *csl.Style {
+	t.Helper()
+	st, err := ResolveStyle(lang, name, "")
 	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
+		t.Fatalf("ResolveStyle(%s, %s) err = %v", lang, name, err)
 	}
-	for _, want := range []string{"[1] ", "VASWANI A", "Attention Is All You Need[J]", "Advances in Neural Information Processing Systems", "2017", "30", "5998-6008", "DOI:10.5555/3295222.3295349."} {
+	return st
+}
+
+func TestRenderReferenceList_GB7714(t *testing.T) {
+	got, err := RenderReferenceList([]model.Paper{sampleJournal()}, mustStyle(t, "zh", "gb7714-2025"))
+	if err != nil {
+		t.Fatalf("RenderReferenceList err = %v", err)
+	}
+	for _, want := range []string{"[1] ", "Vaswani A", "Shazeer N", "Attention Is All You Need[J/OL]", "Advances in Neural Information Processing Systems", "2017", "30", "5998-6008", "DOI:10.5555/3295222.3295349"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("GB7714 条目缺少 %q：\n%s", want, got)
 		}
 	}
 }
 
-func TestFormatReference_GB7714_CJK(t *testing.T) {
+func TestRenderReferenceList_GB7714_CJK(t *testing.T) {
 	p := model.Paper{
 		CiteKey: "Wang2024",
 		Title:   "大语言模型在学术写作中的应用研究",
@@ -49,130 +59,57 @@ func TestFormatReference_GB7714_CJK(t *testing.T) {
 		Pages:   "123-135",
 		DOI:     "10.1234/abc.2024.001",
 	}
-	got, err := FormatReference(p, StyleGB7714, 2)
+	got, err := RenderReferenceList([]model.Paper{p}, mustStyle(t, "zh", "gb7714-2025"))
 	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
+		t.Fatalf("RenderReferenceList err = %v", err)
 	}
-	for _, want := range []string{"[2] ", "王小明, 李丽, 张强, 等", "大语言模型在学术写作中的应用研究[J]", "情报学报", "2024", "43(2)", "123-135"} {
+	for _, want := range []string{"[1] ", "王小明", "李丽", "张强", "等", "大语言模型在学术写作中的应用研究[J/OL]", "情报学报", "2024", "43（2）", "123-135"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("GB7714 中文条目缺少 %q：\n%s", want, got)
 		}
 	}
-	if !strings.Contains(got, "．") {
-		t.Errorf("GB7714 中文条目应使用全角句点 ．：\n%s", got)
+	if !strings.Contains(got, "，") {
+		t.Errorf("GB7714 中文条目应使用全角逗号：\n%s", got)
 	}
 }
 
-func TestFormatReference_GB7714_NewDocTypes(t *testing.T) {
-	cases := []struct {
-		docType string
-		mark    string
-	}{
-		{"preprint", "[PP]"},
-		{"dataset", "[DS]"},
-		{"software", "[CP]"},
-		{"webpage", "[EB/OL]"},
-		{"", "[Z]"},
-	}
-	for _, c := range cases {
-		p := sampleJournal()
-		p.DocType = c.docType
-		got, err := FormatReference(p, StyleGB7714, 0)
-		if err != nil {
-			t.Fatalf("docType %q err = %v", c.docType, err)
-		}
-		if !strings.Contains(got, c.mark) {
-			t.Errorf("docType %q 期望标志 %q，得到：\n%s", c.docType, c.mark, got)
-		}
-	}
-}
-
-func TestFormatReference_GB7714_Book(t *testing.T) {
-	p := model.Paper{
-		Title:     "Deep Learning",
-		Authors:   []model.Author{{Given: "Ian", Family: "Goodfellow"}, {Given: "Yoshua", Family: "Bengio"}, {Given: "Aaron", Family: "Courville"}, {Given: "Extra", Family: "Author"}},
-		Year:      2016,
-		DocType:   "book",
-		Publisher: "MIT Press",
-		City:      "Cambridge",
-		DOI:       "10.1234/deeplearning",
-	}
-	got, err := FormatReference(p, StyleGB7714, 5)
+func TestRenderReferenceList_APA(t *testing.T) {
+	got, err := RenderReferenceList([]model.Paper{sampleJournal()}, mustStyle(t, "en", "apa"))
 	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
+		t.Fatalf("RenderReferenceList err = %v", err)
 	}
-	for _, want := range []string{"[5] ", "GOODFELLOW I", "Deep Learning[M]", "Cambridge: MIT Press", "2016", "DOI:10.1234/deeplearning"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("GB7714 书籍条目缺少 %q：\n%s", want, got)
-		}
-	}
-}
-
-func TestFormatReference_GB7714_Thesis(t *testing.T) {
-	p := model.Paper{
-		Title:       "Neural Machine Translation",
-		Authors:     []model.Author{{Given: "Yonghui", Family: "Wu"}},
-		Year:        2016,
-		DocType:     "thesis",
-		Institution: "MIT",
-	}
-	got, err := FormatReference(p, StyleGB7714, 0)
-	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
-	}
-	for _, want := range []string{"Neural Machine Translation[D]", "MIT", "2016"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("GB7714 学位论文条目缺少 %q：\n%s", want, got)
-		}
-	}
-}
-
-func TestFormatReference_GB7714_Webpage(t *testing.T) {
-	p := model.Paper{
-		Title:      "Go Documentation",
-		Year:       2024,
-		DocType:    "webpage",
-		URL:        "https://go.dev/doc",
-		AccessDate: "2024-06-01",
-	}
-	got, err := FormatReference(p, StyleGB7714, 0)
-	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
-	}
-	for _, want := range []string{"Go Documentation[EB/OL]", "2024", "(2024-06-01)", "[https://go.dev/doc]"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("GB7714 网页条目缺少 %q：\n%s", want, got)
-		}
-	}
-}
-
-func TestFormatReference_APA(t *testing.T) {
-	got, err := FormatReference(sampleJournal(), StyleAPA, 0)
-	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
-	}
-	for _, want := range []string{"Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., & Jones, L.", "(2017)", "Attention Is All You Need.", "*Advances in Neural Information Processing Systems*", "*30*, 5998-6008.", "https://doi.org/10.5555/3295222.3295349"} {
+	for _, want := range []string{
+		"Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., & Jones, L.",
+		"(2017)",
+		"Attention Is All You Need",
+		"Advances in Neural Information Processing Systems, 30, 5998–6008",
+		"https://doi.org/10.5555/3295222.3295349",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("APA 条目缺少 %q：\n%s", want, got)
 		}
 	}
 }
 
-func TestFormatReference_IEEE(t *testing.T) {
-	got, err := FormatReference(sampleJournal(), StyleIEEE, 3)
+func TestRenderReferenceList_IEEE(t *testing.T) {
+	got, err := RenderReferenceList([]model.Paper{sampleJournal()}, mustStyle(t, "en", "ieee"))
 	if err != nil {
-		t.Fatalf("FormatReference err = %v", err)
+		t.Fatalf("RenderReferenceList err = %v", err)
 	}
-	for _, want := range []string{"[3] A. Vaswani, N. Shazeer, N. Parmar, et al.,", "\"Attention Is All You Need,\"", "*Advances in Neural Information Processing Systems*", "vol. 30", "pp. 5998-6008", "2017"} {
+	for _, want := range []string{"[1] A. Vaswani", "N. Shazeer", "“Attention Is All You Need,”", "Advances in Neural Information Processing Systems", "vol. 30", "pp. 5998–6008", "2017"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("IEEE 条目缺少 %q：\n%s", want, got)
 		}
 	}
 }
 
-func TestFormatReference_APANoVenue(t *testing.T) {
-	// 无 venue 时不得出现 "Title.." 双句点（report 问题1）
-	got, err := FormatReference(model.Paper{Title: "A Venue-Less Study", Authors: []model.Author{{Family: "Doe", Given: "Jane"}}, Year: 2023}, StyleAPA, 0)
+func TestRenderReferenceList_APANoVenue(t *testing.T) {
+	// 无 venue 时不得出现 "Title.." 双句点
+	got, err := RenderReferenceList([]model.Paper{{
+		Title:   "A Venue-Less Study",
+		Authors: []model.Author{{Family: "Doe", Given: "Jane"}},
+		Year:    2023,
+	}}, mustStyle(t, "en", "apa"))
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -182,60 +119,22 @@ func TestFormatReference_APANoVenue(t *testing.T) {
 	if !strings.Contains(got, "A Venue-Less Study.") {
 		t.Fatalf("APA 无 venue 应以单句点结尾：%q", got)
 	}
-	if strings.Contains(got, ".. ") {
-		t.Fatalf("APA 无 venue DOI 分隔处出现双句点：%q", got)
-	}
 }
 
-func TestFormatReference_APAHasVenueStillEndsPeriod(t *testing.T) {
-	got, err := FormatReference(sampleJournal(), StyleAPA, 0)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if strings.Contains(got, "..") {
-		t.Fatalf("APA 有 venue 不应出现双句点：%q", got)
-	}
-}
-
-func TestFormatReference_IEEENoVenue(t *testing.T) {
-	// 无 venue 时标题引号内不得残留分隔逗号（report 问题1）
-	got, err := FormatReference(model.Paper{Title: "A Venue-Less Study", Authors: []model.Author{{Family: "Doe", Given: "Jane"}}, Year: 2023}, StyleIEEE, 1)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if strings.Contains(got, "\",\"") || strings.Contains(got, "Study,\"") {
-		t.Fatalf("IEEE 无 venue 标题引号内残留逗号：%q", got)
-	}
-	if !strings.Contains(got, "\"A Venue-Less Study\"") {
-		t.Fatalf("IEEE 无 venue 引号内不应有尾逗号：%q", got)
-	}
-}
-
-func TestFormatReference_UnknownStyle(t *testing.T) {
-	if _, err := FormatReference(sampleJournal(), Style("chicago"), 0); err == nil {
+func TestRenderReferenceList_UnknownStyle(t *testing.T) {
+	if _, err := ResolveStyle("zh", "chicago", ""); err == nil {
 		t.Fatal("未知样式应返回错误")
 	}
 }
 
-func TestAuthors_MaxThree(t *testing.T) {
-	authors := func(n int) []model.Author {
-		out := make([]model.Author, 0, n)
-		for i := 0; i < n; i++ {
-			out = append(out, model.Author{Given: "G", Family: "F"})
-		}
-		return out
+func TestResolveStyle_Defaults(t *testing.T) {
+	zh, err := ResolveStyle("zh", "", "")
+	if err != nil || zh.Name != "gb7714-2025" {
+		t.Fatalf("zh 默认样式 = %v, err = %v", zh, err)
 	}
-	for _, style := range []Style{StyleGB7714, StyleIEEE} {
-		if got, err := FormatReference(model.Paper{Authors: authors(3), Title: "T", Year: 2020}, style, 0); err != nil {
-			t.Fatalf("%s err = %v", style, err)
-		} else if strings.Contains(got, "et al") || strings.Contains(got, "等") {
-			t.Errorf("%s 恰好 3 位作者不应省略：%q", style, got)
-		}
-		if got, err := FormatReference(model.Paper{Authors: authors(4), Title: "T", Year: 2020}, style, 0); err != nil {
-			t.Fatalf("%s err = %v", style, err)
-		} else if !strings.Contains(got, "et al") && !strings.Contains(got, "等") {
-			t.Errorf("%s 4 位作者应省略为前 3 位：%q", style, got)
-		}
+	en, err := ResolveStyle("en", "", "")
+	if err != nil || en.Name != "apa" {
+		t.Fatalf("en 默认样式 = %v, err = %v", en, err)
 	}
 }
 

@@ -99,6 +99,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		".agents/skills/academic-style/SKILL.md",
 		".agents/skills/manuscript-format/SKILL.md",
 		".agents/skills/manuscript-format/references/empirical.md",
+		".agents/skills/manuscript-format/references/qualitative.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("应生成 %s：%v", rel, err)
@@ -110,7 +111,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
 	got := string(data)
-	for _, want := range []string{"litkit search", "--mode", "litkit verify", "--check", "ls .litkit/", "不写摘要", "proposal", "citation_mode"} {
+	for _, want := range []string{"litkit search", "--mode", "litkit verify", "--check", "ls .litkit/", "不写摘要", "proposal", "qualitative", "citation_mode"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}
@@ -243,6 +244,20 @@ func TestInitWorkdir_typeReview(t *testing.T) {
 	}
 	if spec.PaperType != lint.PaperTypeReview {
 		t.Errorf("paper_type 应为 review，got %s", spec.PaperType)
+	}
+}
+
+func TestInitWorkdir_typeQualitative(t *testing.T) {
+	dir := t.TempDir()
+	if err := initWorkdir(dir, false, lint.PaperTypeQualitative, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	spec, err := lint.LoadSpec(lint.SpecPath(dir, lint.PaperTypeQualitative, lint.LangZH))
+	if err != nil {
+		t.Fatalf("LoadSpec: %v", err)
+	}
+	if spec.PaperType != lint.PaperTypeQualitative {
+		t.Errorf("paper_type 应为 qualitative，got %s", spec.PaperType)
 	}
 }
 

@@ -56,6 +56,7 @@ type Paper struct {
 	City        string   `json:"city,omitempty"`        // 出版地（书籍 [M] 用）
 	Institution string   `json:"institution,omitempty"` // 学位授予机构（学位论文 [D] 用）
 	AccessDate  string   `json:"accessDate,omitempty"`  // 网页访问日期（网页用）
+	Language    string   `json:"language,omitempty"`    // 文献语言（zh-CN/en），CSL 双语样式用
 }
 
 // ComputeID 按可用标识符优先级生成稳定内部 ID（sha256 前缀）。

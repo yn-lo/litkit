@@ -24,7 +24,7 @@ word_counts:
   paragraph: [80, 500]        # 标书段落普遍长于论文，放宽上限
 citation:
   count: [10, 40]             # 主要参考文献篇数
-  style: gbt7714
+  style: gb7714-2025
   run_limit: 0                # endnote 模式无内联引用连串问题
 heading:
   max_level: 3

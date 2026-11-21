@@ -21,11 +21,14 @@ import (
 //go:embed templates/skills/academic-style/SKILL.md
 //go:embed templates/skills/manuscript-format/SKILL.md
 //go:embed templates/skills/manuscript-format/references/empirical.md
+//go:embed templates/skills/manuscript-format/references/qualitative.md
 //go:embed templates/skills/manuscript-format/references/review.md
 //go:embed templates/skills/manuscript-format/references/book.md
 //go:embed templates/empirical-zh/manuscript-spec.yaml
+//go:embed templates/qualitative-zh/manuscript-spec.yaml
 //go:embed templates/review-zh/manuscript-spec.yaml
 //go:embed templates/empirical-en/manuscript-spec.yaml
+//go:embed templates/qualitative-en/manuscript-spec.yaml
 //go:embed templates/review-en/manuscript-spec.yaml
 //go:embed templates/book-zh/manuscript-spec.yaml
 //go:embed templates/proposal-zh/manuscript-spec.yaml
@@ -61,6 +64,7 @@ var skillFiles = []tmplFile{
 	{"academic-style/SKILL.md", "templates/skills/academic-style/SKILL.md"},
 	{"manuscript-format/SKILL.md", "templates/skills/manuscript-format/SKILL.md"},
 	{"manuscript-format/references/empirical.md", "templates/skills/manuscript-format/references/empirical.md"},
+	{"manuscript-format/references/qualitative.md", "templates/skills/manuscript-format/references/qualitative.md"},
 	{"manuscript-format/references/review.md", "templates/skills/manuscript-format/references/review.md"},
 	{"manuscript-format/references/book.md", "templates/skills/manuscript-format/references/book.md"},
 }

@@ -65,6 +65,18 @@ litkit lib rm <citeKey>      # 删除
 - **正文写作方法**（结构、写作质量自省、摘要规范、修辞）见 **academic-style** 技能
 - **叙事格式（八股骨架）**：按论文类型规划章节结构，写作前读 **manuscript-format** 技能（references/ 下按类型取文档）
 
+### 成稿与引用格式化
+
+```bash
+litkit manuscript draft.md --lang zh -s gb7714-2025   # 产出 formatted.md + refs.bib + refs.ris
+litkit styles list                                     # 内置样式 + WORK_DIR/styles/*.csl
+litkit styles export apa                               # 导出 apa-custom.csl 供自定义
+```
+
+- 正式引用样式由 CSL 渲染；`-s` 接受内置名（`gb7714-2025`/`apa`/`ieee`）、`.csl` 路径或 `WORK_DIR/styles/<name>`
+- `--preview` 额外产出草稿/调试视图（自描述标记，不经过 CSL），用于人工核查引用指向
+- 改样式不要改 Go 代码：放 `.csl` 到 `WORK_DIR/styles/` 即可
+
 ### 验证文稿
 
 ```bash
@@ -117,7 +129,7 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --mode final --report 
 
 ```bash
 ls .litkit/                                    # 查看已注册类型
-litkit init --type review|empirical|book --lang zh|en  # 追加类型
+litkit init --type review|empirical|qualitative|book|proposal --lang zh|en  # 追加类型
 ```
 
 ## Critical Rules

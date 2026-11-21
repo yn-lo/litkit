@@ -11,8 +11,8 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 - **跨源检索**：arxiv / PubMed / bioRxiv / medRxiv / Semantic Scholar / OpenAlex / Crossref / DOAJ 并发检索 + 去重；摘要工作流（不下载 PDF、不抽取全文）；`crossref`/`doaj` 支持中文语料检索。
 - **文献入库**：按 DOI / PMID / arXiv / 标题反查元数据；`lib add --doi` 反查即入库；本地 SQLite 文献库管理。
 - **全文获取**：按 citeKey / DOI 取回——Unpaywall OA 优先 → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络）。
-- **规范引用**：导出 BibTeX / RIS / 文本，支持 GB/T 7714—2025 / APA / IEEE。
-- **手稿排版**：解析 `[@citeKey]` 占位符为引用编号；`--preview` 输出自描述核查版，`--docx` 转 Word。
+- **规范引用**：CSL 渲染（citeproc-js 内嵌），内置 GB/T 7714—2025 / APA / IEEE，支持自定义 `.csl`；导出 BibTeX / RIS / 文本。
+- **手稿排版**：解析 `[@citeKey]` 占位符并按 CSL 样式生成引用；`--preview` 输出独立调试/草稿视图，`--docx` 转 Word。
 - **撰写合规门禁**：机械化规则验证（语言 / 结构 / 统计 / 标点 / 引用 / 行文 / 字数），`verify` 三档模式；`fix` 自动修正可修项。
 
 **AI-first**：默认返回 AI 写作所需最小字段集（citeKey / title / firstAuthor / year / abstract），完整元数据按需取回；CLI 输出 JSON 可被 AI shell 直接调用。
@@ -25,8 +25,9 @@ litkit 是一个 Go 编写的论文工具包（Go 1.26 / cobra / SQLite），**�
 | 源清单       | `sources` 列出已注册检索源及其限速配置                                                                             |
 | 元数据反查   | `metadata doi\|pmid\|arxiv\|title <id>` 反查元数据（查询）；`lib add --doi <DOI>` 反查并入库                       |
 | 全文获取     | `fetch <citeKey\|doi>`：Unpaywall OA → Sci-Hub 兜底；PDF 落盘 + 全文缓存（再次取回零网络）                          |
-| 规范引用     | `export <papers.json> -f bibtex\|ris\|text`；样式 GB/T 7714—2025 / APA / IEEE                                       |
-| 手稿排版     | `manuscript <draft.md>`：`[@citeKey]` → `[1][2]`；`--preview` / `--docx` / `-o`                                    |
+| 规范引用     | `export <papers.json> -f bibtex\|ris\|text`；CSL 样式 GB/T 7714—2025 / APA / IEEE / 自定义 `.csl` |
+| 手稿排版     | `manuscript <draft.md> [-s 样式]`：`[@citeKey]` → `[1]`/`(Author, Year)`；`--preview` / `--docx` / `-o` |
+| 样式管理     | `styles list\|show\|export`；用户样式放 `WORK_DIR/styles/*.csl`                                             |
 | 撰写合规门禁 | `lint init` 生成约束设施；`verify --mode chapter\|draft\|final`（lang × type × mode 三维过滤）；`--report citation-refs` 引用相关性 LLM 评分；`fix` 自动修正可修项 |
 | 规则查询     | `rules` 列出全部规则（ID / 类别 / 适用语言与论文类型 / 验证方法 A·S·M）                                            |
 | 文献库管理   | `lib add\|get\|list\|search\|rm\|stats\|path`                                                                      |

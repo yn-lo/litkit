@@ -17,6 +17,7 @@ func TestRound2_FenceParsing(t *testing.T) {
 func TestBuiltinSpecsMatchTypeAndLanguage(t *testing.T) {
 	for _, tc := range []struct{ typ, lang string }{
 		{PaperTypeEmpirical, LangZH}, {PaperTypeEmpirical, LangEN},
+		{PaperTypeQualitative, LangZH}, {PaperTypeQualitative, LangEN},
 		{PaperTypeReview, LangZH}, {PaperTypeReview, LangEN},
 		{PaperTypeBook, LangZH}, {PaperTypeProposal, LangZH},
 	} {

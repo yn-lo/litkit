@@ -14,7 +14,7 @@ owner: litkit-core
 | CLI | spf13/cobra |
 | HTTP / XML | net/http、encoding/xml（标准库） |
 | HTML 解析 | 标准库正则/xml（当前无 goquery 依赖） |
-| 引用渲染 | 内置格式化器（GB/T 7714—2025 / APA / IEEE）+ Pandoc CSL（可选） |
+| 引用渲染 | CSL（citeproc-js，goja 内嵌；内置 GB/T 7714—2025 / APA / IEEE）+ BibTeX/RIS |
 | 存储 | modernc.org/sqlite（纯 Go，无 CGO） |
 | .env | joho/godotenv |
 | 并发/限速 | goroutine + errgroup + golang.org/x/time/rate |
@@ -29,7 +29,7 @@ owner: litkit-core
 ```
 cmd/litkit                       入口层（参数解析与注册，不含业务逻辑）
 internal/core                   服务层（检索去重 / 本地库 keyword 检索 / 元数据反查 / 引用渲染 / 手稿流水线 / lint / 文献库）
-internal/sources                适配层（每个学术源一个适配器，实现 PaperSource 接口）
+internal/sources · internal/csl 适配层（学术源适配器 / CSL 渲染适配器）
 internal/model · config · storage · util   叶子层（数据模型 / 配置 / SQLite / 工具）
 ```
 

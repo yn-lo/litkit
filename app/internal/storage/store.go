@@ -178,6 +178,7 @@ func ensureColumns(tx *sql.Tx) error {
 		{"city", "ALTER TABLE papers ADD COLUMN city TEXT NOT NULL DEFAULT ''"},
 		{"institution", "ALTER TABLE papers ADD COLUMN institution TEXT NOT NULL DEFAULT ''"},
 		{"access_date", "ALTER TABLE papers ADD COLUMN access_date TEXT NOT NULL DEFAULT ''"},
+		{"language", "ALTER TABLE papers ADD COLUMN language TEXT NOT NULL DEFAULT ''"},
 		{"pdf_url", "ALTER TABLE papers ADD COLUMN pdf_url TEXT NOT NULL DEFAULT ''"},
 		{"fulltext", "ALTER TABLE papers ADD COLUMN fulltext TEXT NOT NULL DEFAULT ''"},
 	}
@@ -303,11 +304,11 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		_, err = tx.Exec(`INSERT INTO papers
 			(dedup_key, cite_key, doi, paper_id, title, authors, abstract, year, venue,
 			 source, doc_type, url, pdf_url, pmid, arxiv_id, volume, number, pages, citations, fetched_at,
-			 publisher, city, institution, access_date)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 publisher, city, institution, access_date, language)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			key, citeKey, p.DOI, p.ID, p.Title, string(authorsJSON), p.Abstract, p.Year,
 			p.Venue, p.Source, p.DocType, p.URL, p.PdfURL, p.PMID, p.ArXivID, p.Volume, p.Number, p.Pages,
-			p.Citations, now, p.Publisher, p.City, p.Institution, p.AccessDate)
+			p.Citations, now, p.Publisher, p.City, p.Institution, p.AccessDate, p.Language)
 		if err != nil {
 			return "", false, fmt.Errorf("storage upsert insert: %w", err)
 		}
@@ -350,13 +351,14 @@ func (s *Store) UpsertPaper(p model.Paper) (string, bool, error) {
 		city=COALESCE(NULLIF(?, ''), city),
 		institution=COALESCE(NULLIF(?, ''), institution),
 		access_date=COALESCE(NULLIF(?, ''), access_date),
+		language=COALESCE(NULLIF(?, ''), language),
 		citations=COALESCE(NULLIF(?, 0), citations), fetched_at=?
 		WHERE id=?`,
 		key, p.DOI, p.ID, p.Title, len(p.Authors), string(authorsJSON),
 		p.Abstract, p.Year, p.Venue, p.Source,
 		p.DocType, p.URL, p.PdfURL, p.PMID, p.ArXivID,
 		p.Volume, p.Number, p.Pages,
-		p.Publisher, p.City, p.Institution, p.AccessDate,
+		p.Publisher, p.City, p.Institution, p.AccessDate, p.Language,
 		p.Citations, now, id)
 	if err != nil {
 		return "", false, fmt.Errorf("storage upsert update: %w", err)
@@ -385,7 +387,7 @@ func (s *Store) UpsertPapers(papers []model.Paper) (int, error) {
 // 查询列集合（Upsert 与查询共用，字段顺序必须与 scanPaper 一致）。
 const paperCols = "cite_key, doi, paper_id, title, authors, abstract, year, venue, " +
 	"source, doc_type, url, pdf_url, pmid, arxiv_id, volume, number, pages, citations, fetched_at, " +
-	"publisher, city, institution, access_date"
+	"publisher, city, institution, access_date, language"
 
 // scanPapers 将结果行扫描为 []model.Paper。
 func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
@@ -399,7 +401,7 @@ func scanPapers(rows *sql.Rows) ([]model.Paper, error) {
 		if err := rows.Scan(&p.CiteKey, &p.DOI, &p.ID, &p.Title, &authorsJSON, &p.Abstract,
 			&p.Year, &p.Venue, &p.Source, &p.DocType, &p.URL, &p.PdfURL, &p.PMID, &p.ArXivID,
 			&p.Volume, &p.Number, &p.Pages, &p.Citations, &fetchedAt,
-			&p.Publisher, &p.City, &p.Institution, &p.AccessDate); err != nil {
+			&p.Publisher, &p.City, &p.Institution, &p.AccessDate, &p.Language); err != nil {
 			return nil, err
 		}
 		if len(authorsJSON) > 0 {
