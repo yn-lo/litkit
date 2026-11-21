@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,32 +32,39 @@ const crossrefWorkSample = `{
   }
 }`
 
-// 真实 NCBI esummary 响应片段（result 键为 PMID，含 uids 元信息键）。
-const esummarySample = `{
-  "header": {"type": "esummary", "version": "0.3"},
-  "result": {
-    "uids": ["12345"],
-    "12345": {
-      "uid": "12345",
-      "title": "Deep Learning",
-      "authors": [
-        {"name": "LeCun Yann"},
-        {"name": "Bengio Yoshua"}
-      ],
-      "pubdate": "2015 Jan 01",
-      "fulljournalname": "Nature",
-      "volume": "521",
-      "issue": "7553",
-      "pages": "436-444",
-      "doi": "10.1038/nature14539",
-      "articleids": [
-        {"idtype": "pubmed", "idtypen": 1, "value": "12345"},
-        {"idtype": "doi", "idtypen": 3, "value": "10.1038/nature14539"}
-      ],
-      "pubtype": ["Journal Article"]
-    }
-  }
-}`
+// 真实 NCBI efetch 响应片段（wm RETTYPE=abstract，含摘要与卷期页）。
+const pubmedEFetchSample = `<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">12345</PMID>
+      <Article>
+        <ArticleTitle>Deep Learning</ArticleTitle>
+        <Abstract>
+          <AbstractText>Deep learning allows computational models of multiple processing layers.</AbstractText>
+        </Abstract>
+        <AuthorList>
+          <Author><ForeName>Yann</ForeName><LastName>LeCun</LastName></Author>
+          <Author><ForeName>Yoshua</ForeName><LastName>Bengio</LastName></Author>
+        </AuthorList>
+        <Journal>
+          <Title>Nature</Title>
+          <JournalIssue>
+            <Volume>521</Volume>
+            <Issue>7553</Issue>
+            <PubDate><Year>2015</Year></PubDate>
+          </JournalIssue>
+        </Journal>
+        <Pagination><MedlinePgn>436-444</MedlinePgn></Pagination>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="doi">10.1038/nature14539</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>`
 
 // 真实 arXiv Atom Feed 片段（journal_ref / doi 在 arxiv 命名空间）。
 const arxivEntrySample = `<?xml version="1.0" encoding="UTF-8"?>
@@ -127,7 +133,7 @@ func TestMetadataFetch_DOI(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "doi", "10.1000/xyz")
 	if err != nil {
@@ -179,7 +185,7 @@ func TestMetadataFetch_DOI_Missing(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "doi", "10.1000/nope")
 	if err != nil {
@@ -192,20 +198,20 @@ func TestMetadataFetch_DOI_Missing(t *testing.T) {
 
 func TestMetadataFetch_PMID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/entrez/eutils/esummary.fcgi" {
-			t.Errorf("请求路径不符：got %q", r.URL.Path)
+		if r.URL.Path != "/entrez/eutils/efetch.fcgi" {
+			t.Errorf("请求路径不符（esummary 不含摘要，必须走 efetch）：got %q", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("db") != "pubmed" || q.Get("id") != "12345" || q.Get("retmode") != "json" {
+		if q.Get("db") != "pubmed" || q.Get("id") != "12345" || q.Get("retmode") != "xml" {
 			t.Errorf("请求参数不符：%s", r.URL.RawQuery)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(esummarySample))
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(pubmedEFetchSample))
 	}))
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.eutilsBase = srv.URL
+	f.EutilsBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "pmid", "12345")
 	if err != nil {
@@ -220,7 +226,7 @@ func TestMetadataFetch_PMID(t *testing.T) {
 	if p.PMID != "12345" {
 		t.Errorf("PMID：got %q", p.PMID)
 	}
-	// esummary 姓名格式 "Family Given"，应拆为 Family/Given
+	// efetch 直接给出 ForeName/LastName
 	if len(p.Authors) != 2 {
 		t.Fatalf("应 2 位作者，got %d", len(p.Authors))
 	}
@@ -259,7 +265,7 @@ func TestMetadataFetch_Arxiv(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.arxivBase = srv.URL
+	f.ArxivBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "arxiv", "2001.00001")
 	if err != nil {
@@ -317,7 +323,7 @@ func TestMetadataFetch_Title(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "title", "graph neural networks")
 	if err != nil {
@@ -346,7 +352,7 @@ func TestMetadataFetch_Title_Mismatch(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	// 首条标题与查询明显不符：应视为未命中（nil），由调用方归入 Unresolved。
 	p, err := f.Fetch(context.Background(), "title", "graph neural networks")
@@ -355,28 +361,6 @@ func TestMetadataFetch_Title_Mismatch(t *testing.T) {
 	}
 	if p != nil {
 		t.Fatalf("标题不匹配应返回 nil，got %+v", p)
-	}
-}
-
-func TestTitleSimilar(t *testing.T) {
-	cases := []struct {
-		name string
-		a, b string
-		want float64
-	}{
-		{"完全匹配", "Attention Is All You Need", "Attention Is All You Need", 1},
-		{"大小写标点差异", "Graph Neural Networks: A Review", "graph neural networks a review", 1},
-		{"查询为结果子集", "graph neural networks", "Graph Neural Networks for Node Classification", 0.6},
-		{"完全不相关", "graph neural networks", "Found via Title Search", 0},
-		{"空标题", "", "Graph Neural Networks", 0},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := titleSimilar(c.a, c.b)
-			if math.Abs(got-c.want) > 1e-9 {
-				t.Errorf("titleSimilar(%q, %q) = %v，期望 %v", c.a, c.b, got, c.want)
-			}
-		})
 	}
 }
 
@@ -401,7 +385,7 @@ func TestMetadataFetch_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	p, err := f.Fetch(context.Background(), "doi", "10.1000/xyz")
 	if err == nil {
@@ -446,7 +430,7 @@ func TestCheckRetraction_Retracted(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	info, err := f.CheckRetraction(context.Background(), "10.1000/retracted")
 	if err != nil {
@@ -471,7 +455,7 @@ func TestCheckRetraction_Clean(t *testing.T) {
 	defer srv.Close()
 
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 
 	info, err := f.CheckRetraction(context.Background(), "10.1000/fine")
 	if err != nil {
@@ -488,9 +472,72 @@ func TestCheckRetraction_NoticeIsNotRetracted(t *testing.T) {
 	}))
 	defer srv.Close()
 	f := newMetadataFetcher()
-	f.crossrefBase = srv.URL
+	f.CrossrefBase = srv.URL
 	info, err := f.CheckRetraction(context.Background(), "10.1000/notice")
 	if err != nil || info.Retracted {
 		t.Fatalf("撤稿声明不等于声明本身已撤稿: %+v, err=%v", info, err)
+	}
+}
+
+// TestMetadataFetch_DOI_abstractBackfill Crossref 常缺摘要：应回落 OpenAlex 补齐（摘要工作流必需）。
+func TestMetadataFetch_DOI_abstractBackfill(t *testing.T) {
+	openAlexWork := `{
+	  "id": "https://openalex.org/W1",
+	  "doi": "https://doi.org/10.1000/xyz",
+	  "title": "Graph Neural Networks: A Review",
+	  "abstract_inverted_index": {"We": [0], "review": [1], "graphs": [2]},
+	  "publication_year": 2020,
+	  "type": "article"
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/works/10.1000/xyz":
+			// Crossref 记录：无 abstract 字段
+			_, _ = w.Write([]byte(`{"status":"ok","message":{"title":["Graph Neural Networks: A Review"],"DOI":"10.1000/xyz","type":"journal-article"}}`))
+		case strings.HasPrefix(r.URL.Path, "/works/https://doi.org/"):
+			_, _ = w.Write([]byte(openAlexWork))
+		default:
+			t.Errorf("未预期请求路径：%q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	f := newMetadataFetcher()
+	f.CrossrefBase = srv.URL
+	f.OpenAlexBase = srv.URL
+
+	p, err := f.Fetch(context.Background(), "doi", "10.1000/xyz")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if p == nil {
+		t.Fatal("应命中返回论文")
+	}
+	if p.Abstract != "We review graphs" {
+		t.Errorf("摘要应由 OpenAlex 补齐，got %q", p.Abstract)
+	}
+}
+
+// TestMetadataFetch_DOI_abstractBackfillFailsClosed OpenAlex 兜底失败时不得报错（摘要缺失非身份错误）。
+func TestMetadataFetch_DOI_abstractBackfillFailsClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/works/10.1000/xyz" {
+			_, _ = w.Write([]byte(`{"status":"ok","message":{"title":["T"],"DOI":"10.1000/xyz"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	f := newMetadataFetcher()
+	f.CrossrefBase = srv.URL
+	f.OpenAlexBase = srv.URL
+
+	p, err := f.Fetch(context.Background(), "doi", "10.1000/xyz")
+	if err != nil {
+		t.Fatalf("兜底失败不应报错：%v", err)
+	}
+	if p == nil || p.Abstract != "" {
+		t.Fatalf("应返回无摘要论文，got %+v", p)
 	}
 }

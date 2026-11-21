@@ -136,7 +136,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | FR-SEARCH-07 | `search` 统一接口（keyword 模式） | P0 | 远程检索仅 keyword 模式 |
 | FR-SEARCH-08 | 远程语义重排（keyword top-K → 本地重排） | 不包含 | 全库均不引入 embedding；远程检索保持 keyword 原生排序 |
 | FR-SEARCH-10 | 结果默认年份倒序 | P0 | 最新在前；year=0 排末尾。各源原始顺序语义不一，跨源混合后必须显式排序 |
-| FR-SEARCH-11 | 检索词语言约束 | P0 | 检索词必须为英文（各源英文语料为主，中文命中率极低）；CLI help 与 api.md 显式声明 |
+| FR-SEARCH-11 | 检索词语言约束 | P0 | 英文源（arxiv/pubmed/openalex/semantic_scholar）用英文关键词；中文文献用 `-s crossref,doaj` 配中文关键词（FR-SRC-20/21）；CLI help 与 api.md 显式声明 |
 | FR-SEARCH-12 | 检索等级 | P0 | 默认 tiab=题目+摘要+关键词（源支持时）；`--mode full` 全文作高级选项；由 AGENTS.md 告知 AI 结果不足时的升级路径 |
 | FR-SEARCH-13 | 默认时间范围 | P0 | 默认最近 3 年（`LITKIT_DEFAULT_RECENT_YEARS`）；`--years N` 放宽或 `--since YEAR` 显式起始年；0=不限 |
 
@@ -157,7 +157,7 @@ litkit 是一个面向**国内学术写作场景**的论文工具包：检索文
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
 | FR-REF-01 | 解析占位符：裸 `[@citeKey]`（查本地库）或 `[@doi:]` / `[@pmid:]` / `[@arxiv:]` / `[@title:]` | P0 | 返回位置与全文匹配；未解析归入 unresolved 不静默丢失 |
-| FR-REF-02 | 按标识符取元数据（DOI→CrossRef，PMID→NCBI，arXiv→Atom，title→CrossRef） | P0 | 返回完整字段（含摘要，源提供时） |
+| FR-REF-02 | 按标识符取元数据（DOI→CrossRef，PMID→NCBI efetch，arXiv→Atom，title→CrossRef） | P0 | 返回完整字段；PMID 必须走 efetch（esummary 无摘要）；DOI 摘要缺失时回落 OpenAlex 补齐 |
 | FR-REF-03 | 中文模式引用样式：GB/T 7714—2025 | P0 | 支持中英文文献混排著录；支持预印本[PP]、数据集[DS]等新文献类型；未知样式报错 |
 | FR-REF-04 | 英文模式引用样式：APA 7th / IEEE | P0 | 编号列表输出 |
 | FR-REF-05 | 生成 BibTeX | P0 | `@article{...}` 含 author/title/year/journal/volume/number/pages/doi/url |

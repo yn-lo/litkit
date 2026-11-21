@@ -6,7 +6,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +19,6 @@ import (
 	"litkit/internal/core"
 	"litkit/internal/csl"
 	"litkit/internal/model"
-	"litkit/internal/storage"
 )
 
 // manuscriptOutput 默认输出（精简视图 + 产物清单，FR-IFACE-04）。
@@ -38,7 +36,8 @@ const outDirPerm = 0o750
 var lookPath = exec.LookPath
 
 // newManuscriptCmd 构造 `litkit manuscript <draft.md>`。
-func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Config) *cobra.Command {
+func newManuscriptCmd(d *deps) *cobra.Command {
+	cfg := d.cfg
 	cmd := &cobra.Command{
 		Use:   "manuscript <draft.md>",
 		Short: "手稿流水线（解析 [@token] 占位符、生成引用与产物）",
@@ -47,9 +46,11 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 			if err := requireWorkDir(cfg); err != nil {
 				return err
 			}
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}
+			f := d.fetcher
 			lang, _ := cmd.Flags().GetString("lang")
 			styleFlag, _ := cmd.Flags().GetString("style")
 			preview, _ := cmd.Flags().GetBool("preview")
@@ -65,7 +66,7 @@ func newManuscriptCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Co
 				return fmt.Errorf("manuscript: 读取手稿失败: %w", err)
 			}
 
-			resolved, err := core.ResolveManuscript(context.Background(), st, f, string(src))
+			resolved, err := core.ResolveManuscript(cmd.Context(), st, f, string(src))
 			if err != nil {
 				return err
 			}

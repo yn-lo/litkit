@@ -2,13 +2,32 @@ package httpclient
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// 错误信息不得携带 URL 中的 API key / 凭据（会进入 search JSON 与日志）。
+func TestRedactURLError_hidesSecrets(t *testing.T) {
+	err := &url.Error{
+		Op:  "Get",
+		URL: "https://user:pass@example.com/x?api_key=secret-value&rows=1",
+		Err: errors.New("boom"),
+	}
+	got := redactURLError(err).Error()
+	if strings.Contains(got, "secret-value") || strings.Contains(got, "pass") {
+		t.Fatalf("错误信息不应包含密钥/凭据：%q", got)
+	}
+	if !strings.Contains(got, "REDACTED") || !strings.Contains(got, "rows=1") {
+		t.Fatalf("敏感参数应脱敏且保留非敏感参数：%q", got)
+	}
+}
 
 // TestRetryWait_CapsRetryAfter：异常大的 Retry-After 不得让命令长时间挂起。
 func TestRetryWait_CapsRetryAfter(t *testing.T) {

@@ -9,7 +9,7 @@ owner: litkit-core
 > Paper / PaperSummary / SearchResult / PaperSource 的 Go 类型定义与去重/入库键约定。
 > 与接口契约（JSON 形态）见 [`api.md`](api.md)；分层归属见 [`../architecture/boundaries.md`](../architecture/boundaries.md)。
 >
-> **AI-first 设计**（FR-IFACE-02）：search/lib 默认输出 PaperSummary（5 字段），
+> **AI-first 设计**（FR-IFACE-02）：search/lib 默认输出 PaperSummary（8 字段），
 > 完整 Paper 落 SQLite 由 citeKey 按需取回；`--full` 输出完整 Paper 供调试。
 
 ## 1. Paper（核心载体，最底层）
@@ -51,27 +51,32 @@ type Paper struct {
 // citeKey 是 AI 与本地文献库之间唯一的握手协议——AI 写 [cite:Kxq] 占位符，
 // manuscript 流水线（M3）按 citeKey 从库中取完整 Paper 做引用格式化。
 type PaperSummary struct {
-    CiteKey     string `json:"citeKey"`             // 引用句柄（写 [cite:Kxq]）
-    Title       string `json:"title"`               // 相关性判断主信号
-    FirstAuthor string `json:"firstAuthor"`         // "Family Given" 格式；空串表示未知
-    Year        int    `json:"year"`                // 相关性 + 默认排序依据；0 表示未知
-    Abstract    string `json:"abstract,omitempty"`  // 相关性判断次信号
+    CiteKey     string `json:"citeKey"`              // 引用句柄（写 [@Kxq]）
+    Title       string `json:"title"`                // 相关性判断主信号
+    FirstAuthor string `json:"firstAuthor"`          // "Family Given" 格式；空串表示未知
+    Year        int    `json:"year"`                 // 相关性 + 默认排序依据；0 表示未知
+    Venue       string `json:"venue,omitempty"`      // 期刊/会议名（区分顶刊与机构仓储）
+    DocType     string `json:"docType,omitempty"`    // article/preprint/...（区分同行评审与预印本）
+    Citations   int    `json:"citations,omitempty"`  // 源提供的被引数（证据分量参考）
+    Abstract    string `json:"abstract,omitempty"`   // 相关性判断次信号
 }
 ```
 
-字段选择依据：仅保留"判断是否引用 + 写占位符"所需的最小集。
-完整元数据（DOI/PMID/ArXivID/URL/Venue/DocType/全部作者）落 SQLite，
-由 `lib get <citeKey>`（M3）或 `--full` 取回。
+字段选择依据：仅保留"判断是否引用 + 写占位符"所需的最小集；venue/docType/citations
+是短字段（各几 token）但承担选文信号，比读完整摘要更省上下文。
+完整元数据（DOI/PMID/ArXivID/URL/全部作者）落 SQLite，
+由 `lib get <citeKey>` 或 `--full` 取回。
 
 ## 2. SearchResult / SourceError
 
 ```go
 // SearchResult 跨源检索结果
 type SearchResult struct {
-    Total          int                `json:"total"`
-    SourceResults map[string][]Paper `json:"sourceResults"`
-    Errors         []SourceError      `json:"errors"`
-    Papers         []Paper            `json:"papers"` // 去重合并后
+    Total              int                `json:"total"`
+    SourceResults      map[string][]Paper `json:"sourceResults"`  // 过滤前命中（每源）
+    FilteredNoAbstract int                `json:"filteredNoAbstract,omitempty"` // 因无摘要被剔除数
+    Errors             []SourceError      `json:"errors"`
+    Papers             []Paper            `json:"papers"` // 去重合并 + 过滤后
 }
 
 // SourceError 单源失败记录

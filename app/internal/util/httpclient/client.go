@@ -6,12 +6,14 @@ package httpclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -101,7 +103,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		}
 		resp, err = c.doOnce(ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("http do: %w", err)
+			return nil, fmt.Errorf("http do: %w", redactURLError(err))
 		}
 		if !shouldRetry(resp.StatusCode) || attempt == c.maxRetries {
 			return resp, nil
@@ -120,6 +122,35 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request) (*http.Response,
 	// 关联 ctx 以支持超时与取消
 	req = req.Clone(ctx)
 	return c.http.Do(req)
+}
+
+// sensitiveQueryKeys URL 查询串中的敏感参数名（错误信息需脱敏）。
+var sensitiveQueryKeys = map[string]bool{
+	"api_key": true, "apikey": true, "api-key": true,
+	"key": true, "token": true, "access_token": true,
+}
+
+// redactURLError 移除网络错误中 URL 的凭据与敏感查询参数。
+// net/http 的 *url.Error 会携带完整 URL；若查询串含 api_key，错误信息会把密钥
+// 带进 search 的 JSON 输出与日志，故在向上返回前统一脱敏。
+func redactURLError(err error) error {
+	var uerr *url.Error
+	if !errors.As(err, &uerr) {
+		return err
+	}
+	redacted := uerr.URL
+	if u, perr := url.Parse(uerr.URL); perr == nil {
+		u.User = nil
+		q := u.Query()
+		for k := range q {
+			if sensitiveQueryKeys[strings.ToLower(k)] {
+				q.Set(k, "REDACTED")
+			}
+		}
+		u.RawQuery = q.Encode()
+		redacted = u.String()
+	}
+	return &url.Error{Op: uerr.Op, URL: redacted, Err: uerr.Err}
 }
 
 // sleepForRetry 等待退避时间。返回 false 表示 ctx 已取消。

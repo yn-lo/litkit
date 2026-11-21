@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"litkit/internal/model"
+	"litkit/internal/util/ratelimit"
 )
 
 // fakeSource 测试用 PaperSource 实现。
@@ -57,5 +58,19 @@ func TestRegistry_RegisterOverwrites(t *testing.T) {
 	r.Register(fakeSource{name: "arxiv"}) // 重名覆盖
 	if len(r.List()) != 1 {
 		t.Fatalf("重名覆盖后应仍为 1 个，got %d", len(r.List()))
+	}
+}
+
+func TestRegistry_DefaultNames(t *testing.T) {
+	// 默认不参与的源（bioRxiv/medRxiv）不出现在 DefaultNames，但仍可通过 -s 显式使用
+	r := NewRegistry()
+	r.Register(fakeSource{name: "openalex"})
+	r.Register(NewBiorxivSource("biorxiv", newHTTPClient(1000, 0, nil), ratelimit.New(100, 1)))
+	names := r.DefaultNames()
+	if len(names) != 1 || names[0] != "openalex" {
+		t.Fatalf("DefaultNames 应只含 openalex，got %v", names)
+	}
+	if len(r.Names()) != 2 {
+		t.Fatalf("Names 应含全部源，got %v", r.Names())
 	}
 }

@@ -73,6 +73,9 @@ litkit verify manuscript/*.md --type <type> --lang <lang> --mode final
 - `[待引证]` 必须清零（R5.2，A 类）
 - 引用计数区间（spec 的 `citation.count`，R5.3）只统计 `[@citeKey]`、不统计 `[待引证]`，
   回填不彻底会提示
+- **格式违规先自动修正**：report 中 `fixable: true` 的条目（全半角/直引号/数字范围/P 值/
+  标题标点/引用位置等）用 `litkit fix manuscript/*.md` 一次改完，再重跑 verify；
+  顶层 `fixHint` 直接给出建议命令，不要逐行手改标点
 - **引错**（引得上但撑不住）由 `--report citation-refs` 检出：LLM 逐句评"引用句 ↔ 该文献摘要"
   的吻合度，能抓结论不符、数字编造、过度归因。配置与边界见 SKILL.md
 - 引用健康检查（R5.6~R5.9）见 SKILL.md

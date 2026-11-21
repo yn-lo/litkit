@@ -108,18 +108,18 @@ func newRootCmd(d *deps) *cobra.Command {
 	})
 	root.AddCommand(
 		newInitCmd(d.cfg),
-		newSearchCmd(d.searcher, d.registry, d.cfg),
+		newSearchCmd(d),
 		newSourcesCmd(d.registry, d.cfg),
 		newMetadataCmd(d.fetcher),
-		newFetchCmd(d.store, d.fulltext),
-		newManuscriptCmd(d.store, d.fetcher, d.cfg),
-		newExportCmd(d.cfg),
+		newFetchCmd(d),
+		newManuscriptCmd(d),
+		newExportCmd(d),
 		newStylesCmd(d.cfg),
-		newLibraryCmd(d.store, d.fetcher, d.cfg),
+		newLibraryCmd(d),
 		newRulesCmd(),
 		newFixCmd(d.cfg),
 		newLintCmd(d.cfg),
-		newVerifyCmd(d.cfg, d.store, d.fetcher),
+		newVerifyCmd(d),
 	)
 	return root
 }

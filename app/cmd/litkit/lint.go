@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -43,9 +44,14 @@ func newLintInitCmd(cfg *config.Config) *cobra.Command {
 			if paperType != "" && !lint.IsValidPaperType(paperType) {
 				return &paramError{msg: fmt.Sprintf("lint init: 无效 --type %q（可选 %s）", paperType, lint.PaperTypesLabel())}
 			}
+			// 相对 project_dir 锚定工作目录（与其余路径「相对 .env 目录解析」一致），
+			// 避免从其他 cwd 调用时把 spec 写到错误位置。
 			dir := cfg.WorkDir
 			if len(args) > 0 {
 				dir = args[0]
+				if !filepath.IsAbs(dir) {
+					dir = filepath.Join(cfg.WorkDir, dir)
+				}
 			}
 
 			// 论文类型目录

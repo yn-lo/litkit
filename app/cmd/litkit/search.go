@@ -11,7 +11,6 @@ import (
 	"litkit/internal/config"
 	"litkit/internal/core"
 	"litkit/internal/model"
-	"litkit/internal/sources"
 )
 
 // exitCodePartialFailure 部分源失败但部分成功的退出码（api.md §1.1）。
@@ -19,18 +18,20 @@ const exitCodePartialFailure = 3
 
 // searchOutput 默认输出（FR-IFACE-04：精简视图，面向 AI agent）。
 type searchOutput struct {
-	Total         int                  `json:"total"`
-	SourceResults map[string]int       `json:"sourceResults"` // 源 → 命中条数（降噪）
-	Errors        []model.SourceError  `json:"errors,omitempty"`
-	Papers        []model.PaperSummary `json:"papers"`
+	Total              int                  `json:"total"`
+	SourceResults      map[string]int       `json:"sourceResults"`                // 源 → 命中条数（降噪；过滤前口径）
+	FilteredNoAbstract int                  `json:"filteredNoAbstract,omitempty"` // 因无摘要被剔除的条数
+	Errors             []model.SourceError  `json:"errors,omitempty"`
+	Papers             []model.PaperSummary `json:"papers"`
 }
 
 // searchOutputFull --full 模式输出（完整元数据，供人类调试或特殊场景）。
 type searchOutputFull struct {
-	Total         int                      `json:"total"`
-	SourceResults map[string][]model.Paper `json:"sourceResults"`
-	Errors        []model.SourceError      `json:"errors,omitempty"`
-	Papers        []model.Paper            `json:"papers"`
+	Total              int                      `json:"total"`
+	SourceResults      map[string][]model.Paper `json:"sourceResults"`
+	FilteredNoAbstract int                      `json:"filteredNoAbstract,omitempty"`
+	Errors             []model.SourceError      `json:"errors,omitempty"`
+	Papers             []model.Paper            `json:"papers"`
 }
 
 // searchOutcomeError 依据检索结果映射退出码：
@@ -92,9 +93,10 @@ func hasNetworkError(errs []model.SourceError) bool {
 
 // resolveSearchSources 计算本次检索实际使用的源集合。
 //
-// 显式 -s（explicit 非空）完全覆盖 .env 配置；否则从白名单（未设=全部注册源）
-// 中减去排除列表。warnings 为 .env 中未注册的源名（调用方输出到 stderr）。
-func resolveSearchSources(explicit string, cfg *config.Config, registered []string) (names, warnings []string) {
+// 显式 -s（explicit 非空）完全覆盖 .env 配置；否则从白名单（未设=默认参与检索的源，
+// 即 defaults）中减去排除列表。defaults 已排除默认不参与的源（如 bioRxiv/medRxiv）。
+// warnings 为 .env 中未注册的源名（调用方输出到 stderr）。
+func resolveSearchSources(explicit string, cfg *config.Config, registered, defaults []string) (names, warnings []string) {
 	if names := config.SplitList(explicit); len(names) > 0 {
 		return names, nil
 	}
@@ -104,7 +106,7 @@ func resolveSearchSources(explicit string, cfg *config.Config, registered []stri
 	}
 	base := cfg.SearchSources
 	if len(base) == 0 {
-		base = registered
+		base = defaults
 	} else {
 		kept := make([]string, 0, len(base))
 		for _, n := range base {
@@ -139,7 +141,8 @@ func resolveSearchSources(explicit string, cfg *config.Config, registered []stri
 // 默认输出 PaperSummary（FR-IFACE-04）；--full 输出完整 Paper。
 // 默认检索等级 tiab（题目+摘要+关键词）、默认最近 N 年（FR-SEARCH-12/13）。
 // 退出码：3 表示部分源失败但部分成功（api.md §1.1）。
-func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *cobra.Command {
+func newSearchCmd(d *deps) *cobra.Command {
+	cfg, reg := d.cfg, d.registry
 	cmd := &cobra.Command{
 		Use:   "search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since YEAR] [-y year] [--keep-no-abstract] [--exclude TERM,...] [--no-store] [--full]",
 		Short: "跨源并发检索文献",
@@ -152,6 +155,9 @@ func newSearchCmd(s *core.Searcher, reg *sources.Registry, cfg *config.Config) *
 检索等级（FR-SEARCH-12）：
   --mode tiab（默认）  题目+摘要+关键词（源支持时），误检率低
   --mode full          全文检索，作高级选项
+  逐词项 AND 组合（不把整串当短语）；已写引号/布尔语法的检索词原样下发。
+  支持区分等级的源：pubmed、arxiv、openalex；其余源（semantic_scholar/crossref/doaj）
+  本身只检索题录，两档行为相同。
 
 时间范围（FR-SEARCH-13）：
   --years N（默认 3）  最近 N 年；0 表示不限
@@ -202,22 +208,31 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 				Exclude:        config.SplitList(excludeFlag),
 				NoStore:        noStore,
 			}
-			names, warns := resolveSearchSources(sourcesFlag, cfg, reg.Names())
+			names, warns := resolveSearchSources(sourcesFlag, cfg, reg.Names(), reg.DefaultNames())
 			for _, w := range warns {
 				fmt.Fprintf(os.Stderr, "litkit: %s\n", w)
 			}
-			// 显式 -s 的未知源直接报错（env 中的未知源已在上一步过滤并告警）
+			// 显式 -s 的未知源直接报错（env 中的未知源已在上一步过滤并告警）；
+			// 源名统一小写，与 registry 键一致（-s PubMed 应等价于 -s pubmed）。
+			normalized := make([]string, 0, len(names))
 			for _, name := range names {
-				if _, ok := reg.Get(name); !ok {
+				n := strings.ToLower(strings.TrimSpace(name))
+				if _, ok := reg.Get(n); !ok {
 					return &paramError{msg: fmt.Sprintf("search: 未知源 %q（可用源见 litkit sources）", name)}
 				}
+				normalized = append(normalized, n)
 			}
-			if len(names) == 0 {
+			if len(normalized) == 0 {
 				return fmt.Errorf("search: 无可检索源（检查 LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES，可用源见 litkit sources）")
 			}
-			opts.Sources = names
+			opts.Sources = normalized
 
-			res, err := s.Search(cmd.Context(), query, opts)
+			// 探索模式不开库；正式检索按需打开文献库并回填 citeKey。
+			searcher := core.NewSearcher(reg, nil, cfg.DefaultMaxResults, cfg.SearchTimeoutMS)
+			if !noStore {
+				searcher = d.Searcher()
+			}
+			res, err := searcher.Search(cmd.Context(), query, opts)
 			if err != nil {
 				return err
 			}
@@ -227,10 +242,11 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 
 			if full {
 				if perr := printJSON(searchOutputFull{
-					Total:         res.Total,
-					SourceResults: res.SourceResults,
-					Errors:        res.Errors,
-					Papers:        res.Papers,
+					Total:              res.Total,
+					SourceResults:      res.SourceResults,
+					FilteredNoAbstract: res.FilteredNoAbstract,
+					Errors:             res.Errors,
+					Papers:             res.Papers,
 				}); perr != nil {
 					return perr
 				}
@@ -241,10 +257,11 @@ timeout）在 .env 设 LITKIT_PROXY_URL（如 http://127.0.0.1:7890）使全部�
 					srcCounts[src] = len(ps)
 				}
 				if perr := printJSON(searchOutput{
-					Total:         res.Total,
-					SourceResults: srcCounts,
-					Errors:        shortErrors(res.Errors),
-					Papers:        model.SummarizePapers(res.Papers),
+					Total:              res.Total,
+					SourceResults:      srcCounts,
+					FilteredNoAbstract: res.FilteredNoAbstract,
+					Errors:             shortErrors(res.Errors),
+					Papers:             model.SummarizePapers(res.Papers),
 				}); perr != nil {
 					return perr
 				}

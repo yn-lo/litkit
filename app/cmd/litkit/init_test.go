@@ -414,8 +414,8 @@ func TestLangDefaultsFollowConfig(t *testing.T) {
 	}{
 		{"init", func() (string, error) { return newInitCmd(cfg).Flags().GetString("lang") }},
 		{"lint init", func() (string, error) { return newLintInitCmd(cfg).Flags().GetString("lang") }},
-		{"manuscript", func() (string, error) { return newManuscriptCmd(nil, nil, cfg).Flags().GetString("lang") }},
-		{"verify", func() (string, error) { return newVerifyCmd(cfg, nil, nil).Flags().GetString("lang") }},
+		{"manuscript", func() (string, error) { return newManuscriptCmd(&deps{cfg: cfg}).Flags().GetString("lang") }},
+		{"verify", func() (string, error) { return newVerifyCmd(&deps{cfg: cfg}).Flags().GetString("lang") }},
 	}
 	for _, tc := range cases {
 		got, err := tc.flag()
@@ -433,7 +433,7 @@ func TestLangDefaultsFollowConfig(t *testing.T) {
 
 // TestVerifyCmd_rejectsUnknownReport --report 拼错不应静默降级为 json。
 func TestVerifyCmd_rejectsUnknownReport(t *testing.T) {
-	cmd := newVerifyCmd(&config.Config{WorkDir: t.TempDir(), Lang: lint.LangZH}, nil, nil)
+	cmd := newVerifyCmd(&deps{cfg: &config.Config{WorkDir: t.TempDir(), Lang: lint.LangZH}})
 	cmd.SetArgs([]string{"x.md", "--report", "citations-refs"})
 	err := cmd.Execute()
 	if err == nil {

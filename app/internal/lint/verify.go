@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ type Report struct {
 	ManualChecklist []string                 `json:"manualChecklist,omitempty"`
 	CitationRefs    *CitationRelevanceReport `json:"citationRefs,omitempty"` // 引用评分报告（可选）
 	Recency         *RecencySummary          `json:"recency,omitempty"`      // 引用时效分档统计（R5.8）
+	// FixHint 存在可自动修正的违规时的下一步动作建议（如 "litkit fix chapter1.md"）。
+	// 避免 AI 看到 R3.1/R3.2 类违规就逐行手改标点。
+	FixHint string `json:"fixHint,omitempty"`
 }
 
 // RecencySummary 被引文献时效分档统计（R5.8）。
@@ -122,9 +126,15 @@ func typeOK(rule Rule, paperType string) bool {
 	return false
 }
 
+// AppliesTo 报告规则是否适用于指定语言与论文类型（空论文类型=不过滤）。
+// verify 与 fix 共用同一筛选口径，避免两处规则筛选漂移。
+func (r Rule) AppliesTo(lang, paperType string) bool {
+	return langOK(r, lang) && typeOK(r, paperType)
+}
+
 // ruleEnabled 统一纯规则与查库/联网规则的筛选条件。
 func ruleEnabled(rule Rule, opts Options) bool {
-	return langOK(rule, opts.Lang) && typeOK(rule, opts.PaperType) &&
+	return rule.AppliesTo(opts.Lang, opts.PaperType) &&
 		modeRank(rule.From) <= modeRank(opts.Mode) &&
 		(len(opts.Only) == 0 || contains(opts.Only, rule.ID)) && !contains(opts.Skip, rule.ID) &&
 		(len(opts.OnlyCategories) == 0 || categoryIn(opts.OnlyCategories, rule.Category)) &&
@@ -138,7 +148,10 @@ func Run(src *Source, spec *ManuscriptSpec, opts Options) FileReport {
 		if rule.Check == nil || !ruleEnabled(rule, opts) {
 			continue
 		}
-		rep.Violations = append(rep.Violations, rule.Check(src, spec)...)
+		for _, v := range rule.Check(src, spec) {
+			v.Fixable = rule.Fix != nil
+			rep.Violations = append(rep.Violations, v)
+		}
 	}
 	return rep
 }
@@ -180,12 +193,36 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 		report.ExitHint = exitPass
 	}
 	report.Passed = report.ExitHint == exitPass
+	setFixHint(&report)
 	// M 类规则（无法自动判定）固定输出人工核对提示。
 	report.ManualChecklist = []string{
 		"数据一致性：核对正文数据与表格/图片是否一致",
 		"术语缩写：核对缩写首次出现是否给出全称",
 	}
 	return report, nil
+}
+
+// setFixHint 汇总可自动修正的违规，生成 `litkit fix` 建议命令（fixHint 字段）。
+// 只列确实含可修违规的文件，避免建议对无可修项的文件跑 fix。
+func setFixHint(report *Report) {
+	total := 0
+	paths := make([]string, 0, len(report.Files))
+	for _, f := range report.Files {
+		n := 0
+		for _, v := range f.Violations {
+			if v.Fixable {
+				n++
+			}
+		}
+		if n > 0 {
+			total += n
+			paths = append(paths, f.Path)
+		}
+	}
+	if total == 0 {
+		return
+	}
+	report.FixHint = fmt.Sprintf("%d 处可自动修正，先运行：litkit fix %s", total, strings.Join(paths, " "))
 }
 
 // citeKeyPrefixes 与手稿反查前缀一致：这些 token 不是 citeKey（由 manuscript 阶段解析）。
@@ -322,6 +359,7 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 		report.ExitHint = exitPass
 	}
 	report.Passed = report.ExitHint == exitPass
+	setFixHint(&report)
 	return report, nil
 }
 

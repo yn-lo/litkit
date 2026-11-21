@@ -136,7 +136,9 @@ func (s *Searcher) Search(ctx context.Context, query string, opts SearchOptions)
 	merged := dedupPapers(allPapers)
 	// 无摘要过滤
 	if !opts.KeepNoAbstract {
+		before := len(merged)
 		merged = filterByAbstract(merged)
+		result.FilteredNoAbstract = before - len(merged)
 	}
 	// 排除筛查（先排除后入库）
 	merged = filterExcluded(merged, opts.Exclude)
@@ -216,7 +218,8 @@ func (s *Searcher) persist(papers []model.Paper) ([]model.Paper, []model.SourceE
 	return papers, []model.SourceError{{Source: "storage", Error: fmt.Sprintf("%d 篇入库失败: %v", failed, firstErr)}}
 }
 
-// selectSources 按 names 过滤；names 为空时返回全部。
+// selectSources 按 names 过滤；names 为空时返回参与默认检索的源
+// （DefaultEnabled()=false 的源需显式指定）。
 // 未知名静默忽略（不视为错误）。
 // 排除 HasAbstract()=false 的源（FR-SRC-19 源级强制）。
 func (s *Searcher) selectSources(names []string) []sources.PaperSource {
@@ -233,6 +236,9 @@ func (s *Searcher) selectSources(names []string) []sources.PaperSource {
 			continue // FR-SRC-19：无摘要源不纳入检索
 		}
 		if len(names) == 0 {
+			if !sources.IsDefaultEnabled(src) {
+				continue // 召回能力受限的源需显式 -s 指定
+			}
 			out = append(out, src)
 			continue
 		}
@@ -250,6 +256,8 @@ func (s *Searcher) searchOne(ctx context.Context, src sources.PaperSource, query
 		Year:       opts.Year,
 		Since:      opts.Since,
 		Mode:       opts.Mode,
+		// 默认丢弃无摘要论文时，让支持的源在服务端就过滤（FR-SEARCH-03）
+		RequireAbstract: !opts.KeepNoAbstract,
 	}
 	return src.Search(ctx, query, sourceOpts)
 }
@@ -293,17 +301,20 @@ func dedupPapers(papers []model.Paper) []model.Paper {
 				continue
 			}
 		}
-		// 2. 归一化标题
+		// 2. 归一化标题（无 DOI 时）：作者须相容，避免「Editorial」等通用标题
+		//    把不同论文合并后互相污染摘要/作者（与 storage 去重口径一致，FR-CACHE-02）
 		tk := textutil.NormalizeTitle(p.Title)
 		if tk != "" {
-			if s, ok := byTitle[tk]; ok && !conflictingDOI(out[s.idx], p) {
+			if s, ok := byTitle[tk]; ok && !conflictingDOI(out[s.idx], p) &&
+				authorsCompatible(out[s.idx].Authors, p.Authors) {
 				mergeInto(s.idx, p)
 				continue
 			}
 		}
-		// 3. ID
+		// 3. ID（标题派生的 ID 同样需要作者相容，防止同名不同文合并）
 		if p.ID != "" {
-			if s, ok := byID[p.ID]; ok && !conflictingDOI(out[s.idx], p) {
+			if s, ok := byID[p.ID]; ok && !conflictingDOI(out[s.idx], p) &&
+				authorsCompatible(out[s.idx].Authors, p.Authors) {
 				mergeInto(s.idx, p)
 				continue
 			}
@@ -326,6 +337,21 @@ func dedupPapers(papers []model.Paper) []model.Paper {
 
 func conflictingDOI(a, b model.Paper) bool {
 	return a.DOI != "" && b.DOI != "" && a.DOI != b.DOI
+}
+
+// authorsCompatible 判断两篇候选是否可能为同一文献：任一方无第一作者时允许合并
+// （便于补齐元数据），双方都有第一作者时签名必须一致。
+func authorsCompatible(a, b []model.Author) bool {
+	sa, sb := firstAuthorSignature(a), firstAuthorSignature(b)
+	return sa == "" || sb == "" || sa == sb
+}
+
+// firstAuthorSignature 返回第一作者的归一化签名（Family+Given，忽略大小写与空白）。
+func firstAuthorSignature(as []model.Author) string {
+	if len(as) == 0 {
+		return ""
+	}
+	return strings.ToLower(strings.Join(strings.Fields(as[0].Family+" "+as[0].Given), ""))
 }
 
 // mergePapers 合并两篇同源/异源论文：取非空字段；冲突时保留已有值。

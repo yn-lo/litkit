@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"litkit/internal/model"
 	"litkit/internal/util/ratelimit"
 )
 
@@ -142,8 +143,9 @@ func TestParseBiorxivAuthors_realFormat(t *testing.T) {
 	}
 }
 
-func TestBiorxivSource_Search_keywordMissSurfacesError(t *testing.T) {
-	// 关键词在最近批次未命中时，应显式报错而非静默返回空（report 问题1）。
+func TestBiorxivSource_Search_keywordMissReturnsEmpty(t *testing.T) {
+	// 关键词在最近批次未命中时返回空结果而非 error：该 API 无关键词端点，
+	// 报错会被计入 SourceError 并让默认检索以 3 号退出码结束（误判为命令失败）。
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(biorxivSample))
 	}))
@@ -152,12 +154,32 @@ func TestBiorxivSource_Search_keywordMissSurfacesError(t *testing.T) {
 	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
 	src.BaseURL = srv.URL
 
-	_, err := src.Search(context.Background(), "zzzz-not-a-keyword", SearchOptions{MaxResults: 5})
-	if err == nil {
-		t.Fatal("关键词未命中应显式报错，而非静默返回空")
+	papers, err := src.Search(context.Background(), "zzzz-not-a-keyword", SearchOptions{MaxResults: 5})
+	if err != nil {
+		t.Fatalf("未命中不应报错，got %v", err)
 	}
-	if !strings.Contains(err.Error(), "无关键词") {
-		t.Fatalf("错误应说明 API 无关键词端点，got %v", err)
+	if len(papers) != 0 {
+		t.Fatalf("未命中应返回 0 篇，got %d", len(papers))
+	}
+}
+
+func TestBiorxivSource_NotDefaultEnabled(t *testing.T) {
+	// 召回能力受限：默认不参与检索，需显式 -s 指定
+	src := NewBiorxivSource("biorxiv", newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
+	if IsDefaultEnabled(src) {
+		t.Error("bioRxiv 不应参与默认检索（DefaultEnabled 应为 false）")
+	}
+}
+
+func TestBiorxivSource_MultiWordKeywordAND(t *testing.T) {
+	// 多词查询按 AND 拆词匹配，不要求整串连续出现
+	papers := []model.Paper{
+		{Title: "Gut microbiota in depression", Abstract: "study"},
+		{Title: "Gut microbiota only", Abstract: "study"},
+	}
+	got := filterBiorxivByKeyword(papers, "microbiota depression")
+	if len(got) != 1 || got[0].Title != "Gut microbiota in depression" {
+		t.Fatalf("应按 AND 语义命中 1 篇，got %+v", got)
 	}
 }
 

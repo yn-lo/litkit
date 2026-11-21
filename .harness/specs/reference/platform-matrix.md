@@ -27,6 +27,8 @@ owner: litkit-core
 | 平台 | 用途 |
 |---|---|
 | CrossRef | DOI / title 元数据反查（FR-REF-02）；另作检索源见上表（FR-SRC-20） |
+| PubMed | PMID 元数据反查（eutils esummary，FR-REF-02） |
+| arXiv | arXiv ID 元数据反查（Atom API，FR-REF-02） |
 
 ## 二期（可选激活）
 

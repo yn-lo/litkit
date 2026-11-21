@@ -38,6 +38,7 @@ bash .harness/constraints/gate.sh     # Linux/macOS
 - **源抽象**：所有学术源必须实现 `PaperSource` 接口并注册，禁止绕过注册表
 - **引用渲染**：正式引用样式一律由 `internal/csl` 的 CSL 引擎渲染（内置样式 go:embed），禁止在 Go 里新增硬编码格式；preview/草稿视图保持独立 Go 实现
 - **接口同步**：CLI 与 api.md 保持同步（由 `constraints/sync` 检查器强制）
+- **全局工具同步**：每新增功能并确认全量门禁（`gate.ps1`）通过后，必须用最新构建替换本机全局工具 `D:\litkit\litkit.exe`。构建（在 `app/` 下，先设 `CGO_ENABLED=0`）：`go build -trimpath -ldflags "-s -w -X litkit/internal/buildinfo.Version=$(git describe --tags --always --dirty)" -o litkit.exe ./cmd/litkit`；替换前备份旧二进制
 - **摘要工作流**：不下载 PDF、不抽取全文；检索源必须提供摘要（无摘要源不纳入，FR-SRC-19），检索结果无摘要论文默认过滤（FR-SEARCH-03）；入库元数据必须含摘要
 - **不可逆操作**：禁止 force push 主分支
 - **输出**：代码中严禁使用 emoji 提示

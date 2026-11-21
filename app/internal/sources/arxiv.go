@@ -113,10 +113,7 @@ func (a *ArxivSource) buildURL(query string, opts SearchOptions) (string, error)
 // arxivQueryWithRange 构造检索式，并把年份过滤下推到 API：
 // 本地过滤发生在 max_results 截断之后，会把结果误清空。
 func arxivQueryWithRange(query, mode string, year, since int) string {
-	base := "all:" + query
-	if mode != modeFull {
-		base = `ti:"` + query + `" OR abs:"` + query + `"`
-	}
+	base := arxivQuery(query, mode)
 	switch {
 	case year > 0:
 		return fmt.Sprintf("(%s) AND submittedDate:[%d01010000 TO %d12312359]", base, year, year)
@@ -124,6 +121,32 @@ func arxivQueryWithRange(query, mode string, year, since int) string {
 		return fmt.Sprintf("(%s) AND submittedDate:[%d01010000 TO 999912312359]", base, since)
 	}
 	return base
+}
+
+// arxivQuery 构造不含时间范围的检索式。
+//
+// 检索等级（FR-SEARCH-12）：
+//   - tiab（默认）：ti:<term> OR abs:<term>，逐词项 AND 组合；
+//     整串当短语（ti:"a b c"）会把多词检索降为 0 命中，故默认拆词
+//   - full：all:<query>，原样下发（用户可写原生字段/布尔语法）
+//
+// 已含引号/布尔语法的检索词不拆，原样下发。
+func arxivQuery(query, mode string) string {
+	if mode == modeFull {
+		return "all:" + query
+	}
+	if hasQuerySyntax(query) {
+		return "ti:" + query + " OR abs:" + query
+	}
+	terms := searchTerms(query)
+	if len(terms) == 1 {
+		return `ti:"` + terms[0] + `" OR abs:"` + terms[0] + `"`
+	}
+	parts := make([]string, 0, len(terms))
+	for _, t := range terms {
+		parts = append(parts, `(ti:"`+t+`" OR abs:"`+t+`")`)
+	}
+	return strings.Join(parts, " AND ")
 }
 
 // ParseArxivAtom 解析 arXiv Atom Feed 字节为 []Paper。

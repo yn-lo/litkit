@@ -461,3 +461,17 @@ func TestExpandCiteGroups_PrefixedTokenKeepsComma(t *testing.T) {
 		t.Errorf("裸 token 分组应拆分，got %q", got)
 	}
 }
+
+// 子进程环境过滤必须大小写不敏感（Windows 环境变量名不区分大小写）。
+func TestEnvWithoutLitkit_caseInsensitive(t *testing.T) {
+	env := []string{"PATH=/bin", "litkit_llm_api_key=secret", "LITKIT_PUBMED_API_KEY=k", "HOME=/root"}
+	got := envWithoutLitkit(env)
+	for _, kv := range got {
+		if strings.HasPrefix(strings.ToUpper(kv), "LITKIT_") {
+			t.Errorf("不应保留 litkit 配置：%q", kv)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("应只保留非 litkit 变量，got %v", got)
+	}
+}

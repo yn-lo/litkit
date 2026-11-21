@@ -67,18 +67,53 @@ func (o *OpenAlexSource) Search(ctx context.Context, query string, opts SearchOp
 		func() (string, error) { return o.buildURL(query, opts) }, parseOpenAlexJSON)
 }
 
+// openAlexTiabFilter 返回题录+摘要检索的 filter 条件（tiab 模式）。
+//
+// OpenAlex 的 search= 是全字段检索（含全文/机构等），tiab 应用 title_and_abstract.search
+// 下推，提高精度；filter 值以逗号分隔，查询含逗号时只能回落 search=（否则会被拆成两个 filter）。
+// 返回空串表示应使用 search=。
+func openAlexTiabFilter(query, mode string) string {
+	if mode == modeFull || strings.ContainsAny(query, ",") {
+		return ""
+	}
+	return "title_and_abstract.search:" + query
+}
+
 func (o *OpenAlexSource) buildURL(query string, opts SearchOptions) (string, error) {
 	q := url.Values{}
-	q.Set("search", query)
-	q.Set("per-page", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
+	parts := make([]string, 0, len(q)+1) // 检索条件 + 年份 + 摘要过滤
+	tiab := openAlexTiabFilter(query, opts.Mode)
+	if tiab != "" {
+		parts = append(parts, tiab)
+	} else {
+		q.Set("search", query)
+	}
 	if opts.Year != 0 {
 		// OpenAlex 原生年份过滤（filter 参数）
-		q.Set("filter", fmt.Sprintf("publication_year:%d", opts.Year))
+		parts = append(parts, fmt.Sprintf("publication_year:%d", opts.Year))
 	} else if opts.Since != 0 {
 		// 最近 N 年范围过滤（FR-SEARCH-13）
-		q.Set("filter", fmt.Sprintf("from_publication_date:%d-01-01", opts.Since))
+		parts = append(parts, fmt.Sprintf("from_publication_date:%d-01-01", opts.Since))
 	}
+	if opts.RequireAbstract {
+		// 无摘要过滤下推到服务端：否则先按 per-page 截断再本地过滤，容易整流为空
+		parts = append(parts, "has_abstract:true")
+	}
+	if len(parts) > 0 {
+		q.Set("filter", strings.Join(parts, ","))
+	}
+	q.Set("per-page", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	return o.BaseURL + "?" + q.Encode(), nil
+}
+
+// ParseOpenAlexWork 解析单个 work（如 /works/https://doi.org/{doi}）为 Paper。
+// 供 core 的摘要兜底复用（Crossref 记录常缺摘要）。
+func ParseOpenAlexWork(data []byte) (model.Paper, error) {
+	var w openAlexWork
+	if err := json.Unmarshal(data, &w); err != nil {
+		return model.Paper{}, fmt.Errorf("parse openalex work: %w", err)
+	}
+	return openAlexWorkToPaper(w), nil
 }
 
 // parseOpenAlexJSON 解析 OpenAlex JSON 为 []Paper。
@@ -89,31 +124,36 @@ func parseOpenAlexJSON(data []byte) ([]model.Paper, error) {
 	}
 	papers := make([]model.Paper, 0, len(r.Results))
 	for _, w := range r.Results {
-		p := model.Paper{
-			Title:     strings.TrimSpace(w.Title),
-			Abstract:  reconstructOpenAlexAbstract(w.AbstractInvertedIndex),
-			Year:      w.PublicationYear,
-			DocType:   normalizeDocType(w.Type),
-			Citations: w.CitedByCount,
-			Authors:   openAlexAuthorsToModel(w.Authorships),
-			Source:    "openalex",
-		}
-		if w.DOI != nil {
-			p.DOI = strings.TrimPrefix(*w.DOI, "https://doi.org/")
-			p.DOI = strings.TrimPrefix(p.DOI, "http://doi.org/")
-		}
-		if w.PrimaryLocation != nil && w.PrimaryLocation.Source != nil {
-			p.Venue = strings.TrimSpace(w.PrimaryLocation.Source.DisplayName)
-		}
-		if p.DOI != "" {
-			p.URL = "https://doi.org/" + p.DOI
-		} else if w.ID != "" {
-			p.URL = w.ID
-		}
-		p.ID = p.ComputeID()
-		papers = append(papers, p)
+		papers = append(papers, openAlexWorkToPaper(w))
 	}
 	return papers, nil
+}
+
+// openAlexWorkToPaper 将单条 OpenAlex work 转为 Paper（检索与摘要兜底共用）。
+func openAlexWorkToPaper(w openAlexWork) model.Paper {
+	p := model.Paper{
+		Title:     strings.TrimSpace(w.Title),
+		Abstract:  reconstructOpenAlexAbstract(w.AbstractInvertedIndex),
+		Year:      w.PublicationYear,
+		DocType:   normalizeDocType(w.Type),
+		Citations: w.CitedByCount,
+		Authors:   openAlexAuthorsToModel(w.Authorships),
+		Source:    "openalex",
+	}
+	if w.DOI != nil {
+		p.DOI = strings.TrimPrefix(*w.DOI, "https://doi.org/")
+		p.DOI = strings.TrimPrefix(p.DOI, "http://doi.org/")
+	}
+	if w.PrimaryLocation != nil && w.PrimaryLocation.Source != nil {
+		p.Venue = strings.TrimSpace(w.PrimaryLocation.Source.DisplayName)
+	}
+	if p.DOI != "" {
+		p.URL = "https://doi.org/" + p.DOI
+	} else if w.ID != "" {
+		p.URL = w.ID
+	}
+	p.ID = p.ComputeID()
+	return p
 }
 
 // maxAbstractPosition 摘要倒排位置上限：防御异常/恶意响应触发超大切片分配。

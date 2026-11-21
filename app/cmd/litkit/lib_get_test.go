@@ -19,7 +19,7 @@ func TestLibGetCmd_singleAndBatch(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	add := newLibAddCmd(s, nil)
+	add := newLibAddCmd(&deps{store: s})
 	add.SetArgs([]string{p})
 	if err := add.Execute(); err != nil {
 		t.Fatalf("lib add: %v", err)
@@ -28,7 +28,7 @@ func TestLibGetCmd_singleAndBatch(t *testing.T) {
 	b, _ := s.GetByDOI("10.1/gb")
 
 	out := captureStdout(t, func() {
-		cmd := newLibGetCmd(s)
+		cmd := newLibGetCmd(&deps{store: s})
 		cmd.SetArgs([]string{a.CiteKey, "nope", b.CiteKey})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("lib get: %v", err)
@@ -54,7 +54,7 @@ func TestLibGetCmd_singleAndBatch(t *testing.T) {
 
 func TestLibGetCmd_noArgsFails(t *testing.T) {
 	s := newTestStoreCmd(t)
-	cmd := newLibGetCmd(s)
+	cmd := newLibGetCmd(&deps{store: s})
 	cmd.SetArgs(nil)
 	if err := cmd.Execute(); err == nil {
 		t.Error("不带 citeKey 应报错")
@@ -69,7 +69,7 @@ func TestLibRmCmd_removesDownloadedPDF(t *testing.T) {
 	if err := os.WriteFile(meta, []byte(`{"title":"待删文献","abstract":"摘要。","doi":"10.1/rm"}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	add := newLibAddCmd(s, nil)
+	add := newLibAddCmd(&deps{store: s})
 	add.SetArgs([]string{meta})
 	if err := add.Execute(); err != nil {
 		t.Fatalf("lib add: %v", err)
@@ -89,7 +89,7 @@ func TestLibRmCmd_removesDownloadedPDF(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		cmd := newLibRmCmd(s, &config.Config{WorkDir: dir, FetchDownloadDir: dl})
+		cmd := newLibRmCmd(&deps{store: s, cfg: &config.Config{WorkDir: dir, FetchDownloadDir: dl}})
 		cmd.SetArgs([]string{paper.CiteKey})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("lib rm: %v", err)

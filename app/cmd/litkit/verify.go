@@ -43,7 +43,8 @@ func (a retractionResolverAdapter) Resolve(ctx context.Context, doi string) (lin
 // 退出码（verify 专用语义）：
 //   - 0 全部通过（exitHint=pass）或仅 S 类需人工（exitHint=manual_review）
 //   - 1 有 A 类违规（exitHint=fix_and_rerun），AI 应自动修复后重跑
-func newVerifyCmd(cfg *config.Config, store *storage.Store, fetcher *core.MetadataFetcher) *cobra.Command {
+func newVerifyCmd(d *deps) *cobra.Command {
+	cfg := d.cfg
 	cmd := &cobra.Command{
 		Use:   "verify <file.md> [file2.md ...] --type review|empirical|book --lang zh|en",
 		Short: "验证文稿合规性（A/S 规则 + 引用吻合度评分）",
@@ -124,6 +125,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				return &paramError{msg: "verify: " + err.Error()}
 			}
 
+			// 参数校验全部通过后才打开文献库（避免无效调用产生建库副作用）。
+			store, fetcher := d.Store(), d.fetcher
 			var retraction lint.RetractionResolver
 			if fetcher != nil {
 				retraction = retractionResolverAdapter{f: fetcher}
@@ -135,7 +138,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 
 			// 引用评分（FR-LINT-08）
 			if reportFlag == "citation-refs" && store != nil {
-				cr := runCitationRelevance(args, store, cfg, spec)
+				cr := runCitationRelevance(cmd.Context(), args, store, cfg, spec)
 				report.CitationRefs = cr
 			}
 
@@ -162,7 +165,7 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 // runCitationRelevance 对文稿执行引用相关性评分（FR-LINT-08）。
 //
 // 在规则验证后额外执行，不产生 lint Violation，以独立报告形式输出。
-func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Config, spec *lint.ManuscriptSpec) *lint.CitationRelevanceReport {
+func runCitationRelevance(ctx context.Context, paths []string, store *storage.Store, cfg *config.Config, spec *lint.ManuscriptSpec) *lint.CitationRelevanceReport {
 	cr := &lint.CitationRelevanceReport{Enabled: false}
 
 	// 加载 verifier_models.json
@@ -187,7 +190,6 @@ func runCitationRelevance(paths []string, store *storage.Store, cfg *config.Conf
 
 	cr.Enabled = true
 	cr.Models = engine.EnabledModels()
-	ctx := context.Background()
 
 	for _, p := range paths {
 		// 与 verify 使用同一分段口径（封面裁剪/摘要保留），保证行号一致
@@ -270,10 +272,17 @@ func warnPlainKeyModels(vm *core.VerifierModels) {
 	}
 }
 
-// relativePath 将绝对路径转为相对工作目录的路径。
+// relativePath 将路径规范化为相对工作目录的路径。
+// 先转为绝对路径，避免不同 cwd / 相对路径写法在同一手稿上产生多个引用关系键。
 func relativePath(path, workDir string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	if workDir == "" {
 		return path
+	}
+	if abs, err := filepath.Abs(workDir); err == nil {
+		workDir = abs
 	}
 	rel, err := filepath.Rel(workDir, path)
 	if err != nil {

@@ -41,10 +41,10 @@ const (
 	layerLeaf          // 叶子层
 )
 
-// entryPrefixes / servicePrefixes / adapterPrefixes / leafPrefixes
-// 目录前缀 → 层映射。新增目录时在此登记，并同步更新 boundaries.md。
+// servicePrefixes / adapterPrefixes / leafPrefixes
+// 目录前缀 → 层映射（相对模块根）。新增内部包时在此登记，并同步更新 boundaries.md。
+// 入口层由 "cmd/" 前缀识别，不在此列表。
 var (
-	entryPrefixes   = []string{}
 	servicePrefixes = []string{"internal/core", "internal/lint"}
 	adapterPrefixes = []string{"internal/sources", "internal/csl"}
 	leafPrefixes    = []string{"internal/model", "internal/config", "internal/storage", "internal/util", "internal/buildinfo"}
@@ -64,11 +64,6 @@ func dirLayer(importPath string) layer {
 	for _, p := range servicePrefixes {
 		if importPath == p || strings.HasPrefix(importPath, p+"/") {
 			return layerService
-		}
-	}
-	for _, p := range entryPrefixes {
-		if importPath == p || strings.HasPrefix(importPath, p+"/") {
-			return layerEntry
 		}
 	}
 	return layerUnknown
@@ -135,11 +130,8 @@ func main() {
 		if err != nil {
 			return err
 		}
-		// 只检查 internal/ 与 cmd/ 下的源码
-		if !strings.HasPrefix(rel, "internal"+string(filepath.Separator)) &&
-			!strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) {
-			return nil
-		}
+		// 层归属由 checkFile 依据「相对模块根」的路径判断，
+		// 不假设模块位于仓库根（本项目源码在 app/ 下）。
 		checkFile(root, rel, &violations)
 		return nil
 	})
@@ -165,7 +157,12 @@ func checkFile(root, rel string, violations *[]string) {
 	absPath := filepath.Join(root, rel)
 	moduleRoot := findModuleRoot(absPath, root)
 	if moduleRoot == "" {
-		return // 不在任何 Go 模块内（如已被 .harness 跳过的约束层自身）
+		// 分层目录下的源码必须能找到 go.mod；否则检查会静默失效。
+		if underLayerDir(rel) {
+			*violations = append(*violations, fmt.Sprintf(
+				"%s: 未找到所属 go.mod，无法判断分层归属（arch-check 不能静默放行）", rel))
+		}
+		return
 	}
 	relToModule, err := filepath.Rel(moduleRoot, absPath)
 	if err != nil {
@@ -179,10 +176,23 @@ func checkFile(root, rel string, violations *[]string) {
 	var srcLayer layer
 	if strings.HasPrefix(dir, "cmd/") || dir == "cmd" {
 		srcLayer = layerEntry
-	} else {
+	} else if strings.HasPrefix(dir, "internal/") {
 		srcLayer = dirLayer(dir)
+		if srcLayer == layerUnknown {
+			// 新增内部包必须在层映射中登记，否则它将不受任何约束。
+			*violations = append(*violations, fmt.Sprintf(
+				"%s: internal 包目录 %q 未登记层归属，请在 .harness/constraints/arch/main.go 登记并同步 boundaries.md",
+				rel, dir))
+			return
+		}
+	} else {
+		return // 既非入口层也非 internal 层（如模块根包），不纳入分层约束
 	}
-	if srcLayer == layerUnknown {
+
+	modPath := modulePath(moduleRoot)
+	if modPath == "" {
+		*violations = append(*violations, fmt.Sprintf(
+			"%s: %s/go.mod 缺少 module 声明，arch-check 不能静默放行", rel, moduleRoot))
 		return
 	}
 
@@ -195,14 +205,22 @@ func checkFile(root, rel string, violations *[]string) {
 
 	for _, imp := range f.Imports {
 		importPath := strings.Trim(imp.Path.Value, `"`)
-		// 只检查对项目内部 internal/ 的依赖（分层约束只约束项目内部，模块前缀任意）
-		internalIdx := strings.Index(importPath, "/internal/")
-		if internalIdx < 0 {
+		// 只检查项目自身模块内的依赖（分层约束只约束项目内部）
+		dstPath, ok := strings.CutPrefix(importPath, modPath+"/")
+		if !ok {
 			continue
 		}
-		dstPath := importPath[internalIdx+1:] // internal/xxx
 		dstLayer := dirLayer(dstPath)
+		if strings.HasPrefix(dstPath, "cmd/") || dstPath == "cmd" {
+			dstLayer = layerEntry
+		}
 		if dstLayer == layerUnknown {
+			if strings.HasPrefix(dstPath, "internal/") {
+				pos := fset.Position(imp.Pos())
+				*violations = append(*violations, fmt.Sprintf(
+					"%s: 依赖的 internal 包 %q 未登记层归属，请在 .harness/constraints/arch/main.go 登记",
+					pos, dstPath))
+			}
 			continue
 		}
 		if !allowed(srcLayer, dstLayer) {
@@ -212,6 +230,32 @@ func checkFile(root, rel string, violations *[]string) {
 				pos, layerName(srcLayer), dir, layerName(dstLayer), dstPath))
 		}
 	}
+}
+
+// modulePath 读取 go.mod 首行的模块路径；读取失败返回空串。
+func modulePath(moduleRoot string) string {
+	data, err := os.ReadFile(filepath.Join(moduleRoot, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// underLayerDir 判断相对路径是否位于分层目录（internal/ 或 cmd/）之下。
+func underLayerDir(rel string) bool {
+	r := filepath.ToSlash(rel)
+	for _, dir := range []string{"internal", "cmd"} {
+		if r == dir || strings.HasPrefix(r, dir+"/") || strings.Contains(r, "/"+dir+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // findModuleRoot 从 file 向上查找最近的 go.mod，返回其所在目录；

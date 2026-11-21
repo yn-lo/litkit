@@ -37,6 +37,8 @@ rm -f coverage.out
 echo "[6/7] arch-check"
 cd "$root"
 go run .harness/constraints/arch/main.go
+cd "$root/.harness/constraints/arch"
+go test .
 
 echo "[7/7] sync"
 cd "$root/.harness/constraints/sync"

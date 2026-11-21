@@ -62,6 +62,19 @@ func (r *Registry) Names() []string {
 	return out
 }
 
+// DefaultNames 返回参与默认检索的源名（按名字典序）。
+// 失真源（DefaultEnabled()=false，如 bioRxiv/medRxiv）不入列，需显式 -s 指定。
+func (r *Registry) DefaultNames() []string {
+	list := r.List()
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		if IsDefaultEnabled(s) {
+			out = append(out, s.Name())
+		}
+	}
+	return out
+}
+
 // 默认 HTTP 退避基准与各源限速（platform-matrix.md，NFR-PERF-04）。
 const (
 	defaultBackoffBaseMS = 200  // 指数退避基准 200ms
@@ -105,8 +118,8 @@ func NewDefaultRegistry(cfg *config.Config, proxy *url.URL) *Registry {
 
 	// arXiv：1 req/3s ≈ 0.33 RPS, burst 1（官方要求）
 	r.Register(NewArxivSource(httpc, ratelimit.New(arxivRPS, 1)))
-	// PubMed：3 req/s（无 key），保守取 2 RPS, burst 3
-	r.Register(NewPubmedSource(httpc, ratelimit.New(pubmedRPS, pubmedBurst)))
+	// PubMed：3 req/s（无 key），保守取 2 RPS, burst 3；有 key 时上游允许 10 req/s
+	r.Register(NewPubmedSource(httpc, ratelimit.New(pubmedRPS, pubmedBurst), cfg.PubMedAPIKey))
 	// bioRxiv/medRxiv：官方无明确限速文档，取保守 1 RPS, burst 1
 	r.Register(NewBiorxivSource("biorxiv", httpc, ratelimit.New(1.0, 1)))
 	r.Register(NewBiorxivSource("medrxiv", httpc, ratelimit.New(1.0, 1)))

@@ -10,6 +10,7 @@
 // .env 中声明的相对 LITKIT_WORK_DIR 锚定到该 .env 所在目录（而非进程 cwd），
 // 避免从其他目录（如 Start-Job / 子进程）加载同一 .env 时静默落到错误目录的空库。
 // 进程环境变量优先于 .env。
+// .env 中只有 LITKIT_ 前缀的键会被读取并注入进程环境（其他工具的密钥保持隔离）。
 // .env.example 模板见仓库根（FR-CONFIG-03）。
 package config
 
@@ -30,6 +31,9 @@ const (
 	searchModeTiab = "tiab"
 	searchModeFull = "full"
 )
+
+// envPrefix 本工具环境变量前缀：只有该前缀的键会从 .env 注入进程环境。
+const envPrefix = "LITKIT_"
 
 // Defaults 默认值常量。
 const (
@@ -58,6 +62,7 @@ type Config struct {
 	SearchTimeoutMS       int      // 整体检索超时（ms），默认 60000
 	ProxyURL              string   // 显式代理（http/https/socks5）；空=直连并尊重标准 HTTPS_PROXY 环境变量
 	SemanticScholarAPIKey string
+	PubMedAPIKey          string // 可选：PubMed 速率提升（无 key 3 req/s，有 key 10 req/s）
 	IEEEAPIKey            string
 	ACMAPIKey             string
 	UnpaywallEmail        string // 全文 OA 解析（Unpaywall，FR-FETCH-02）
@@ -137,6 +142,7 @@ func loadFrom(projectFile string) (*Config, error) {
 		SearchTimeoutMS:       getenvInt("LITKIT_SEARCH_TIMEOUT_MS", DefaultSearchTimeoutMS),
 		ProxyURL:              os.Getenv("LITKIT_PROXY_URL"),
 		SemanticScholarAPIKey: os.Getenv("LITKIT_SEMANTIC_SCHOLAR_API_KEY"),
+		PubMedAPIKey:          os.Getenv("LITKIT_PUBMED_API_KEY"),
 		IEEEAPIKey:            os.Getenv("LITKIT_IEEE_API_KEY"),
 		ACMAPIKey:             os.Getenv("LITKIT_ACM_API_KEY"),
 		UnpaywallEmail:        os.Getenv("LITKIT_UNPAYWALL_EMAIL"),
@@ -194,6 +200,8 @@ func (c *Config) DownloadDir() string {
 }
 
 // loadEnvFile 加载项目级 .env，且不覆盖已存在的进程环境变量。
+// 只导出 LITKIT_ 前缀的键：项目 .env 可能同时存放其他工具的密钥，
+// 全量 os.Setenv 会把它们提升为进程环境变量并传给子进程（pandoc 等）。
 // 返回实际由该文件设置成功的键集合（用于判断相对路径应锚定到 .env 还是 cwd）。
 // 兼容 Windows 记事本 / PowerShell 5 保存的 UTF-8 BOM（否则首个键名会被污染）。
 func loadEnvFile(f string) (map[string]bool, error) {
@@ -211,6 +219,9 @@ func loadEnvFile(f string) (map[string]bool, error) {
 		return nil, fmt.Errorf("load .env %q: %w", f, err)
 	}
 	for k, v := range kv {
+		if !strings.HasPrefix(strings.ToUpper(k), envPrefix) {
+			continue // 非 litkit 配置：不注入进程环境，避免密钥外泄
+		}
 		if _, ok := os.LookupEnv(k); ok {
 			continue
 		}

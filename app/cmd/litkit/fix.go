@@ -103,12 +103,12 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 // filterFixRules 按 --rule/--skip 与 spec 的 lang/type 过滤可修规则。
 //
-// 与 verify 的规则筛选口径一致：zh 专属规则（如 R3.1/R3.2/R3.3）不得在 en 文稿上执行，
+// 与 verify 共用 lint.Rule.AppliesTo 口径：zh 专属规则（如 R3.1/R3.2/R3.3）不得在 en 文稿上执行，
 // 否则英文数字范围会被改成全角波浪线等中文排版形式。
 func filterFixRules(rules []lint.Rule, only, skip []string, spec *lint.ManuscriptSpec) []lint.Rule {
 	out := make([]lint.Rule, 0, len(rules))
 	for _, r := range rules {
-		if !fixRuleApplies(r, spec) {
+		if spec != nil && !r.AppliesTo(spec.Lang, spec.PaperType) {
 			continue
 		}
 		if len(only) > 0 && !containsStr(only, r.ID) {
@@ -120,20 +120,6 @@ func filterFixRules(rules []lint.Rule, only, skip []string, spec *lint.Manuscrip
 		out = append(out, r)
 	}
 	return out
-}
-
-// fixRuleApplies 判断规则是否适用于 spec 的语言与论文类型（空类型=全部适用）。
-func fixRuleApplies(r lint.Rule, spec *lint.ManuscriptSpec) bool {
-	if spec == nil {
-		return true
-	}
-	if len(r.Langs) > 0 && !containsStr(r.Langs, spec.Lang) {
-		return false
-	}
-	if len(r.Types) > 0 && !containsStr(r.Types, spec.PaperType) {
-		return false
-	}
-	return true
 }
 
 // containsStr 判断切片是否含目标字符串。

@@ -54,6 +54,15 @@ type crossrefWork struct {
 	Issue          string             `json:"issue"`
 	Page           string             `json:"page"`
 	URL            string             `json:"URL"`
+	UpdatedBy      []CrossrefUpdate   `json:"updated-by"`
+}
+
+// CrossrefUpdate 一条更新声明（updated-by）：撤稿/更正等。
+type CrossrefUpdate struct {
+	DOI    string `json:"DOI"`
+	Type   string `json:"type"`   // retraction | correction | ...
+	Source string `json:"source"` // publisher | retraction-watch
+	Label  string `json:"label"`  // Retraction / Correction / ...
 }
 
 type crossrefWorkAuth struct {
@@ -75,10 +84,18 @@ func (c *CrossrefSource) buildURL(query string, opts SearchOptions) (string, err
 	q := url.Values{}
 	q.Set("query", query)
 	q.Set("rows", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
+	filters := make([]string, 0, 2)
 	if opts.Year != 0 {
-		q.Set("filter", crossrefYearFilter(opts.Year, opts.Year))
+		filters = append(filters, crossrefYearFilter(opts.Year, opts.Year))
 	} else if opts.Since != 0 {
-		q.Set("filter", crossrefYearFilter(opts.Since, 0))
+		filters = append(filters, crossrefYearFilter(opts.Since, 0))
+	}
+	if opts.RequireAbstract {
+		// 无摘要过滤下推到服务端：Crossref 大量条目无摘要，先截断再本地过滤会整源脱落
+		filters = append(filters, "has-abstract:true")
+	}
+	if len(filters) > 0 {
+		q.Set("filter", strings.Join(filters, ","))
 	}
 	return c.BaseURL + "?" + q.Encode(), nil
 }
@@ -101,34 +118,64 @@ func parseCrossrefSearch(data []byte) ([]model.Paper, error) {
 	}
 	papers := make([]model.Paper, 0, len(r.Message.Items))
 	for _, w := range r.Message.Items {
-		p := model.Paper{
-			Title:    firstString(w.Title),
-			Abstract: stripJATSTags(w.Abstract),
-			Venue:    firstString(w.ContainerTitle),
-			DOI:      w.DOI,
-			DocType:  strings.ToLower(strings.TrimSpace(w.Type)),
-			Volume:   w.Volume,
-			Number:   w.Issue,
-			Pages:    w.Page,
-			URL:      w.URL,
-			Source:   "crossref",
-		}
-		if len(w.Issued.DateParts) > 0 && len(w.Issued.DateParts[0]) > 0 {
-			p.Year = w.Issued.DateParts[0][0]
-		}
-		for _, a := range w.Author {
-			if a.Given == "" && a.Family == "" {
-				continue
-			}
-			p.Authors = append(p.Authors, model.Author{Given: a.Given, Family: a.Family})
-		}
-		if p.DOI != "" && p.URL == "" {
-			p.URL = "https://doi.org/" + p.DOI
-		}
-		p.ID = p.ComputeID()
-		papers = append(papers, p)
+		papers = append(papers, crossrefWorkToPaper(w))
 	}
 	return papers, nil
+}
+
+// crossrefWorkToPaper 将单条 Crossref work 转为 Paper（检索与 DOI/标题反查共用，
+// 保证 DocType 规范化、DOI URL 回退等口径一致）。
+func crossrefWorkToPaper(w crossrefWork) model.Paper {
+	p := model.Paper{
+		Title:    firstString(w.Title),
+		Abstract: stripJATSTags(w.Abstract),
+		Venue:    firstString(w.ContainerTitle),
+		DOI:      w.DOI,
+		DocType:  strings.ToLower(strings.TrimSpace(w.Type)),
+		Volume:   w.Volume,
+		Number:   w.Issue,
+		Pages:    w.Page,
+		URL:      w.URL,
+		Source:   "crossref",
+	}
+	if len(w.Issued.DateParts) > 0 && len(w.Issued.DateParts[0]) > 0 {
+		p.Year = w.Issued.DateParts[0][0]
+	}
+	for _, a := range w.Author {
+		if a.Given == "" && a.Family == "" {
+			continue
+		}
+		p.Authors = append(p.Authors, model.Author{Given: a.Given, Family: a.Family})
+	}
+	if p.DOI != "" && p.URL == "" {
+		p.URL = "https://doi.org/" + p.DOI
+	}
+	p.ID = p.ComputeID()
+	return p
+}
+
+// ParseCrossrefWork 解析 /works/{doi} 响应（{"message":{...}}）为 Paper + 更新声明。
+// 供 core 的标识符反查复用，避免服务层重复实现平台解析。
+func ParseCrossrefWork(data []byte) (model.Paper, []CrossrefUpdate, error) {
+	var r struct {
+		Message crossrefWork `json:"message"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return model.Paper{}, nil, err
+	}
+	return crossrefWorkToPaper(r.Message), r.Message.UpdatedBy, nil
+}
+
+// ParseCrossrefSearchFirst 解析 /works 检索响应并返回首条；无结果返回 ok=false。
+func ParseCrossrefSearchFirst(data []byte) (model.Paper, bool, error) {
+	var r crossrefSearchResponse
+	if err := json.Unmarshal(data, &r); err != nil {
+		return model.Paper{}, false, err
+	}
+	if len(r.Message.Items) == 0 {
+		return model.Paper{}, false, nil
+	}
+	return crossrefWorkToPaper(r.Message.Items[0]), true, nil
 }
 
 func firstString(ss []string) string {

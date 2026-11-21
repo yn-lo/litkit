@@ -68,7 +68,7 @@ func TestResolveSearchSources(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		got, warns := resolveSearchSources(tc.explicit, tc.cfg, registered)
+		got, warns := resolveSearchSources(tc.explicit, tc.cfg, registered, registered)
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s: sources = %v, want %v", tc.name, got, tc.want)
 		}

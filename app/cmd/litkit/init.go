@@ -48,12 +48,15 @@ const envTemplate = "# litkit 工作目录配置（由 litkit init 生成，FR-C
 	"# LITKIT_DEFAULT_SEARCH_MODE=tiab\n" +
 	"# 整体检索超时（毫秒），默认 60000\n" +
 	"# LITKIT_SEARCH_TIMEOUT_MS=60000\n" +
-	"# 默认检索源白名单（逗号分隔；留空=全部源，可用源见 litkit sources）\n" +
+	"# 默认检索源白名单（逗号分隔；留空=默认参与检索的源，可用源见 litkit sources）\n" +
+	"# 注：biorxiv/medrxiv 无关键词检索端点，默认不参与，需 -s 显式指定\n" +
 	"# LITKIT_SEARCH_SOURCES=\n" +
 	"# 默认排除源（逗号分隔；仅作用于未显式 -s 的检索）\n" +
 	"# LITKIT_SEARCH_EXCLUDE_SOURCES=\n" +
 	"# 可选：Semantic Scholar API key（配置后提速，避免共享池 429）\n" +
 	"# LITKIT_SEMANTIC_SCHOLAR_API_KEY=\n" +
+	"# 可选：PubMed API key（无 key 3 req/s；有 key 10 req/s）\n" +
+	"# LITKIT_PUBMED_API_KEY=\n" +
 	"# 二期源激活（IEEE/ACM，本期不实现）\n" +
 	"# LITKIT_IEEE_API_KEY=\n" +
 	"# LITKIT_ACM_API_KEY=\n" +
@@ -251,8 +254,7 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	created = append(created, skillFiles...)
 
 	// litkit.db（幂等：已存在则跳过建表）
-	// loadDeps（PersistentPreRunE）可能已提前调用 storage.Open 创建了 db 文件，
-	// 此处再次 Open 确保测试路径（直接调用 initWorkdir）也能创建 db。
+	// 依赖注入已改为按需开库，init 自身负责首次建库（测试直接调用 initWorkdir 也走这里）。
 	dbPath := storage.DBPath(dir)
 	dbExisted := fileExists(dbPath)
 	store, err := storage.Open(dbPath)
@@ -391,8 +393,9 @@ func runInitWizard(typeVal, langVal, journalVal string, changedType, changedLang
 		fmt.Println("  1) empirical（四段式实证，默认）")
 		fmt.Println("  2) review（综述）")
 		fmt.Println("  3) book（书籍，中文编校细则）")
-		fmt.Println("  4) qualitative（质性研究，主题呈现，适用 zh/en）")
-		fmt.Print("选择 [1/2/3/4]: ")
+		fmt.Println("  4) qualitative（质性研究，主题呈现）")
+		fmt.Println("  5) proposal（学术标书/课题申请书，中文）")
+		fmt.Print("选择 [1/2/3/4/5]: ")
 		if scanner.Scan() {
 			switch strings.TrimSpace(scanner.Text()) {
 			case "2", "review":
@@ -401,6 +404,8 @@ func runInitWizard(typeVal, langVal, journalVal string, changedType, changedLang
 				typeVal = lint.PaperTypeBook
 			case "4", "qualitative":
 				typeVal = lint.PaperTypeQualitative
+			case "5", "proposal":
+				typeVal = lint.PaperTypeProposal
 			default:
 				typeVal = lint.PaperTypeEmpirical
 			}

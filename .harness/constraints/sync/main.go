@@ -10,6 +10,9 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,8 +27,14 @@ var (
 	newCmdRe = regexp.MustCompile(`new(\w+)Cmd\(`)
 	// 链接目标。
 	linkRe = regexp.MustCompile(`\[[^\]]*\]\(([^)#]+)(?:#[^)]*)?\)`)
-	// api.md §1 代码块中的命令行。
-	litCmdRe = regexp.MustCompile(`(?m)^litkit (\S+)`)
+	// litCmdLineRe 匹配 api.md §1 代码块中以 litkit 开头的整行命令。
+	litCmdLineRe = regexp.MustCompile(`(?m)^litkit (.+)$`)
+	// identRe 判断子命令是否为裸标识符（排除 <arg>、[flag] 等）。
+	identRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+	// envKeyRe 匹配 config.go 中读取的环境变量键（含动态后缀前缀）。
+	envKeyRe = regexp.MustCompile(`(?:os\.Getenv|getenvDefault|getenvInt)\("(LITKIT_[A-Z0-9_]+)"`)
+	// apiEnvRowRe 匹配 api.md §2 环境变量表首列。
+	apiEnvRowRe = regexp.MustCompile(`(?m)^\| (LITKIT_[A-Z0-9_]+)`)
 )
 
 // main 入口。
@@ -38,6 +47,10 @@ func main() {
 	}
 	if err := checkLinks(root); err != nil {
 		fmt.Fprintln(os.Stderr, "FAIL links:", err)
+		fail++
+	}
+	if err := checkEnvSync(root); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL env:", err)
 		fail++
 	}
 	if fail > 0 {
@@ -57,31 +70,23 @@ func repoRoot() string {
 
 // ---- 1. registration sync ----
 
-// checkRegistration 校验 CLI 命令与 api.md §1 一致。
+// checkRegistration 校验 CLI 命令树（一级 + 二级）与 api.md §1 一致。
 func checkRegistration(root string) error {
-	var errs []string
-
-	cliCmds, err := cliCommands(root)
+	cliCmds, err := cliCommandPaths(root)
 	if err != nil {
 		return err
 	}
-	apiCmds := apiSectionCommands(root)
-
-	// CLI ↔ api.md §1
+	apiCmds := apiCommandPaths(root)
 	if d := diffSets(cliCmds, apiCmds); len(d) > 0 {
-		errs = append(errs, fmt.Sprintf("CLI 命令与 api.md §1 不一致: %v", d))
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("%s", strings.Join(errs, "; "))
+		return fmt.Errorf("CLI 命令树与 api.md §1 不一致: %s", d)
 	}
 	return nil
 }
 
-// cliCommands 从 cmd/litkit 源码提取 cobra 一级命令名（Use 首词）。
-// 主命令集以 main.go 的 AddCommand 注册列表为准，
-// 每个命令的 Use 在其构造函数定义处（跨文件）提取，避免子命令
-// （如 lib 下的 list/stats、lint 下的 init）混入顶层清单。
-func cliCommands(root string) ([]string, error) {
+// cliCommandPaths 从 cmd/litkit 源码提取命令路径（"lib"、"lib add" 等）。
+// 一级命令以 main.go 的 AddCommand 注册列表为准；二级命令由各构造函数体内的
+// AddCommand 调用解析（go/ast），避免子命令增删被漏检。
+func cliCommandPaths(root string) ([]string, error) {
 	mainSrc, err := os.ReadFile(filepath.Join(root, "app", "cmd", "litkit", "main.go"))
 	if err != nil {
 		return nil, err
@@ -91,6 +96,7 @@ func cliCommands(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	sources := map[string]string{}
 	all := ""
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -100,51 +106,166 @@ func cliCommands(root string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		sources[filepath.Base(f)] = string(b)
 		all += string(b) + "\n"
 	}
-	names := map[string]bool{}
+	uses := constructorUses(all)
+	paths := map[string]bool{}
 	for _, m := range newCmdRe.FindAllStringSubmatch(string(mainSrc), -1) {
-		if m[1] == "Root" {
+		ctor := m[1]
+		if ctor == "Root" {
 			continue
 		}
-		// 定向匹配：func newXxxCmd(...) 定义体内的 Use 首词。
-		def := regexp.MustCompile(`(?s)func new` + m[1] + `Cmd\(.*?Use:\s+"([^"]+)"`).FindStringSubmatch(all)
-		if len(def) > 1 {
-			names[strings.Fields(def[1])[0]] = true
-		} else {
-			names[strings.ToLower(m[1])] = true
+		name := useName(uses, ctor)
+		paths[name] = true
+		for _, child := range constructorChildren(sources, "new"+ctor+"Cmd") {
+			paths[name+" "+useName(uses, child)] = true
 		}
 	}
-	return sortedKeys(names), nil
+	return sortedKeys(paths), nil
 }
 
-// apiSectionCommands 提取 api.md §1 的 CLI 一级命令。
-func apiSectionCommands(root string) []string {
+// constructorUses 收集构造函数体内 Use 首词（跨文件）。
+func constructorUses(all string) map[string]string {
+	uses := map[string]string{}
+	for _, m := range regexp.MustCompile(`(?s)func new(\w+)Cmd\(.*?Use:\s+"([^"]+)"`).FindAllStringSubmatch(all, -1) {
+		uses[m[1]] = strings.Fields(m[2])[0]
+	}
+	return uses
+}
+
+// useName 返回构造函数的命令名；缺失 Use 时回退为小写构造函数名。
+func useName(uses map[string]string, ctor string) string {
+	if n, ok := uses[ctor]; ok {
+		return n
+	}
+	return strings.ToLower(ctor)
+}
+
+// constructorChildren 解析指定构造函数体内的 AddCommand(newXxxCmd(...)) 调用。
+func constructorChildren(sources map[string]string, funcName string) []string {
+	var out []string
+	for _, src := range sources {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "", src, 0)
+		if err != nil {
+			continue
+		}
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Name.Name != funcName || fd.Body == nil {
+				continue
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "AddCommand" {
+					return true
+				}
+				for _, a := range call.Args {
+					ac, ok := a.(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+					id, ok := ac.Fun.(*ast.Ident)
+					if !ok || !strings.HasPrefix(id.Name, "new") || !strings.HasSuffix(id.Name, "Cmd") {
+						continue
+					}
+					out = append(out, strings.TrimSuffix(strings.TrimPrefix(id.Name, "new"), "Cmd"))
+				}
+				return true
+			})
+		}
+	}
+	return out
+}
+
+// apiCommandPaths 提取 api.md §1 的命令路径（含二级子命令）。
+func apiCommandPaths(root string) []string {
 	b, err := os.ReadFile(filepath.Join(root, ".harness", "specs", "reference", "api.md"))
 	if err != nil {
 		return nil
 	}
 	section := sectionBetween(string(b), "## 1.", "## 2.")
 	names := map[string]bool{}
-	for _, m := range litCmdRe.FindAllStringSubmatch(section, -1) {
-		names[m[1]] = true
+	for _, m := range litCmdLineRe.FindAllStringSubmatch(section, -1) {
+		line := strings.TrimSpace(m[1])
+		if i := strings.Index(line, " #"); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		parent := fields[0]
+		names[parent] = true
+		hasSub := len(fields) >= 2 && identRe.MatchString(fields[1])
+		if hasSub {
+			names[parent+" "+fields[1]] = true
+			// 兼容 "litkit lib stats | path" 这类合并写法；
+			// 含方括号的行（如 [--mode chapter|draft|final]）的 | 是枚举分隔，不是子命令。
+			if !strings.Contains(line, "[") {
+				for _, seg := range strings.Split(line, "|")[1:] {
+					if f := strings.Fields(seg); len(f) == 1 && identRe.MatchString(f[0]) {
+						names[parent+" "+f[0]] = true
+					}
+				}
+			}
+		}
 	}
 	return sortedKeys(names)
 }
 
-// ---- 2. link check ----
+// ---- 2. env sync ----
+
+// checkEnvSync 校验 config.go 读取的环境变量键与 api.md §2 表格一致。
+func checkEnvSync(root string) error {
+	cfg, err := os.ReadFile(filepath.Join(root, "app", "internal", "config", "config.go"))
+	if err != nil {
+		return err
+	}
+	api, err := os.ReadFile(filepath.Join(root, ".harness", "specs", "reference", "api.md"))
+	if err != nil {
+		return err
+	}
+	section := sectionBetween(string(api), "## 2.", "## 3.")
+	codeKeys := map[string]bool{}
+	for _, m := range envKeyRe.FindAllStringSubmatch(string(cfg), -1) {
+		codeKeys[m[1]] = true
+	}
+	docKeys := map[string]bool{}
+	for _, m := range apiEnvRowRe.FindAllStringSubmatch(section, -1) {
+		docKeys[m[1]] = true
+	}
+	if d := diffSets(sortedKeys(codeKeys), sortedKeys(docKeys)); len(d) > 0 {
+		return fmt.Errorf("config.go 与 api.md §2 环境变量不一致: %s", d)
+	}
+	return nil
+}
+
+// ---- 3. link check ----
 
 // checkLinks 扫描 AGENTS.md 与 .harness/ 下 Markdown，验证相对链接目标存在。
 func checkLinks(root string) error {
 	var errs []string
 	targets := []string{filepath.Join(root, "AGENTS.md")}
-	filepath.WalkDir(filepath.Join(root, ".harness"), func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+	walkErr := filepath.WalkDir(filepath.Join(root, ".harness"), func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			errs = append(errs, err.Error())
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil
 		}
 		targets = append(targets, path)
 		return nil
 	})
+	if walkErr != nil {
+		errs = append(errs, walkErr.Error())
+	}
 	for _, md := range targets {
 		b, err := os.ReadFile(md)
 		if err != nil {

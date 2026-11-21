@@ -1,14 +1,18 @@
 // wireup.go 在 CLI 入口层组装依赖：config → registry/store/searcher。
 //
 // 入口层负责依赖注入（boundaries.md）；业务逻辑全部下沉 internal/core。
+// 文献库按需打开：只读命令（rules/styles/export/--help 等）不创建库文件、
+// 不触发 schema 迁移，避免并行调用时无谓争锁。
 package main
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"litkit/internal/config"
 	"litkit/internal/core"
@@ -20,16 +24,57 @@ import (
 // errNoWorkDir 未设置 LITKIT_WORK_DIR 的公共错误。
 // 工作目录必须显式设置：所有需要文献库的命令（init/search/lib）拒绝执行，
 // 避免生成物污染任意 CWD（FR-LIB-03）。
-var errNoWorkDir = errors.New("未设置 LITKIT_WORK_DIR：请在项目目录运行 litkit init 生成项目 .env，或设置环境变量（如 $env:LITKIT_WORK_DIR = \"<dir>\"）")
+// 错误消息即文档：首次使用（尚无可发现的 .env）时必须给出可直接粘贴的命令。
+var errNoWorkDir = errors.New(`未设置 LITKIT_WORK_DIR（也未找到可自动发现的项目 .env）。
+  首次使用请显式指定后重跑，例如：
+    PowerShell: $env:LITKIT_WORK_DIR = "<项目目录>"; litkit init --type empirical --lang zh
+    bash:       LITKIT_WORK_DIR="<项目目录>" litkit init --type empirical --lang zh
+  之后该目录的 .env 会写 LITKIT_WORK_DIR=.，在目录内调用无需再设。
+  .env 自 CWD 向上溯源发现（LITKIT_ENV_FILE > WORK_DIR/.env > CWD/.env → 父目录）`)
 
 // deps 持有一次 CLI 调用所需的全部依赖。
 type deps struct {
 	cfg      *config.Config
 	registry *sources.Registry
-	store    *storage.Store
-	searcher *core.Searcher
+	client   *httpclient.Client
 	fetcher  *core.MetadataFetcher // 标识符反查（metadata/manuscript 用）
-	fulltext *core.FulltextFetcher // 全文获取（fetch 用，FR-FETCH）
+
+	storeOnce sync.Once
+	store     *storage.Store
+}
+
+// Store 返回本地文献库；仅首次调用时打开（未设置工作目录或打开失败返回 nil）。
+func (d *deps) Store() *storage.Store {
+	if d.store != nil {
+		return d.store // 测试注入或已打开
+	}
+	d.storeOnce.Do(func() {
+		if d.cfg == nil || d.cfg.WorkDir == "" {
+			return
+		}
+		s, err := storage.Open(storage.DBPath(d.cfg.WorkDir))
+		if err != nil {
+			// 库初始化失败不阻断只读能力：检索仍可退化为不入库
+			fmt.Fprintf(os.Stderr, "litkit: storage init failed, 文献库不可用: %v\n", err)
+			return
+		}
+		d.store = s
+	})
+	return d.store
+}
+
+// Searcher 构造检索器（会按需打开文献库）。
+func (d *deps) Searcher() *core.Searcher {
+	return core.NewSearcher(d.registry, d.Store(), d.cfg.DefaultMaxResults, d.cfg.SearchTimeoutMS)
+}
+
+// Fulltext 构造全文获取器；文献库不可用时返回 nil。
+func (d *deps) Fulltext() *core.FulltextFetcher {
+	st := d.Store()
+	if st == nil {
+		return nil
+	}
+	return core.NewFulltextFetcher(st, d.client, d.cfg.UnpaywallEmail, d.cfg.SciHubURL, d.cfg.DownloadDir())
 }
 
 // Close 释放依赖持有的资源（文献库连接）。
@@ -41,7 +86,7 @@ func (d *deps) Close() {
 
 // loadDeps 加载配置并组装依赖。
 // 配置加载失败时退化为默认值并打印告警，不阻断 CLI（优雅降级）。
-// 未设置 LITKIT_WORK_DIR 时 store 为空：init/search/lib 在命令层拒绝（errNoWorkDir）。
+// 文献库延迟到命令实际需要时再打开。
 func loadDeps() *deps {
 	cfg, err := config.Load()
 	if err != nil {
@@ -64,40 +109,16 @@ func loadDeps() *deps {
 		fmt.Fprintf(os.Stderr, "litkit: LITKIT_PROXY_URL 无效，忽略代理: %v\n", perr)
 		proxy = nil
 	}
-	reg := sources.NewDefaultRegistry(cfg, proxy)
-
-	store := (*storage.Store)(nil)
-	if cfg.WorkDir != "" {
-		store, err = storage.Open(storage.DBPath(cfg.WorkDir))
-		if err != nil {
-			// 库初始化失败不阻断检索：退化为不入库（检索仍可用）
-			fmt.Fprintf(os.Stderr, "litkit: storage init failed, search 将不入库: %v\n", err)
-			store = nil
-		}
-	}
-	// 全文获取（FR-FETCH）：PDF 默认落盘 <WorkDir>/downloads，可由 LITKIT_FETCH_DOWNLOAD_DIR 覆盖
-	fulltext := (*core.FulltextFetcher)(nil)
-	if store != nil {
-		downloadDir := cfg.DownloadDir()
-		fulltext = core.NewFulltextFetcher(
-			store,
-			httpclient.New(httpclient.Options{TimeoutMS: cfg.HTTPTimeoutMS, MaxRetries: cfg.HTTPRetries, Proxy: proxy}),
-			cfg.UnpaywallEmail,
-			cfg.SciHubURL,
-			downloadDir,
-		)
-	}
+	client := httpclient.New(httpclient.Options{
+		TimeoutMS:  cfg.HTTPTimeoutMS,
+		MaxRetries: cfg.HTTPRetries,
+		Proxy:      proxy,
+	})
 	return &deps{
 		cfg:      cfg,
-		registry: reg,
-		store:    store,
-		searcher: core.NewSearcher(reg, store, cfg.DefaultMaxResults, cfg.SearchTimeoutMS),
-		fetcher: core.NewMetadataFetcher(httpclient.New(httpclient.Options{
-			TimeoutMS:  cfg.HTTPTimeoutMS,
-			MaxRetries: cfg.HTTPRetries,
-			Proxy:      proxy,
-		})),
-		fulltext: fulltext,
+		registry: sources.NewDefaultRegistry(cfg, proxy),
+		client:   client,
+		fetcher:  core.NewMetadataFetcher(client),
 	}
 }
 
@@ -130,6 +151,18 @@ func userStylesDir(cfg *config.Config) string {
 // 所有面向用户的文本输入统一走此函数，避免 BOM 泄漏到产物或解析失败。
 func readFileTrimBOM(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}), nil
+}
+
+// readInputTrimBOM 读取 path（"-" 表示 stdin）并去除 UTF-8 BOM。
+func readInputTrimBOM(path string) ([]byte, error) {
+	if path != "-" {
+		return readFileTrimBOM(path)
+	}
+	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err
 	}

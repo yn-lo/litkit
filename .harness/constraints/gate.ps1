@@ -44,6 +44,10 @@ Write-Host "[6/7] arch-check" -ForegroundColor Cyan
 Push-Location $root
 go run .harness/constraints/arch/main.go
 if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: arch-check" -ForegroundColor Red; Pop-Location; exit 1 }
+Push-Location (Join-Path $root ".harness/constraints/arch")
+go test .
+if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: arch-check tests" -ForegroundColor Red; Pop-Location; Pop-Location; exit 1 }
+Pop-Location
 
 Write-Host "[7/7] sync (CLI/api.md 一致性 + 断链)" -ForegroundColor Cyan
 Push-Location (Join-Path $root ".harness/constraints/sync")

@@ -27,12 +27,17 @@ type BiorxivSource struct {
 }
 
 // NewBiorxivSource 创建 bioRxiv/medRxiv 适配器；server 决定源标识与端点路径。
+//
+// 默认不参与未显式 -s 的检索：官方 API 无关键词端点，只能拉最近批次再本地过滤，
+// 召回能力与其余源不可比，默认启用只会带来假 0 命中（见 DefaultSource）。
 func NewBiorxivSource(server string, httpClient *httpclient.Client, limiter *ratelimit.Limiter) *BiorxivSource {
-	return &BiorxivSource{
+	s := &BiorxivSource{
 		BaseSource: NewBaseSource(server, httpClient, limiter),
 		Server:     server,
 		BaseURL:    "https://api.biorxiv.org",
 	}
+	s.defaultEnabled = false
+	return s
 }
 
 // biorxivResponse bioRxiv API 响应结构。
@@ -103,14 +108,9 @@ func (b *BiorxivSource) Search(ctx context.Context, query string, opts SearchOpt
 	if limit := opts.MaxResults; limit > 0 && len(papers) > limit {
 		papers = papers[:limit]
 	}
-	// bioRxiv/medRxiv API 无关键词端点：只能拉最近一批预印本再做本地过滤。
-	// 空结果会误导调用方以为"真无结果"，故显式报错以暴露"召回不足"的真实原因
-	// （FR-SEARCH 可诊断性；report 问题1：杜绝静默返回 0）。
-	if len(papers) == 0 && strings.TrimSpace(query) != "" {
-		return nil, fmt.Errorf(
-			"biorxiv.%s 关键词检索未命中：%s API 无关键词检索端点，仅对最近 %d 篇预印本做本地关键词过滤后为空，无法区分“真无结果”与“召回不足”；建议改用支持关键词检索的源（openalex/pubmed/semantic_scholar）",
-			b.Server, b.Server, interval)
-	}
+	// 未命中不报错：该 API 无关键词端点，本地过滤为空既可能是真无结果也可能是召回不足，
+	// 两者都无法归因到故障。此处报错会让默认检索带 3 号退出码（其他源正常时），
+	// 使调用方误以为命令失败。该源已默认不参与检索，需显式 -s 指定。
 	return papers, nil
 }
 
@@ -167,16 +167,29 @@ func parseBiorxivAuthors(s string) []model.Author {
 	return out
 }
 
-// filterBiorxivByKeyword 按关键词做大小写不敏感子串匹配（标题或摘要）。
+// filterBiorxivByKeyword 按关键词做大小写不敏感匹配（标题或摘要）。
+//
+// 多词查询按空白拆词，标题/摘要文本同时包含全部词项即命中（AND 语义）；
+// 整串当子串匹配会让 "gut microbiota depression" 这类常规检索几乎必然 0 命中。
 func filterBiorxivByKeyword(papers []model.Paper, query string) []model.Paper {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
 		return papers
+	}
+	for i := range terms {
+		terms[i] = strings.ToLower(terms[i])
 	}
 	out := papers[:0]
 	for _, p := range papers {
-		if strings.Contains(strings.ToLower(p.Title), q) ||
-			strings.Contains(strings.ToLower(p.Abstract), q) {
+		haystack := strings.ToLower(p.Title) + "\n" + strings.ToLower(p.Abstract)
+		matched := true
+		for _, t := range terms {
+			if !strings.Contains(haystack, t) {
+				matched = false
+				break
+			}
+		}
+		if matched {
 			out = append(out, p)
 		}
 	}

@@ -121,6 +121,9 @@ type Violation struct {
 	Line       int    `json:"line,omitempty"`
 	Problem    string `json:"problem"`
 	Suggestion string `json:"suggestion"`
+	// Fixable 该违规可由 `litkit fix` 自动修正（字符级确定性替换）。
+	// 让 AI 优先跑 fix 批量修正，而不是逐处手改标点。
+	Fixable bool `json:"fixable,omitempty"`
 }
 
 // Rule 一条验证规则。

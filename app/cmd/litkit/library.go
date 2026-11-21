@@ -8,12 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"litkit/internal/config"
 	"litkit/internal/core"
 	"litkit/internal/model"
 	"litkit/internal/storage"
@@ -42,19 +40,19 @@ func noStoreError() error {
 }
 
 // newLibraryCmd 构造 `litkit lib` 子命令。
-func newLibraryCmd(st *storage.Store, f *core.MetadataFetcher, cfg *config.Config) *cobra.Command {
+func newLibraryCmd(d *deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lib",
 		Short: "本地文献库管理（add | get | list | search | rm | stats | path）",
 	}
 	cmd.AddCommand(
-		newLibAddCmd(st, f),
-		newLibGetCmd(st),
-		newLibListCmd(st),
-		newLibSearchCmd(st),
-		newLibRmCmd(st, cfg),
-		newLibStatsCmd(st),
-		newLibPathCmd(st),
+		newLibAddCmd(d),
+		newLibGetCmd(d),
+		newLibListCmd(d),
+		newLibSearchCmd(d),
+		newLibRmCmd(d),
+		newLibStatsCmd(d),
+		newLibPathCmd(d),
 	)
 	return cmd
 }
@@ -66,33 +64,39 @@ type libAddResult struct {
 	Inserted bool   `json:"inserted"` // true=首次入库；false=更新已有文献（citeKey 不变）
 }
 
-func newLibAddCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
+func newLibAddCmd(d *deps) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add <metadata.json | --doi <DOI>>",
-		Short: "录入文献元数据（JSON 手动 / --doi 反查入库）",
+		Use:   "add <metadata.json | -> [--doi DOI | --pmid PMID | --arxiv ID]",
+		Short: "录入文献元数据（JSON 手动 / 按标识符反查入库）",
 		Long: `litkit lib add —— 录入文献
 
 两种模式（二选一）：
-  1. <metadata.json>  手动录入。读取元数据 JSON（单对象或对象数组），校验后入库并分配 citeKey。
-                       必填 title、abstract（AI 需手动撰写）。可选 authors/year/venue/doi/pmid/arxivId/url/docType 等。
-  2. --doi <DOI>       按 DOI 反查 CrossRef 并入库，返回 citeKey。
+  1. <metadata.json | ->  手动录入。读取元数据 JSON（单对象或对象数组），校验后入库并分配 citeKey。
+                         传 - 从 stdin 读取（免临时文件）。
+                         必填 title、abstract（AI 需手动撰写）。可选 authors/year/venue/doi/pmid/arxivId/url/docType 等。
+  2. --doi/--pmid/--arxiv  按标识符反查（CrossRef / PubMed efetch / arXiv）并入库，返回 citeKey。
 
---require-abstract 仅作用于 --doi 模式：摘要缺失时拒绝入库（默认 soft：告警并仍入库）。`,
+--require-abstract 仅作用于标识符反查模式：摘要缺失时拒绝入库（默认 soft：告警并仍入库）。
+DOI 反查摘要缺失时自动回落 OpenAlex 补齐（Crossref 常不上传摘要）。`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			st, f := d.Store(), d.fetcher
 			if st == nil {
 				return noStoreError()
 			}
-			doi, _ := cmd.Flags().GetString("doi")
 			hardAbstract, _ := cmd.Flags().GetBool("require-abstract")
-			if doi != "" {
+			idType, ident, idErr := identifierFromFlags(cmd)
+			if idErr != nil {
+				return idErr
+			}
+			if idType != "" {
 				if len(args) > 0 {
-					return &paramError{msg: "lib add --doi 不接受位置参数"}
+					return &paramError{msg: "lib add: --" + idType + " 不接受位置参数"}
 				}
-				return addPaperByDOI(context.Background(), st, f, doi, hardAbstract)
+				return addPaperByIdentifier(cmd.Context(), st, f, idType, ident, hardAbstract)
 			}
 			if len(args) != 1 {
-				return &paramError{msg: "lib add 需要 <metadata.json> 或 --doi <DOI>"}
+				return &paramError{msg: "lib add 需要 <metadata.json | -> 或 --doi/--pmid/--arxiv <标识符>"}
 			}
 			inputs, err := readManualPapers(args[0])
 			if err != nil {
@@ -117,8 +121,29 @@ func newLibAddCmd(st *storage.Store, f *core.MetadataFetcher) *cobra.Command {
 		},
 	}
 	cmd.Flags().String("doi", "", "按 DOI 反查 CrossRef 并入库（与 <metadata.json> 二选一）")
-	cmd.Flags().Bool("require-abstract", false, "摘要缺失时拒绝入库（仅 --doi 模式；默认 soft：告警并仍入库）")
+	cmd.Flags().String("pmid", "", "按 PMID 反查 PubMed 并入库（含摘要）")
+	cmd.Flags().String("arxiv", "", "按 arXiv ID 反查并入库")
+	cmd.Flags().Bool("require-abstract", false, "摘要缺失时拒绝入库（仅标识符反查；默认 soft：告警并仍入库）")
 	return cmd
+}
+
+// identifierFromFlags 从 --doi/--pmid/--arxiv 中取唯一指定的标识符。
+// 三者互斥：同时指定多个返回参数错误（退出码 2）。
+func identifierFromFlags(cmd *cobra.Command) (idType, ident string, err error) {
+	for _, f := range []struct{ flag, typ string }{
+		{"doi", "doi"}, {"pmid", "pmid"}, {"arxiv", "arxiv"},
+	} {
+		v, _ := cmd.Flags().GetString(f.flag)
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if idType != "" {
+			return "", "", &paramError{msg: "lib add: --doi/--pmid/--arxiv 只能指定一个"}
+		}
+		idType, ident = f.typ, v
+	}
+	return idType, ident, nil
 }
 
 // absGateResult 摘要门禁决策结果。
@@ -141,35 +166,36 @@ func abstractGate(hasAbstract, hardRequire bool) absGateResult {
 	return absGateOK
 }
 
-// addPaperByDOI 按 DOI 反查 CrossRef 并入库（FR-LIB）。
+// addPaperByIdentifier 按标识符反查并入库（doi|pmid|arxiv）。
 // 摘要策略：默认 soft（缺失告警仍入库）；--require-abstract 时缺失拒绝。
-func addPaperByDOI(ctx context.Context, st *storage.Store, f *core.MetadataFetcher, doi string, hardRequireAbstract bool) error {
+func addPaperByIdentifier(ctx context.Context, st *storage.Store, f *core.MetadataFetcher, idType, ident string, hardRequireAbstract bool) error {
 	if f == nil {
 		return errNoFetcher
 	}
-	p, err := f.Fetch(ctx, "doi", doi)
+	p, err := f.Fetch(ctx, idType, ident)
 	if err != nil {
 		return err
 	}
 	if p == nil {
-		return fmt.Errorf("lib add --doi: 未检索到 DOI %q", doi)
+		return fmt.Errorf("lib add --%s: 未检索到 %q", idType, ident)
 	}
 	switch abstractGate(strings.TrimSpace(p.Abstract) != "", hardRequireAbstract) {
 	case absGateReject:
-		return &paramError{msg: fmt.Sprintf("lib add --doi: 文献 %q 无摘要，--require-abstract 已拒绝入库", p.Title)}
+		return &paramError{msg: fmt.Sprintf("lib add --%s: 文献 %q 无摘要，--require-abstract 已拒绝入库", idType, p.Title)}
 	case absGateWarn:
 		fmt.Fprintf(os.Stderr, "litkit: 文献 %q 无摘要，仍已入库（摘要工作流不可用；可用 --require-abstract 硬拒）\n", p.Title)
 	}
 	citeKey, inserted, err := st.UpsertPaper(*p)
 	if err != nil {
-		return fmt.Errorf("lib add --doi: 入库失败: %w", err)
+		return fmt.Errorf("lib add --%s: 入库失败: %w", idType, err)
 	}
 	return printJSON(libAddResult{CiteKey: citeKey, Title: p.Title, Inserted: inserted})
 }
 
-// readManualPapers 读取元数据 JSON 文件（单对象或数组；容忍 UTF-8 BOM）。
+// readManualPapers 读取元数据 JSON（单对象或数组；容忍 UTF-8 BOM）。
+// path 为 "-" 时从 stdin 读取，避免 AI 为了录入一条文献反复创建/删除临时文件。
 func readManualPapers(path string) ([]core.ManualPaperInput, error) {
-	data, err := readFileTrimBOM(path)
+	data, err := readInputTrimBOM(path)
 	if err != nil {
 		return nil, fmt.Errorf("lib add: 读取 %s 失败: %w", path, err)
 	}
@@ -194,12 +220,13 @@ type libGetOutput struct {
 	Missing []string      `json:"missing"` // 库中未命中的 citeKey
 }
 
-func newLibGetCmd(st *storage.Store) *cobra.Command {
+func newLibGetCmd(d *deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <cite_key> [cite_key ...]",
 		Short: "按一个或多个 citeKey 查询库内文献条目（含摘要等完整信息）",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}
@@ -220,11 +247,22 @@ func validatePaging(limit, offset int) error {
 	return nil
 }
 
-func newLibListCmd(st *storage.Store) *cobra.Command {
+// validateSort 校验 lib list 排序参数（入口层统一参数校验，退出码 2）。
+func validateSort(sortBy string) error {
+	switch sortBy {
+	case "year", "id", "":
+		return nil
+	default:
+		return &paramError{msg: fmt.Sprintf("lib list: 未知排序 %q（可选 year|id）", sortBy)}
+	}
+}
+
+func newLibListCmd(d *deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "列出库内论文（默认按年份倒序，精简视图）",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}
@@ -234,6 +272,9 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 			offset, _ := cmd.Flags().GetInt("offset")
 			full, _ := cmd.Flags().GetBool("full")
 			if err := validatePaging(limit, offset); err != nil {
+				return err
+			}
+			if err := validateSort(sortBy); err != nil {
 				return err
 			}
 			papers, err := st.ListPapers(source, sortBy, limit, offset)
@@ -254,12 +295,13 @@ func newLibListCmd(st *storage.Store) *cobra.Command {
 	return cmd
 }
 
-func newLibSearchCmd(st *storage.Store) *cobra.Command {
+func newLibSearchCmd(d *deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <keyword>",
 		Short: "本地库关键词检索（标题/作者/摘要，FR-LIB-04；默认精简视图）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}
@@ -285,13 +327,14 @@ func newLibSearchCmd(st *storage.Store) *cobra.Command {
 	return cmd
 }
 
-func newLibRmCmd(st *storage.Store, cfg *config.Config) *cobra.Command {
+func newLibRmCmd(d *deps) *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <cite_key>",
 		Aliases: []string{"forget"},
 		Short:   "删除一篇论文及其引用标记，并清理已下载的 PDF",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			st, cfg := d.Store(), d.cfg
 			if st == nil {
 				return noStoreError()
 			}
@@ -306,8 +349,7 @@ func newLibRmCmd(st *storage.Store, cfg *config.Config) *cobra.Command {
 			}
 			pdfRemoved := false
 			if removed && paper != nil && cfg != nil {
-				if dir := cfg.DownloadDir(); dir != "" {
-					path := filepath.Join(dir, paper.CiteKey+".pdf")
+				if path := core.PDFPath(cfg.DownloadDir(), paper.CiteKey); path != "" {
 					if err := os.Remove(path); err == nil {
 						pdfRemoved = true
 					}
@@ -322,11 +364,12 @@ func newLibRmCmd(st *storage.Store, cfg *config.Config) *cobra.Command {
 	}
 }
 
-func newLibStatsCmd(st *storage.Store) *cobra.Command {
+func newLibStatsCmd(d *deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stats",
 		Short: "文献库统计",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}
@@ -339,11 +382,12 @@ func newLibStatsCmd(st *storage.Store) *cobra.Command {
 	}
 }
 
-func newLibPathCmd(st *storage.Store) *cobra.Command {
+func newLibPathCmd(d *deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "打印文献库文件路径",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			st := d.Store()
 			if st == nil {
 				return noStoreError()
 			}

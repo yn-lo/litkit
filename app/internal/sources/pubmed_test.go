@@ -95,7 +95,7 @@ func TestParsePubmedESearch_empty(t *testing.T) {
 }
 
 func TestParsePubmedEFetch(t *testing.T) {
-	papers, err := parsePubmedEFetch([]byte(pubmedEFetchSample))
+	papers, err := ParsePubmedEFetch([]byte(pubmedEFetchSample))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestParsePubmedEFetch_MixedContent(t *testing.T) {
     </MedlineCitation>
   </PubmedArticle>
 </PubmedArticleSet>`
-	papers, err := parsePubmedEFetch([]byte(xml))
+	papers, err := ParsePubmedEFetch([]byte(xml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestPubmedSource_Search_endToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5), "")
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -242,7 +242,7 @@ func TestPubmedSource_Search_yearServerSideFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5), "")
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -285,7 +285,7 @@ func TestPubmedSource_Search_sinceServerSideFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5), "")
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -307,7 +307,7 @@ func TestPubmedSource_Search_emptyIDListReturnsEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5))
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5), "")
 	src.ESearchURL = srv.URL + "/esearch.fcgi"
 	src.EFetchURL = srv.URL + "/efetch.fcgi"
 
@@ -345,7 +345,7 @@ func TestParsePubmedEFetch_bookArticle(t *testing.T) {
     </BookDocument>
   </PubmedBookArticle>
 </PubmedArticleSet>`
-	papers, err := parsePubmedEFetch([]byte(data))
+	papers, err := ParsePubmedEFetch([]byte(data))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -355,5 +355,44 @@ func TestParsePubmedEFetch_bookArticle(t *testing.T) {
 	p := papers[0]
 	if p.Title != "A Chapter Title" || p.Year != 2021 || p.Venue != "Handbook of Tests" || p.PMID != "12345678" {
 		t.Errorf("书籍条目字段解析不符：%+v", p)
+	}
+}
+
+func TestPubmedTerm_syntaxPassthrough(t *testing.T) {
+	// 已含原生布尔/字段语法的检索词不得再套字段标签（会改变布尔优先级）
+	if got := pubmedTerm("gut AND depression", ""); got != "gut AND depression" {
+		t.Errorf("含布尔语法的检索词应原样下发，got %q", got)
+	}
+}
+
+func TestPubmedSearch_requireAbstractPushedDown(t *testing.T) {
+	// 默认丢弃无摘要论文时，hasabstract 应下推到 esearch，避免先截断后过滤导致整源为空
+	var term string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "esearch") {
+			term = r.URL.Query().Get("term")
+			_, _ = w.Write([]byte(pubmedESearchSample))
+			return
+		}
+		_, _ = w.Write([]byte(pubmedEFetchSample))
+	}))
+	defer srv.Close()
+
+	src := NewPubmedSource(newHTTPClient(2000, 1, nil), ratelimit.New(100, 5), "")
+	src.ESearchURL = srv.URL + "/esearch.fcgi"
+	src.EFetchURL = srv.URL + "/efetch.fcgi"
+
+	if _, err := src.Search(context.Background(), "sepsis", SearchOptions{MaxResults: 5, RequireAbstract: true}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !strings.Contains(term, "hasabstract") {
+		t.Errorf("term 应含 hasabstract，got %q", term)
+	}
+
+	if _, err := src.Search(context.Background(), "sepsis", SearchOptions{MaxResults: 5}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if strings.Contains(term, "hasabstract") {
+		t.Errorf("未要求摘要时不应加 hasabstract，got %q", term)
 	}
 }

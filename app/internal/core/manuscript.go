@@ -358,9 +358,10 @@ const (
 	manuscriptFilePerm  = 0o600
 )
 
-// ManuscriptStamp 生成产物文件名时间戳（精确到秒，所有产物共用同一值）。
+// ManuscriptStamp 生成产物文件名时间戳（精确到毫秒，所有产物共用同一值）。
+// 毫秒级避免 AI 重试或并发调用在同一秒内静默覆盖上一批产物。
 func ManuscriptStamp(t time.Time) string {
-	return t.Format("20060102_150405")
+	return t.Format("20060102_150405_000")
 }
 
 // RefListHeading 文末文献节标题：英文模式用 References，其余用 参考文献。
@@ -420,7 +421,10 @@ func WritePreviewOutput(outDir, base, ts string, res *ManuscriptResult, heading 
 // 可执行文件固定为 pandoc，参数为本地文件路径；调用方负责 LookPath 预检与降级提示。
 func PandocToDocx(src, dst string) error {
 	// #nosec G204 -- 可执行文件固定为 pandoc，参数为本地文件路径，无 shell 注入面。
-	out, err := exec.Command("pandoc", src, "-o", dst).CombinedOutput()
+	cmd := exec.Command("pandoc", src, "-o", dst)
+	// 子进程不继承 LITKIT_* 配置（其中可能含 API key），避免密钥外泄给 pandoc。
+	cmd.Env = envWithoutLitkit(os.Environ())
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if len(out) > 0 {
 			return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
@@ -428,4 +432,17 @@ func PandocToDocx(src, dst string) error {
 		return err
 	}
 	return nil
+}
+
+// envWithoutLitkit 过滤掉 LITKIT_ 前缀的环境变量（子进程不应得知本工具凭据）。
+// Windows 环境变量名大小写不敏感，故判断前缀时统一转大写。
+func envWithoutLitkit(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(strings.ToUpper(kv), "LITKIT_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }

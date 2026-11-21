@@ -5,15 +5,27 @@
 
 ## 核心命令
 
-- `litkit search "<英文关键词>"` — 跨源检索并自动入库
+- `litkit search "<英文关键词>"` — 跨源检索并自动入库（默认精简视图：citeKey/title/firstAuthor/year/venue/docType/abstract）
   - `-s arxiv,pubmed` 源过滤；`-n 5` 每源条数；`--mode tiab|full` 检索等级
+  - `--no-store` 探索模式：只返回不入库（无 citeKey），检索词试跑用
+  - `--exclude TERM,...` 排除词；`--years 10` / `--since 2015` 放宽时间范围
   - 默认源由 `.env` 的 `LITKIT_SEARCH_SOURCES`（白名单）/ `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）收窄，`-s` 显式覆盖
+  - 多词检索按词项 AND 组合（不必写成短语）；已写引号/布尔语法的检索原样下发
 - `litkit sources` — 查看已注册源及各源 `enabled`（是否参与默认检索）
+- `litkit metadata <doi|pmid|arxiv|title> <标识符>` — 按标识符取回单篇元数据（未命中输出 `null`）
+- `litkit fetch <citeKey|doi>` — 按需取全文（Unpaywall OA → Sci-Hub 兜底，PDF 落盘 + 全文入库）
+  - 仅在需要核对具体实验细节/原文数据时使用；默认摘要工作流无需全文
+- `litkit lib get <citeKey> [citeKey ...]` — **按 citeKey 取完整元数据（含摘要）**，修订文稿时用这个，勿用 `lib list` 全量翻找
+- `litkit lib add <metadata.json | --> [--doi|--pmid|--arxiv <标识符>]` — 入库检索源覆盖不到的文献（中文库文献、图书、网页）
+  - 手动录入必填 `title` + `abstract`；`-` 表示从 stdin 读 JSON（免临时文件）
 - `litkit lib list / search / rm / stats / path` — 文献库管理
+- `litkit export [papers.json | -] [--keys K1,K2 | --all] [-f bibtex|ris|text]` — 导出引用
 - `litkit verify manuscript/*.md --type <type> --lang <lang>` — 验证文稿格式
-  - `--check citation,word_counts` 仅运行指定检查类别
-  - `--skip-check boast_words` 跳过指定检查类别
+  - `--check citation,word_counts` 仅运行指定检查类别；`--skip-check boast_words` 跳过
   - 可用类别：language, structure, statistics, punctuation, style, citation, heading, boast_words, word_counts, todo
+- `litkit fix manuscript/*.md` — **自动修正确定性格式违规**（全半角/直引号/P 值/标题标点/引用位置等）
+  - verify 报告里 `fixable: true` 的违规先跑 fix，再处理剩余；不要逐行手改标点
+- `litkit rules` — 列出全部规则 ID（`--rule`/`--skip` 与 spec `skip_rules` 用）
 
 ## 论文类型
 
@@ -23,9 +35,11 @@
 
 ## 检索策略
 
-- 检索词**必须英文**（各源英文语料为主）
-- 默认 tiab=题目+摘要+关键词；结果不足时用 `--mode full` 全文检索
+- **英文源用英文关键词**（arxiv/pubmed/openalex/semantic_scholar/biorxiv 均为英文语料）
+- **中文文献**用 `-s crossref,doaj` 配中文关键词（可命中中文学报/中文 OA 期刊的标题与摘要）
+- 默认 tiab=题目+摘要+关键词；结果不足时用 `--mode full` 全文检索（pubmed/arxiv/openalex 支持区分）
 - 默认最近 3 年；可 `--years 10` 或 `--since 2015` 放宽
+- `biorxiv`/`medrxiv` 无关键词检索端点（只能拉最近批次本地过滤），默认不参与检索，需 `-s` 显式指定
 
 ## 撰写注意事项
 
@@ -55,6 +69,8 @@
    - 顺序不可反：**先有论断再检索**，不是检索到什么就写什么
 3. **回填复核**：终稿前集中处理 `[待引证]`——补文献或弱化表述
 4. **验证**：`litkit verify --mode final`（`[待引证]` 必须清零，R5.2）；
+   报告里 `fixable: true` 的违规先跑 `litkit fix manuscript/*.md` 自动修正，再处理剩余；
+   `fixHint` 字段直接给出建议命令。
    引错用 `--report citation-refs` 检出（需配置 LLM，见 SKILL.md）
 
 逐处检索会自动入库、累积弱相关文献，用 `-n 3` 控制条数以免污染文献库。

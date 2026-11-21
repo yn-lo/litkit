@@ -27,7 +27,7 @@ func TestLibAddCmd_manualPaper(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s, nil)
+	cmd := newLibAddCmd(&deps{store: s})
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 执行失败: %v", err)
@@ -51,7 +51,7 @@ func TestLibAddCmd_rejectsMissingAbstract(t *testing.T) {
 	if err := os.WriteFile(p, []byte(`{"title":"无摘要"}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s, nil)
+	cmd := newLibAddCmd(&deps{store: s})
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err == nil {
 		t.Error("缺摘要应拒绝入库")
@@ -70,7 +70,7 @@ func TestLibAddCmd_arrayBatch(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s, nil)
+	cmd := newLibAddCmd(&deps{store: s})
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 批量执行失败: %v", err)
@@ -108,7 +108,7 @@ func TestLibAddCmd_upsertKeepsCiteKey(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s, nil)
+	cmd := newLibAddCmd(&deps{store: s})
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("首次入库失败: %v", err)
@@ -136,7 +136,7 @@ func TestLibAddCmd_BOMTolerant(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cmd := newLibAddCmd(s, nil)
+	cmd := newLibAddCmd(&deps{store: s})
 	cmd.SetArgs([]string{p})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("lib add 解析带 BOM 文件失败: %v", err)
@@ -144,5 +144,24 @@ func TestLibAddCmd_BOMTolerant(t *testing.T) {
 	paper, err := s.GetByDOI("10.1/bom")
 	if err != nil || paper == nil {
 		t.Fatalf("论文应入库，err=%v", err)
+	}
+}
+
+func TestIdentifierFromFlags_mutuallyExclusive(t *testing.T) {
+	// --doi/--pmid/--arxiv 只能指定一个：多指定必须报参数错误（退出码 2）
+	cmd := newLibAddCmd(&deps{store: newTestStoreCmd(t)})
+	cmd.SetArgs([]string{})
+	if err := cmd.Flags().Set("doi", "10.1000/x"); err != nil {
+		t.Fatalf("set doi: %v", err)
+	}
+	if err := cmd.Flags().Set("pmid", "12345"); err != nil {
+		t.Fatalf("set pmid: %v", err)
+	}
+	_, _, err := identifierFromFlags(cmd)
+	if err == nil {
+		t.Fatal("同时指定 --doi 与 --pmid 应报错")
+	}
+	if code := exitCodeOf(err); code != 2 {
+		t.Errorf("应为参数错误（退出码 2），got %d", code)
 	}
 }

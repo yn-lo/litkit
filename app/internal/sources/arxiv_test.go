@@ -117,8 +117,10 @@ func TestArxivSource_Search_viaHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 校验请求参数
 		q := r.URL.Query().Get("search_query")
-		if !strings.Contains(q, "graph neural") {
-			t.Errorf("请求应含 query，got %q", q)
+		for _, want := range []string{"graph", "neural"} {
+			if !strings.Contains(q, want) {
+				t.Errorf("请求应含词项 %q，got %q", want, q)
+			}
 		}
 		if r.URL.Query().Get("max_results") != "2" {
 			t.Errorf("max_results=2，got %q", r.URL.Query().Get("max_results"))
@@ -148,10 +150,19 @@ func TestArxivSource_Search_viaHTTP(t *testing.T) {
 }
 
 func TestArxivSearchQuery_tiabDefault(t *testing.T) {
-	// 默认/空 mode → tiab：仅题目+摘要
+	// 默认/空 mode → tiab：仅题目+摘要；多词拆词 AND（整串短语几乎必然 0 命中）
 	got := arxivQueryWithRange("fear of pain", "", 0, 0)
-	if got != `ti:"fear of pain" OR abs:"fear of pain"` {
-		t.Fatalf("tiab 检索式不符：%q", got)
+	want := `(ti:"fear" OR abs:"fear") AND (ti:"pain" OR abs:"pain")`
+	if got != want {
+		t.Fatalf("tiab 检索式不符：got %q want %q", got, want)
+	}
+	// 单词检索保持短语形式
+	if got := arxivQueryWithRange("CRISPR", "", 0, 0); got != `ti:"CRISPR" OR abs:"CRISPR"` {
+		t.Errorf("单词检索式不符：%q", got)
+	}
+	// 已含引号短语的检索词原样下发
+	if got := arxivQueryWithRange(`"fear of pain"`, "", 0, 0); got != `ti:"fear of pain" OR abs:"fear of pain"` {
+		t.Errorf("短语检索式不符：%q", got)
 	}
 }
 
@@ -165,7 +176,7 @@ func TestArxivSearchQuery_full(t *testing.T) {
 // TestArxivQueryWithRange 年份过滤必须下推 API：本地过滤发生在 max_results 截断之后。
 func TestArxivQueryWithRange(t *testing.T) {
 	got := arxivQueryWithRange("fear of pain", "", 2023, 0)
-	want := `(ti:"fear of pain" OR abs:"fear of pain") AND submittedDate:[202301010000 TO 202312312359]`
+	want := `((ti:"fear" OR abs:"fear") AND (ti:"pain" OR abs:"pain")) AND submittedDate:[202301010000 TO 202312312359]`
 	if got != want {
 		t.Errorf("year 检索式不符：got %q want %q", got, want)
 	}

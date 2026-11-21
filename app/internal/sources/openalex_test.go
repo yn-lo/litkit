@@ -164,15 +164,19 @@ func TestParseOpenAlexJSON_invalidJSON(t *testing.T) {
 
 func TestOpenAlexSource_Search_endToEnd(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("search") != "graph neural" {
-			t.Errorf("search 参数应传递，got %q", r.URL.Query().Get("search"))
+		// tiab（默认）走 filter 的 title_and_abstract.search 下推，不用全字段 search=
+		if got := r.URL.Query().Get("search"); got != "" {
+			t.Errorf("tiab 模式不应使用全字段 search，got %q", got)
+		}
+		if got := r.URL.Query().Get("filter"); !strings.Contains(got, "title_and_abstract.search:graph neural") {
+			t.Errorf("tiab 应下推 title_and_abstract.search，got %q", got)
 		}
 		if r.URL.Query().Get("per-page") != "5" {
 			t.Errorf("per-page=5，got %q", r.URL.Query().Get("per-page"))
 		}
-		// year 过滤
-		if r.URL.Query().Get("filter") != "publication_year:2023" {
-			t.Errorf("year 应转 filter，got %q", r.URL.Query().Get("filter"))
+		// year 过滤（与检索条件合并为逗号分隔 filter）
+		if got := r.URL.Query().Get("filter"); !strings.Contains(got, "publication_year:2023") {
+			t.Errorf("year 应转 filter，got %q", got)
 		}
 		_, _ = w.Write([]byte(openAlexSample))
 	}))

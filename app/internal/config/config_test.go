@@ -58,6 +58,43 @@ func writeEnv(t *testing.T, dir, content string) string {
 	return p
 }
 
+// .env 里非 LITKIT_ 前缀的键不得注入进程环境（其他工具的密钥不得外泄给子进程）。
+func TestLoadEnvFile_onlyExportsLitkitKeys(t *testing.T) {
+	const foreign = "OTHER_TOOL_TEST_SECRET"
+	t.Setenv(foreign, "")
+	_ = os.Unsetenv(foreign)
+	t.Setenv("LITKIT_LANG", "")
+	_ = os.Unsetenv("LITKIT_LANG")
+
+	p := writeEnv(t, t.TempDir(), "LITKIT_LANG=en\n"+foreign+"=secret\n")
+	fromFile, err := loadEnvFile(p)
+	if err != nil {
+		t.Fatalf("loadEnvFile: %v", err)
+	}
+	if !fromFile["LITKIT_LANG"] {
+		t.Error("LITKIT_ 前缀键应被加载")
+	}
+	if _, ok := os.LookupEnv(foreign); ok {
+		t.Errorf("%s 不应被注入进程环境", foreign)
+	}
+}
+
+// .env 键名大小写混写也应识别（Windows 环境变量名大小写不敏感）。
+func TestLoadEnvFile_caseInsensitivePrefix(t *testing.T) {
+	const key = "LitKit_Test_Case_Key"
+	t.Setenv(key, "")
+	_ = os.Unsetenv(key)
+
+	p := writeEnv(t, t.TempDir(), key+"=v\n")
+	fromFile, err := loadEnvFile(p)
+	if err != nil {
+		t.Fatalf("loadEnvFile: %v", err)
+	}
+	if !fromFile[key] {
+		t.Errorf("大小写混写的 litkit 键应被加载：%v", fromFile)
+	}
+}
+
 func TestDiscoverEnvFile_explicitEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	p := writeEnv(t, dir, "LITKIT_LANG=en\n")

@@ -32,17 +32,24 @@ func TestPaper_FirstAuthor_Empty(t *testing.T) {
 
 func TestPaper_Summarize(t *testing.T) {
 	p := Paper{
-		CiteKey:  "Kxq",
-		Title:    "Graph Nets",
-		Authors:  []Author{{Given: "Sergey", Family: "Oladyshkin"}},
-		Abstract: "abs",
-		Year:     2023,
-		DOI:      "10.1/x", // 不应出现在 summary
+		CiteKey:   "Kxq",
+		Title:     "Graph Nets",
+		Authors:   []Author{{Given: "Sergey", Family: "Oladyshkin"}},
+		Abstract:  "abs",
+		Year:      2023,
+		Venue:     "Nature Machine Intelligence",
+		DocType:   DocTypeArticle,
+		Citations: 42,
+		DOI:       "10.1/x", // 不应出现在 summary
 	}
 	s := p.Summarize()
 	if s.CiteKey != "Kxq" || s.Title != "Graph Nets" || s.FirstAuthor != "Oladyshkin Sergey" ||
 		s.Year != 2023 || s.Abstract != "abs" {
 		t.Fatalf("summary 字段不符：%+v", s)
+	}
+	// 选文信号：期刊/类型/被引数（区分顶刊与预印本、判断证据分量）
+	if s.Venue != "Nature Machine Intelligence" || s.DocType != DocTypeArticle || s.Citations != 42 {
+		t.Fatalf("summary 选文信号不符：%+v", s)
 	}
 }
 

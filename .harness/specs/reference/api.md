@@ -28,7 +28,7 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 |---|---|---|
 | `-s, --sources` | 逗号分隔源列表（`litkit sources` 查看） | 全部默认源（受 `.env` 白名单/排除配置影响） |
 | `-n, --max-results` | 每源最大条数 | 5 |
-| `--mode` | 检索等级：`tiab`（题目+摘要+关键词）\| `full`（全文） | `tiab`（`LITKIT_DEFAULT_SEARCH_MODE`） |
+| `--mode` | 检索等级：`tiab`（题目+摘要+关键词）\| `full`（全文）；支持区分等级的源：pubmed / arxiv / openalex | `tiab`（`LITKIT_DEFAULT_SEARCH_MODE`） |
 | `--years` | 最近 N 年；`0`=不限 | 3（`LITKIT_DEFAULT_RECENT_YEARS`） |
 | `--since` | 显式起始年份（含），优先于 `--years` | 无 |
 | `-y, --year` | 精确年份过滤（源支持时） | 无 |
@@ -38,22 +38,29 @@ litkit search <query> [-s sources] [-n N] [--mode tiab|full] [--years N|--since 
 | `--full` | 输出完整元数据 + 完整错误（默认精简视图，FR-IFACE-02） | 关 |
 
 > 远程与本地检索均仅 keyword 模式（FR-SEARCH-07）。
+> 多词检索按词项 AND 拆词组合（不把整串当短语）；已含引号/布尔语法的检索词原样下发。
 > `errors` 默认精简为失败类型（`timeout` / `rate limited` / `HTTP <码>`），完整错误需 `--full`（FR-IFACE-02）。
-> **检索词语言**：必须使用英文（各源英文语料为主，中文命中率极低，FR-SEARCH-11）。
+> **检索词语言**：英文源（arxiv/pubmed/openalex/semantic_scholar）用英文关键词；中文文献用 `-s crossref,doaj` 配中文关键词（FR-SRC-20/21）。
 > **检索等级**：默认 `tiab`（题目+摘要+关键词），全文检索 `--mode full`（FR-SEARCH-12）；**时间范围**默认最近 3 年（FR-SEARCH-13）。
 > **探索模式**：`--no-store` 只返回结果不入库，适合拿不准检索词时试跑，避免弱相关文献污染文献库。
+> **无摘要过滤下推**：默认丢弃无摘要论文时，pubmed（`hasabstract`）、openalex（`has_abstract:true`）、
+> crossref（`has-abstract:true`）在服务端先过滤，避免「先按 `-n` 截断再本地过滤」导致整源为空。
+> **默认源**：`biorxiv` / `medrxiv` 无关键词检索端点（只能拉最近批次本地过滤），默认不参与检索，需 `-s` 显式指定。
 
-输出：`{ total, sourceResults, errors, papers[] }`
+输出：`{ total, sourceResults, filteredNoAbstract?, errors, papers[] }`
+
+`sourceResults` 为过滤前每源命中数；`total` / `papers` 为去重且过滤后结果。
+`total=0` 且 `filteredNoAbstract>0` 表示命中但全无摘要被剔除，不是检索失败。
 
 ```
-litkit init [--force] [--type review|empirical|qualitative|book|proposal] [--lang zh|en] [--journal NAME]
+litkit init --type review|empirical|qualitative|book|proposal --lang zh|en [--force] [--journal NAME]
 ```
 
 | 参数 | 说明 | 默认 |
 |---|---|---|
 | `--force` | 覆盖已生成的模板文件（`.env` / `.litkit/verifier_models.json` **永不覆盖**，避免丢失密钥） | 关 |
-| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `qualitative`（质性研究，主题呈现）\| `book`（书籍，中文编校细则）\| `proposal`（标书） | empirical |
-| `--lang` | 撰写语言 | zh（`LITKIT_LANG`） |
+| `--type` | 论文类型：`review`（综述）\| `empirical`（四段式实证）\| `qualitative`（质性研究，主题呈现）\| `book`（书籍，中文编校细则）\| `proposal`（标书）；非终端模式必填 | 终端向导 |
+| `--lang` | 撰写语言；非终端模式必填 | 终端向导 |
 | `--journal` | 目标期刊名称（写入 spec 的 `journal` 字段；当前仅留档，暂无规则读取） | 空 |
 
 > 初始化当前工作目录：生成 `.env`（默认配置）、`.litkit/`（`AGENTS.md` + `verifier_models.json` + `litkit.db`）、
@@ -96,7 +103,8 @@ litkit sources
 输出：`{ sources: [{ name, searchable, hasAbstract, enabled }] }`
 
 `enabled` 表示该源是否参与未显式 `-s` 的默认检索，受 `.env` 的
-`LITKIT_SEARCH_SOURCES`（白名单）与 `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）控制。
+`LITKIT_SEARCH_SOURCES`（白名单）与 `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）控制；
+召回能力受限的源（`biorxiv` / `medrxiv`）默认不参与，需 `-s` 显式指定。
 
 ```
 litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o output_dir]
@@ -110,7 +118,7 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
 | `-o, --output-dir` | 输出目录（默认 WORK_DIR/outputs） | WORK_DIR/outputs |
 
-产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`；`--preview` 时额外产出 `{base}_{ts}.preview.md`。`ts` 为时间戳（精确到秒，统一格式 `20060102_150405`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
+产物：`{base}_{ts}.md`（正文 + 文末参考文献列表）+ `{base}_{ts}.bib` + `{base}_{ts}.ris` +（可选）`{base}_{ts}.docx`；`--preview` 时额外产出 `{base}_{ts}.preview.md`。`ts` 为时间戳（精确到毫秒，统一格式 `20060102_150405_000`），`base` 为输入文件名去除扩展名。所有产物共用一个时间戳。
 
 正式引用样式统一由 CSL 引擎渲染（内置样式经 `go:embed` 随二进制分发）。裸句柄支持单引 `[@AAA]` 和组合 `[@AAA,BBB]`；相邻引用作为一个引用簇交给 CSL 排序/合并（GB/T 如 `[1-3]`，APA 如 `(A, 2020; B, 2021)`）。带前缀的 `[@title:...]` 等标识符中的逗号保留原义。
 
@@ -130,8 +138,8 @@ litkit styles export <name> [-o dir]
 > 内置名保留：用户目录中的同名文件不会覆盖内置样式，只在 `styles list` 中标记冲突。
 
 ```
-litkit export <papers.json> [-f bibtex|ris|text] [-s style]   # 输入仅接受 [Paper...] 或 {"papers":[...]}
-litkit lib add <metadata.json>
+litkit export [papers.json | -] [--keys K1,K2 | --all] [-f bibtex|ris|text] [-s style]
+litkit lib add <metadata.json | -> [--doi <DOI> | --pmid <PMID> | --arxiv <ID>] [--require-abstract]
 litkit lib get <cite_key> [cite_key ...]
 litkit lib list [--source S] [--sort year|id] [--limit N] [--offset N] [--full]
 litkit lib search <keyword> [--limit N] [--offset N] [--full]
@@ -140,15 +148,25 @@ litkit lib stats | path
 ```
 
 ```
-litkit lib add <metadata.json | --doi <DOI>> [--require-abstract]
+litkit export [papers.json | -] [--keys K1,K2 | --all] [-f bibtex|ris|text] [-s style]
+```
+
+> 数据源三选一：`<papers.json>`（数组或 `{"papers":[...]}`；`-` 读 stdin）、
+> `--keys`（从本地库按 citeKey 取）、`--all`（导出全库）。
+> `text` 格式由 CSL 渲染（默认 APA）。输出：`{ format, count, content }`。
+
+```
+litkit lib add <metadata.json | -> [--doi <DOI> | --pmid <PMID> | --arxiv <ID>] [--require-abstract]
 ```
 
 > 录入文献元数据，两种模式二选一。
-> **模式 1：`<metadata.json>` 手动录入**（单对象或对象数组，AI 手动添加检索源覆盖不到的文献）。
+> **模式 1：`<metadata.json | ->` 手动录入**（单对象或对象数组；`-` 从 stdin 读，免临时文件；AI 手动添加检索源覆盖不到的文献）。
 > **必填**：`title`、`abstract`（摘要工作流：入库文献必须携带摘要）。
 > **可选**：`authors`（字符串数组 `["张三"]` 或对象数组 `[{"family","given"}]`）、
 > `year`、`venue`、`doi`、`pmid`、`arxivId`、`url`、`docType`、`volume`、`number`、`pages`、`publisher`、`city`、`institution`、`accessDate`（网页 [EB/OL] 访问日期）。
-> **模式 2：`--doi <DOI>` 反查入库**（CrossRef）。摘要缺失默认 soft（告警并仍入库，stderr 提示）；
+> **模式 2：`--doi` / `--pmid` / `--arxiv` 反查入库**（CrossRef / PubMed efetch / arXiv；三者互斥）。
+> DOI 反查摘要缺失时自动回落 OpenAlex 补齐（Crossref 常不上传摘要）；PMID 走 efetch（含摘要与卷期页）。
+> 摘要缺失默认 soft（告警并仍入库，stderr 提示）；
 > `--require-abstract` 时缺失则拒绝入库（退出码 2）。
 > 同一 DOI（无 DOI 按标题+第一作者签名或源 ID）重复录入时更新字段、保留原 citeKey（`inserted=false`）。
 > 缺失元数据保留已有值；无 DOI 条目补充 DOI 时沿用原 citeKey。题名或源 ID 更新时同步更新有效去重键。不同 DOI 不合并，标题回退匹配多条记录时拒绝更新，需提供 DOI 明确身份。
@@ -243,16 +261,22 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
     {
       "path": "chapter1.md",
       "violations": [
-        { "ruleId": "R2.1", "line": 42, "problem": "...", "suggestion": "..." }
+        { "ruleId": "R3.1", "line": 42, "problem": "...", "suggestion": "...", "fixable": true },
+        { "ruleId": "R2.1", "line": 55, "problem": "...", "suggestion": "..." }
       ]
     }
   ],
   "passed": false,
   "exitHint": "fix_and_rerun",
+  "fixHint": "1 处可自动修正，先运行：litkit fix chapter1.md",
   "manualChecklist": ["数据一致性：核对正文数据与表格/图片是否一致", "术语缩写：核对缩写首次出现是否给出全称"],
   "recency": { "total": 24, "within5": 15, "over5": 9, "over10": 3, "recentRatio": 0.625 }
 }
 ```
+
+`fixable`（violation 级）：该违规可由 `litkit fix` 自动修正（字符级确定性替换）。
+`fixHint`（报告级）：仅存在可自动修正的违规时输出，直接给出下一步命令——
+AI 应先跑 `litkit fix` 再重跑 verify，不要逐行手改标点。
 
 `recency`（R5.8 引用时效两档统计，S 类提示，`total>0` 且已解析出年份时才输出）：
 - `total`：已解析出年份的被引文献总数（按 citeKey 去重）
@@ -277,6 +301,7 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | 变量 | 必需 | 作用 |
 |---|---|---|
 | LITKIT_SEMANTIC_SCHOLAR_API_KEY | 可选 | Semantic Scholar 速率提升 |
+| LITKIT_PUBMED_API_KEY | 可选 | PubMed 速率提升（无 key 3 req/s，有 key 10 req/s） |
 | LITKIT_IEEE_API_KEY | 二期激活 IEEE 必需 | 启用 IEEE 源 |
 | LITKIT_ACM_API_KEY | 二期激活 ACM 必需 | 启用 ACM 源 |
 | LITKIT_WORK_DIR | 必填 | 统一工作目录（库/输出默认在此）。**未设置时 init/search/lib 拒绝执行（errNoWorkDir，FR-LIB-03）**。测试固化目录：`e:\Codes\litkit\workspace` |

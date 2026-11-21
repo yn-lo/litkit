@@ -591,6 +591,16 @@ func (s *Store) ListPapers(source, orderBy string, limit, offset int) ([]model.P
 	return scanPapers(rows)
 }
 
+// AllPapers 返回库内全部论文（年份倒序，同年按入库倒序），供 `export --all` 使用。
+func (s *Store) AllPapers() ([]model.Paper, error) {
+	rows, err := s.db.Query("SELECT " + paperCols + " FROM papers ORDER BY year DESC, id DESC")
+	if err != nil {
+		return nil, fmt.Errorf("storage all papers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanPapers(rows)
+}
+
 // SearchLocal 本地 keyword 检索（FR-LIB-04）：标题/摘要/作者姓名 LIKE 匹配。
 // LIKE 通配符会被转义（%/_ 按字面量），作者按 JSON 字段值匹配而非原始 JSON 文本。
 func (s *Store) SearchLocal(keyword string, limit, offset int) ([]model.Paper, error) {

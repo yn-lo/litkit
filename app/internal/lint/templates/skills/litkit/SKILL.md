@@ -36,21 +36,39 @@ description: 使用 litkit 工具包完成学术写作全流程：跨源检索�
 
 ```bash
 litkit search "<英文关键词>" -s arxiv,pubmed -n 5
+litkit search "<中文关键词>" -s crossref,doaj     # 中文文献
 ```
 
-- 检索词**必须英文**
-- 默认 tiab（题目+摘要+关键词）；不足时 `--mode full`
+- 英文源用英文关键词；中文文献用 `-s crossref,doaj` 配中文关键词
+- 多词检索按词项 AND 组合（不必写成短语）；已含引号/布尔语法时原样下发
+- 默认 tiab（题目+摘要+关键词）；不足时 `--mode full`（pubmed/arxiv/openalex 支持区分）
 - 默认最近 3 年；可 `--years 10` 或 `--since 2015`
 - 默认源由 `.env` 的 `LITKIT_SEARCH_SOURCES`（白名单）/ `LITKIT_SEARCH_EXCLUDE_SOURCES`（排除）收窄，`-s` 显式覆盖；`litkit sources` 可查看各源 `enabled`
+- `--no-store` 探索模式：检索词拿不准时先试跑，确认相关再去掉本选项正式入库
 
 ### 文献库管理
 
 ```bash
-litkit lib list              # 列出全部文献
+litkit lib get Kxq Abc       # 按 citeKey 取完整元数据（含摘要）——修订文稿时用这个
+litkit lib list              # 列出文献（精简视图）
 litkit lib search "<关键词>"  # 按标题/作者搜索
+litkit lib add --doi 10.1000/xyz        # 按标识符反查入库（也支持 --pmid/--arxiv）
+litkit lib add - <<'EOF'                # 手动录入（- 读 stdin，免临时文件）
+{"title":"...","abstract":"...","authors":["张三"],"year":2023}
+EOF
 litkit lib stats             # 库统计
-litkit lib rm <citeKey>      # 删除
+litkit lib rm Kxq            # 删除
 ```
+
+### 全文获取（按需）
+
+```bash
+litkit fetch Kxq             # 或 litkit fetch 10.1000/xyz
+```
+
+- 默认基于摘要写作；仅当需要核对具体实验细节/原文数据时取全文
+- 流程：Unpaywall OA → Sci-Hub 兜底 → PDF 落盘 `WORK_DIR/downloads/` → 全文入库缓存
+- 需 `LITKIT_UNPAYWALL_EMAIL`；库中已缓存时零网络返回
 
 ### 论文撰写
 
@@ -77,7 +95,7 @@ litkit styles export apa                               # 导出 apa-custom.csl �
 - `--preview` 额外产出草稿/调试视图（自描述标记，不经过 CSL），用于人工核查引用指向
 - 改样式不要改 Go 代码：放 `.csl` 到 `WORK_DIR/styles/` 即可
 
-### 验证文稿
+### 验证与自动修正
 
 ```bash
 # 全量验证
@@ -87,7 +105,14 @@ litkit verify manuscript/*.md --type <type> --lang <lang>
 litkit verify manuscript/*.md --type <type> --lang <lang> --check citation
 litkit verify manuscript/*.md --type <type> --lang <lang> --check citation,word_counts
 litkit verify manuscript/*.md --type <type> --lang <lang> --skip-check boast_words
+
+# 先自动修正确定性格式违规，再重跑 verify
+litkit fix manuscript/*.md
 ```
+
+**自动修正**：report 中 `fixable: true` 的违规（全半角 R3.1、直引号 R3.2、数字范围 R3.3、
+P 值 R2.1、标题标点 R1.2/R7.1、引用位置 R6.1 等）可由 `litkit fix` 一次改完；
+顶层 `fixHint` 字段直接给出建议命令。不要逐行手改标点。
 
 **检查类别**：`language` `structure` `heading` `statistics` `punctuation` `style` `citation` `boast_words` `word_counts` `todo`
 

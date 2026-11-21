@@ -33,13 +33,14 @@ func newSourcesCmd(reg *sources.Registry, cfg *config.Config) *cobra.Command {
 输出：{ sources: [{ name, searchable, hasAbstract, enabled }] }
 
 enabled 表示该源是否参与未显式 -s 的默认检索，受 .env 的
-LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES 控制。
+LITKIT_SEARCH_SOURCES / LITKIT_SEARCH_EXCLUDE_SOURCES 控制；
+召回能力受限的源（biorxiv/medrxiv 无关键词检索端点）默认不参与，需 -s 显式指定。
 
 平台能力矩阵详见 .harness/specs/reference/platform-matrix.md。`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			list := reg.List()
 			enabled := make(map[string]bool, len(list))
-			defaults, warns := resolveSearchSources("", cfg, reg.Names())
+			defaults, warns := resolveSearchSources("", cfg, reg.Names(), reg.DefaultNames())
 			for _, w := range warns {
 				fmt.Fprintf(os.Stderr, "litkit: %s\n", w)
 			}

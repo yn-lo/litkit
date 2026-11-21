@@ -5,20 +5,16 @@
 package main
 
 import (
-	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
-
-	"litkit/internal/core"
-	"litkit/internal/storage"
 )
 
 // errNoFulltextFetcher 全文获取器不可用（无工作目录时）。
 var errNoFulltextFetcher = errors.New("全文获取需要工作目录（LITKIT_WORK_DIR），且论文须先入库")
 
 // newFetchCmd 构造 `litkit fetch <cite_key|doi>`。
-func newFetchCmd(store *storage.Store, f *core.FulltextFetcher) *cobra.Command {
+func newFetchCmd(d *deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "fetch <cite_key|doi>",
 		Short: "取回论文全文（Unpaywall OA → Sci-Hub 兜底，PDF 落盘 + 全文入库）",
@@ -31,11 +27,12 @@ Sci-Hub 兜底（默认开启，LITKIT_SCI_HUB_URL 可配，失败静默）→ �
 输出 JSON：{ citeKey, pdfPath, fulltext, via }；via = cache | unpaywall | scihub。
 库中已有全文缓存时直接返回（零网络）。`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			if store == nil || f == nil {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f := d.Fulltext()
+			if f == nil {
 				return errNoFulltextFetcher
 			}
-			res, err := f.Fetch(context.Background(), args[0])
+			res, err := f.Fetch(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}

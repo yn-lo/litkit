@@ -163,6 +163,28 @@ func TestSearch_DedupByTitleWhenNoDOI(t *testing.T) {
 	}
 }
 
+func TestSearch_DedupByTitleRequiresCompatibleAuthors(t *testing.T) {
+	// 同名但第一作者不同（常见「Editorial」类标题）不得合并，否则会互相污染摘要/作者。
+	srcA := &fakeSource{name: "alpha", hasAbstract: true, papers: []model.Paper{{
+		Title:    "Editorial",
+		Abstract: "abs-a",
+		Source:   "alpha",
+		Authors:  []model.Author{{Family: "Smith", Given: "J"}},
+	}}}
+	srcB := &fakeSource{name: "beta", hasAbstract: true, papers: []model.Paper{{
+		Title:    "Editorial",
+		Abstract: "abs-b",
+		Source:   "beta",
+		Authors:  []model.Author{{Family: "Lee", Given: "K"}},
+	}}}
+	s := NewSearcher(newFakeRegistry(srcA, srcB), nil, 0, 0)
+
+	res, _ := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
+	if len(res.Papers) != 2 {
+		t.Fatalf("第一作者不同不应合并，got %d 条", len(res.Papers))
+	}
+}
+
 // ---- 无摘要过滤 ----
 
 func TestSearch_NoAbstractFilteredByDefault(t *testing.T) {
@@ -560,3 +582,84 @@ func TestMergePapers_PrefersNonEmptyFields(t *testing.T) {
 		t.Fatalf("应取非空 Year，got %d", merged.Year)
 	}
 }
+
+// TestSearch_RequireAbstractPropagated 默认丢弃无摘要论文时，源应收到 RequireAbstract=true
+// （支持的源据此把过滤下推到服务端，避免「先截断后过滤」整流为空）。
+func TestSearch_RequireAbstractPropagated(t *testing.T) {
+	var got bool
+	src := &capturingSource{fakeSource: fakeSource{name: "fake", hasAbstract: true}, onOpts: func(o sources.SearchOptions) { got = o.RequireAbstract }}
+	s := NewSearcher(newFakeRegistry(src), nil, 5, 0)
+	if _, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !got {
+		t.Error("默认应下发 RequireAbstract=true")
+	}
+	got = false
+	if _, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5, KeepNoAbstract: true}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if got {
+		t.Error("--keep-no-abstract 时不应下发 RequireAbstract")
+	}
+}
+
+// TestSearch_FilteredNoAbstractCounted 无摘要过滤的条数必须可见（否则 total=0 无法归因）。
+func TestSearch_FilteredNoAbstractCounted(t *testing.T) {
+	src := &fakeSource{name: "fake", hasAbstract: true, papers: []model.Paper{
+		paperWithAbstract("with", "10.1/a", "abs"),
+		paperNoAbstract("without", "10.1/b"),
+	}}
+	s := NewSearcher(newFakeRegistry(src), nil, 5, 0)
+	res, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if res.FilteredNoAbstract != 1 {
+		t.Errorf("FilteredNoAbstract 应为 1，got %d", res.FilteredNoAbstract)
+	}
+	if res.Total != 1 {
+		t.Errorf("Total 应为 1，got %d", res.Total)
+	}
+}
+
+// TestSearch_DefaultDisabledSourceSkipped 默认不参与的源（DefaultEnabled=false）不应被扇出。
+func TestSearch_DefaultDisabledSourceSkipped(t *testing.T) {
+	on := &fakeSource{name: "on", hasAbstract: true}
+	off := &defaultDisabledSource{fakeSource: fakeSource{name: "off", hasAbstract: true}}
+	s := NewSearcher(newFakeRegistry(on, off), nil, 5, 0)
+	if _, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if off.Calls() != 0 {
+		t.Error("默认不参与的源不应被调用")
+	}
+	if on.Calls() != 1 {
+		t.Errorf("默认参与的源应被调用一次，got %d", on.Calls())
+	}
+	// 显式 -s 仍可使用
+	if _, err := s.Search(context.Background(), "q", SearchOptions{MaxResults: 5, Sources: []string{"off"}}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if off.Calls() != 1 {
+		t.Errorf("显式指定后应被调用，got %d", off.Calls())
+	}
+}
+
+// capturingSource 可在 Search 时捕获下游选项的 fake source。
+type capturingSource struct {
+	fakeSource
+	onOpts func(sources.SearchOptions)
+}
+
+func (c *capturingSource) Search(ctx context.Context, query string, opts sources.SearchOptions) ([]model.Paper, error) {
+	if c.onOpts != nil {
+		c.onOpts(opts)
+	}
+	return c.fakeSource.Search(ctx, query, opts)
+}
+
+// defaultDisabledSource 模拟召回能力受限的源（DefaultEnabled=false）。
+type defaultDisabledSource struct{ fakeSource }
+
+func (d *defaultDisabledSource) DefaultEnabled() bool { return false }

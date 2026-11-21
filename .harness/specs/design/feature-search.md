@@ -58,6 +58,9 @@ SQLite 文献库：upsert/去重/引用标记；schema 以 `.sql` 文件管理�
 - 单源失败归入 errors，不中断整体（FR-SEARCH-01）
 - 去重优先级：内存层 DOI（非空）> Title（归一化）> ID；入库层 dedup_key 为 DOI > title+第一作者签名 > paper_id（FR-CACHE-02）
 - 每源限速器取合规限速保守值（arXiv ≥3s/次）
+- 多词检索按词项 AND 拆词（不把整串当短语）；已含引号/布尔语法原样下发（`searchTerms` / `hasQuerySyntax`）
+- 无摘要过滤下推到支持的服务端（PubMed `hasabstract` / OpenAlex `has_abstract:true` / Crossref `has-abstract:true`），避免先截断后过滤整流为空；被剔除条数经 `filteredNoAbstract` 输出
+- `biorxiv` / `medrxiv` 无关键词检索端点，`DefaultEnabled()=false`：默认不参与检索（避免假 0 命中与退出码 3 噪声），未命中返回空而非 error
 - 检索结果必须含摘要：无摘要论文默认过滤（`--keep-no-abstract` 显式保留）（FR-SEARCH-03）
 - 默认自动入库；`--no-store` 显式关闭入库（探索模式，返回的 citeKey 为空）
 - 新增源不修改核心层（FR-SRC-18）

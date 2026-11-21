@@ -23,6 +23,10 @@ type SearchOptions struct {
 	Year       int    // 精确年份过滤；0 表示不过滤
 	Since      int    // 起始年份（含）范围过滤；0 表示不过滤。与 Year 互斥，Year 优先
 	Mode       string // 检索等级："" 或 "tiab"（题目+摘要+关键词，源支持时）；"full"（全文）
+	// RequireAbstract 要求源端只返回带摘要的记录。调用方默认丢弃无摘要论文时开启，
+	// 支持的源把该条件下推到服务端，避免「先按 -n 截断、后本地过滤」导致整源召回为空
+	// （FR-SEARCH-03）。不支持该条件的源忽略本字段。
+	RequireAbstract bool
 }
 
 // 文档类型常量（FR-REF-03 引用渲染按类型区分；goconst 避免字面量重复）。
@@ -50,6 +54,23 @@ const (
 	mailUserAgent = "litkit/0.1 (mailto:litkit-tool@users.noreply.github.com)"
 )
 
+// DefaultSource 可选接口：源是否参与未显式 -s 的默认检索。
+//
+// 未实现该接口视为 true。召回能力天然受限的源（bioRxiv/medRxiv 无关键词检索端点，
+// 只能拉最近批次再本地过滤）返回 false：它们仍需 -s 显式指定才参与，避免默认检索
+// 因「召回不足」产生假 0 命中与噪声。
+type DefaultSource interface {
+	DefaultEnabled() bool
+}
+
+// IsDefaultEnabled 报告源是否参与默认检索（未实现 DefaultSource 视为 true）。
+func IsDefaultEnabled(s PaperSource) bool {
+	if d, ok := s.(DefaultSource); ok {
+		return d.DefaultEnabled()
+	}
+	return true
+}
+
 // PaperSource 学术源统一抽象（FR-SRC-01）。
 //
 // 新增源只需实现本接口并在 registry 注册（FR-SRC-18）。
@@ -70,6 +91,8 @@ type BaseSource struct {
 	name    string
 	http    *httpclient.Client
 	limiter *ratelimit.Limiter
+	// defaultEnabled 是否参与未显式 -s 的默认检索（默认 true；见 DefaultSource）。
+	defaultEnabled bool
 }
 
 // NewBaseSource 创建 BaseSource。
@@ -77,11 +100,14 @@ type BaseSource struct {
 //   - httpClient：HTTP 客户端（含超时与 429/503 重试）
 //   - limiter：每源令牌桶限速器（NFR-PERF-04、NFR-REL-04）；nil 表示不限速
 func NewBaseSource(name string, httpClient *httpclient.Client, limiter *ratelimit.Limiter) BaseSource {
-	return BaseSource{name: name, http: httpClient, limiter: limiter}
+	return BaseSource{name: name, http: httpClient, limiter: limiter, defaultEnabled: true}
 }
 
 // Name 返回源标识。
 func (b BaseSource) Name() string { return b.name }
+
+// DefaultEnabled 报告该源是否参与默认检索（BaseSource 默认 true）。
+func (b BaseSource) DefaultEnabled() bool { return b.defaultEnabled }
 
 // HasAbstract 默认 true（检索源必须提供摘要，FR-SRC-19）。
 // 个别源（如反查源 CrossRef）可覆盖返回 false。
@@ -144,21 +170,75 @@ func (b BaseSource) search(ctx context.Context, name, ua string, build func() (s
 	return papers, nil
 }
 
-// splitAuthorName 将单个姓名串按首空格切分为 given/family。
+// splitAuthorName 将单个姓名串拆为 given/family。
 //
 // 供各源适配器复用，消除逐源复制的拆分逻辑（此前 arXiv/OpenAlex/bioRxiv/S2 四处雷同）。
-// 中英文混排：首空格前为 given，后为 family；纯中文名（无空格）整体入 Family；
-// 空串返回空 Author（调用方自行决定是否跳过）。
+// 接受两种常见形式：
+//   - "Given [Middle] Family"（arXiv/OpenAlex/S2/DOAJ）：按**最后一个**空白切分，
+//     保证 "John A. Smith" → Given="John A." / Family="Smith"（按首空格会把中间名当前姓）；
+//   - "Family, Given"（逗号反转）：逗号前为 Family。
+//
+// 纯中文名（无空白、无逗号）整体入 Family；空串返回空 Author（调用方自行决定是否跳过）。
 func splitAuthorName(name string) model.Author {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return model.Author{}
 	}
-	if i := strings.IndexAny(name, " \t"); i > 0 {
+	if i := strings.Index(name, ","); i > 0 {
+		return model.Author{
+			Family: strings.TrimSpace(name[:i]),
+			Given:  strings.TrimSpace(name[i+1:]),
+		}
+	}
+	if i := strings.LastIndexAny(name, " \t"); i > 0 {
 		return model.Author{
 			Given:  strings.TrimSpace(name[:i]),
 			Family: strings.TrimSpace(name[i+1:]),
 		}
 	}
 	return model.Author{Family: name}
+}
+
+// termStopwords 拆词时剔除的英文虚词：不剔除则多词 AND 检索召回骤降
+// （如 "fear of pain" 里的 of 会被当成必需关键词）。
+var termStopwords = map[string]bool{
+	"a": true, "an": true, "the": true, "of": true, "in": true, "on": true,
+	"for": true, "to": true, "with": true, "by": true, "from": true, "as": true,
+	"at": true, "and": true, "or": true, "is": true, "are": true,
+}
+
+// hasQuerySyntax 判断检索词是否已含上游高级语法（引号短语 / 布尔操作符 / 字段标签）。
+// 含语法时各源不拆词，原样交给上游解析，避免破坏用户显式表达的语义。
+func hasQuerySyntax(query string) bool {
+	if strings.ContainsAny(query, `"[]`) {
+		return true
+	}
+	up := " " + strings.ToUpper(query) + " "
+	for _, op := range []string{" AND ", " OR ", " NOT ", " ANDNOT "} {
+		if strings.Contains(up, op) {
+			return true
+		}
+	}
+	return false
+}
+
+// searchTerms 将自由文本检索词拆为词项：去引号/括号、按空白切分、剔除英文虚词。
+//
+// 各源的原生关键词检索多为合并匹配，把整串多词当短语（或短语化加引号）几乎必然 0 命中；
+// 拆词后由各源以 AND 语义组合。拆空时回退原文，避免把检索词清空。
+func searchTerms(query string) []string {
+	clean := strings.NewReplacer(`"`, " ", `(`, " ", `)`, " ", `[`, " ", `]`, " ").Replace(query)
+	out := make([]string, 0, len(query)/4+1)
+	for _, f := range strings.Fields(clean) {
+		if termStopwords[strings.ToLower(f)] {
+			continue
+		}
+		out = append(out, f)
+	}
+	if len(out) == 0 {
+		if q := strings.TrimSpace(query); q != "" {
+			return []string{q}
+		}
+	}
+	return out
 }

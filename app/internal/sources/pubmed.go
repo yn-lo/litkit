@@ -29,12 +29,13 @@ type PubmedSource struct {
 	APIKey     string // 可选；有 key 提速（PRD 7.3）
 }
 
-// NewPubmedSource 创建 PubMed 适配器。
-func NewPubmedSource(httpClient *httpclient.Client, limiter *ratelimit.Limiter) *PubmedSource {
+// NewPubmedSource 创建 PubMed 适配器（apiKey 为空表示匿名，3 req/s）。
+func NewPubmedSource(httpClient *httpclient.Client, limiter *ratelimit.Limiter, apiKey string) *PubmedSource {
 	return &PubmedSource{
 		BaseSource: NewBaseSource("pubmed", httpClient, limiter),
 		ESearchURL: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
 		EFetchURL:  "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+		APIKey:     apiKey,
 	}
 }
 
@@ -105,6 +106,8 @@ type pubmedArticle struct {
 			Journal struct {
 				Title string `xml:"Title"`
 				Issue struct {
+					Volume  string `xml:"Volume"`
+					Issue   string `xml:"Issue"`
 					PubDate struct {
 						Year        string `xml:"Year"`
 						Month       string `xml:"Month"`
@@ -113,6 +116,9 @@ type pubmedArticle struct {
 					} `xml:"PubDate"`
 				} `xml:"JournalIssue"`
 			} `xml:"Journal"`
+			Pagination struct {
+				MedlinePgn string `xml:"MedlinePgn"`
+			} `xml:"Pagination"`
 		} `xml:"Article"`
 	} `xml:"MedlineCitation"`
 	PubmedData struct {
@@ -165,12 +171,18 @@ func stripInlineXML(s string) string {
 //
 //   - tiab（默认）：[Title/Abstract] + [Keyword]，题目+摘要+关键词三字段
 //   - full：裸词（NCBI 全字段，含全文/MeSH 等）
+//
+// 已含 PubMed 原生语法（引号 / 布尔符 / 字段标签）的检索词原样下发：
+// 再套字段标签会改变布尔优先级，把用户的检索式变成另一个查询。
 func pubmedTerm(query, mode string) string {
-	if mode == modeFull {
+	if mode == modeFull || hasQuerySyntax(query) {
 		return query
 	}
 	return "(" + query + `[Title/Abstract]) OR (` + query + "[Keyword])"
 }
+
+// pubmedAbstractFilter PubMed 原生只含带摘要记录的条件（FR-SEARCH-03 服务端下推）。
+const pubmedAbstractFilter = " AND hasabstract"
 
 // Search 执行 PubMed 两阶段检索：esearch 取 PMID → efetch 取详情。
 func (p *PubmedSource) Search(ctx context.Context, query string, opts SearchOptions) ([]model.Paper, error) {
@@ -185,7 +197,7 @@ func (p *PubmedSource) Search(ctx context.Context, query string, opts SearchOpti
 	if err != nil {
 		return nil, fmt.Errorf("pubmed search: %w", err)
 	}
-	papers, err := parsePubmedEFetch(data)
+	papers, err := ParsePubmedEFetch(data)
 	if err != nil {
 		return nil, fmt.Errorf("pubmed search: %w", err)
 	}
@@ -195,7 +207,11 @@ func (p *PubmedSource) Search(ctx context.Context, query string, opts SearchOpti
 func (p *PubmedSource) esearch(ctx context.Context, query string, opts SearchOptions) ([]string, error) {
 	q := url.Values{}
 	q.Set("db", "pubmed")
-	q.Set("term", pubmedTerm(query, opts.Mode))
+	term := pubmedTerm(query, opts.Mode)
+	if opts.RequireAbstract {
+		term += pubmedAbstractFilter
+	}
+	q.Set("term", term)
 	q.Set("retmax", strconv.Itoa(ensureMax(opts.MaxResults, defaultMaxResults)))
 	q.Set("retmode", "xml")
 	if opts.Year != 0 {
@@ -268,8 +284,10 @@ func parsePubmedESearch(data []byte) ([]string, error) {
 	return out, nil
 }
 
-// parsePubmedEFetch 解析 efetch 响应（PubmedArticleSet）为 []Paper。
-func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
+// ParsePubmedEFetch 解析 efetch 响应（PubmedArticleSet）为 []Paper。
+//
+// 导出供 core 的 PMID 反查复用：esummary 响应不含摘要，efetch 才带完整摘要与卷期页。
+func ParsePubmedEFetch(data []byte) ([]model.Paper, error) {
 	var set pubmedArticleSet
 	if err := xml.Unmarshal(data, &set); err != nil {
 		return nil, fmt.Errorf("parse efetch: %w", err)
@@ -287,6 +305,9 @@ func parsePubmedEFetch(data []byte) ([]model.Paper, error) {
 			Authors:  pubmedAuthorsToModel(ma.Article.Authors),
 			Source:   "pubmed",
 			DocType:  DocTypeArticle,
+			Volume:   strings.TrimSpace(ma.Article.Journal.Issue.Volume),
+			Number:   strings.TrimSpace(ma.Article.Journal.Issue.Issue),
+			Pages:    strings.TrimSpace(ma.Article.Pagination.MedlinePgn),
 		}
 		if p.Title == "" {
 			continue

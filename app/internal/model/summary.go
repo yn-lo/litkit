@@ -5,17 +5,22 @@ import "strings"
 // PaperSummary 是面向 AI agent 的精简论文视图（FR-IFACE-04）。
 //
 // 设计动机：litkit 的输出对象是 AI agent，完整 Paper 字段（DOI/PMID/ArXivID/
-// URL/Venue/DocType/Source/全部作者）对相关性判断与引用占位无用，反而是上下文噪声。
+// URL/全部作者）对相关性判断与引用占位无用，反而是上下文噪声。
 // citeKey 是 AI 与本地文献库之间唯一的握手协议——AI 写 [@Kxq] 占位符，
 // manuscript 流水线（M3）按 citeKey 从库中取完整 Paper 做引用格式化。
 //
-// 字段选择依据：仅保留"判断是否引用 + 写占位符"所需的最小集。
+// 字段选择依据：仅保留「判断是否引用 + 写占位符」所需的最小集。
+// venue/docType/citations 三个短字段是选文信号（顶刊 vs 预印本、被引量），
+// 每个仅占几个 token，却比读完整摘要更能判断证据分量。
 type PaperSummary struct {
-	CiteKey     string `json:"citeKey"`            // 引用句柄（写 [@Kxq]）
-	Title       string `json:"title"`              // 相关性判断主信号
-	FirstAuthor string `json:"firstAuthor"`        // "Family Given" 格式；空串表示未知
-	Year        int    `json:"year"`               // 相关性 + 默认排序依据；0 表示未知
-	Abstract    string `json:"abstract,omitempty"` // 相关性判断次信号
+	CiteKey     string `json:"citeKey"`             // 引用句柄（写 [@Kxq]）
+	Title       string `json:"title"`               // 相关性判断主信号
+	FirstAuthor string `json:"firstAuthor"`         // "Family Given" 格式；空串表示未知
+	Year        int    `json:"year"`                // 相关性 + 默认排序依据；0 表示未知
+	Venue       string `json:"venue,omitempty"`     // 期刊/会议名（区分顶刊与机构仓储）
+	DocType     string `json:"docType,omitempty"`   // article/preprint/...（区分同行评审与预印本）
+	Citations   int    `json:"citations,omitempty"` // 源提供的被引数（证据分量参考）
+	Abstract    string `json:"abstract,omitempty"`  // 相关性判断次信号
 }
 
 // FirstAuthor 按 "Family Given" 格式返回第一作者；空作者列表返回空串。
@@ -45,6 +50,9 @@ func (p Paper) Summarize() PaperSummary {
 		Title:       p.Title,
 		FirstAuthor: p.FirstAuthor(),
 		Year:        p.Year,
+		Venue:       p.Venue,
+		DocType:     p.DocType,
+		Citations:   p.Citations,
 		Abstract:    p.Abstract,
 	}
 }

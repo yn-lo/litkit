@@ -107,9 +107,10 @@ func (f *FulltextFetcher) Fetch(ctx context.Context, ref string) (*FetchResult, 
 		// 扫描版 PDF 抽取成功但无文本层：以已记录的 PDF 直链 + 落盘文件作为缓存凭证，
 		// 避免每次 fetch 重复下载（PdfURL 仅在抽取成功后写入，抽取失败仍会重试）。
 		if p.PdfURL != "" {
-			path := filepath.Join(f.downloadDir, p.CiteKey+".pdf")
-			if _, statErr := os.Stat(path); statErr == nil {
-				return &FetchResult{CiteKey: p.CiteKey, PdfPath: path, Fulltext: ft, Via: "cache"}, nil
+			if path := PDFPath(f.downloadDir, p.CiteKey); path != "" {
+				if st, statErr := os.Stat(path); statErr == nil && st.Size() > 0 {
+					return &FetchResult{CiteKey: p.CiteKey, PdfPath: path, Fulltext: ft, Via: "cache"}, nil
+				}
 			}
 		}
 	}
@@ -374,11 +375,46 @@ func (f *FulltextFetcher) downloadPDF(ctx context.Context, pdfURL, citeKey strin
 	if !looksLikePDF(data) {
 		return "", errors.New("响应内容不是 PDF")
 	}
-	path := filepath.Join(f.downloadDir, citeKey+".pdf")
-	if err := os.WriteFile(path, data, filePerm); err != nil {
+	path := PDFPath(f.downloadDir, citeKey)
+	if path == "" {
+		return "", errors.New("未配置 PDF 落盘目录")
+	}
+	// 原子落盘：先写同目录临时文件再 rename，避免并发/中断留下半截 PDF 被当成有效缓存。
+	if err := writeFetchedFile(path, data); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// PDFPath 返回某 citeKey 的全文 PDF 落盘路径（fetch 与 lib rm 共用同一命名约定）。
+// downloadDir 为空返回空串。
+func PDFPath(downloadDir, citeKey string) string {
+	if strings.TrimSpace(downloadDir) == "" {
+		return ""
+	}
+	return filepath.Join(downloadDir, citeKey+".pdf")
+}
+
+// writeFetchedFile 以临时文件 + rename 原子写入，失败时清理临时文件。
+func writeFetchedFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".litkit-fetch-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(filePerm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // looksLikePDFCheckSize 检查 PDF 魔数时读取的头部最大字节数。

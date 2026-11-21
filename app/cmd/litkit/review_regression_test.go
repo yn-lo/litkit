@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -105,14 +106,14 @@ func TestRound2_DeletedCitationsClearRefs(t *testing.T) {
 	if err := os.WriteFile(path, []byte("结论[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	first := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
+	first := runCitationRelevance(context.Background(), []string{path}, st, cfg, lint.DefaultSpec())
 	if len(first.Results) != 1 {
 		t.Fatalf("fixture score: %+v", first)
 	}
 	if err := os.WriteFile(path, []byte("结论。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_ = runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
+	_ = runCitationRelevance(context.Background(), []string{path}, st, cfg, lint.DefaultSpec())
 	refs, err := st.GetRefsByManuscript("doc.md")
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +132,7 @@ func TestRound2_UnknownRefDoesNotDropValidLaterRef(t *testing.T) {
 	if err := os.WriteFile(path, []byte("未知[@"+missing+"]。已知[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
+	got := runCitationRelevance(context.Background(), []string{path}, st, cfg, lint.DefaultSpec())
 	if len(got.Results) != 1 {
 		t.Fatalf("fixture score: %+v", got)
 	}
@@ -149,7 +150,7 @@ func TestRound2_CustomScoreThreshold(t *testing.T) {
 	if err := os.WriteFile(path, []byte("结论[@"+key+"]。"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := runCitationRelevance([]string{path}, st, cfg, lint.DefaultSpec())
+	got := runCitationRelevance(context.Background(), []string{path}, st, cfg, lint.DefaultSpec())
 	if len(got.Results) != 1 {
 		t.Fatalf("fixture score: %+v", got)
 	}
