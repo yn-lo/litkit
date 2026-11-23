@@ -106,3 +106,25 @@ func TestCheckFile_missingModuleFileFails(t *testing.T) {
 		t.Fatal("缺少 go.mod 时应报违规")
 	}
 }
+
+// underLayerDir 只认根目录或其直接子目录，路径中段的 internal/cmd 不得误判。
+func TestUnderLayerDir(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"internal", true},
+		{"cmd", true},
+		{"internal/model/model.go", true},
+		{"cmd/litkit/main.go", true},
+		{"docs/internal/x.go", false},   // 中段 internal 片段
+		{"pkg/cmd/x.go", false},         // 中段 cmd 片段
+		{"internal-test/foo.go", false}, // 前缀相似但非分层目录
+		{"main.go", false},              // 模块根包
+	}
+	for _, c := range cases {
+		if got := underLayerDir(c.in); got != c.want {
+			t.Errorf("underLayerDir(%q) = %v，want %v", c.in, got, c.want)
+		}
+	}
+}

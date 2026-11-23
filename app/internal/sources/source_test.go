@@ -52,6 +52,7 @@ func TestHasQuerySyntax(t *testing.T) {
 		{`"exact phrase"`, true},
 		{"a AND b", true},
 		{"a or b", true},
+		{"cancer NOT diabetes", true}, // 独立 NOT 操作符不得被拆词
 		{"cancer[Title]", true},
 	}
 	for _, c := range cases {

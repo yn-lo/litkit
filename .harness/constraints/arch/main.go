@@ -248,10 +248,12 @@ func modulePath(moduleRoot string) string {
 }
 
 // underLayerDir 判断相对路径是否位于分层目录（internal/ 或 cmd/）之下。
+// 只认根目录本身或其直接子目录，避免路径中任意位置的 internal/cmd 片段
+//（如 docs/internal/x.go）被误判为分层目录。
 func underLayerDir(rel string) bool {
 	r := filepath.ToSlash(rel)
 	for _, dir := range []string{"internal", "cmd"} {
-		if r == dir || strings.HasPrefix(r, dir+"/") || strings.Contains(r, "/"+dir+"/") {
+		if r == dir || strings.HasPrefix(r, dir+"/") {
 			return true
 		}
 	}
