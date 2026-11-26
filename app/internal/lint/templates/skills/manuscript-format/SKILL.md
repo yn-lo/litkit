@@ -33,7 +33,7 @@ description: 学术论文叙事格式（"科研八股文"）总技能，中英�
 | 文稿类型 | 叙事文档 | 适用场景（章节命名对照） |
 |---|---|---|
 | 实证 empirical | [references/empirical.md](references/empirical.md) | 原始研究：zh「引言→资料与方法→结果→讨论→结论」/ en「Introduction→Methods→Results→Discussion→Conclusion」 |
-| 质性 qualitative | [references/qualitative.md](references/qualitative.md) | 访谈/观察类质性研究（叙述体骨架＋形式自检，含写作工作流、20 条投稿自检、范文库与精炼提纯原则）：zh「引言→方法→结果→讨论→结论」/ en「Introduction→Methods→Results→Discussion→Conclusion」 |
+| 质性 qualitative | [references/qualitative.md](references/qualitative.md) | 访谈/观察类质性研究（叙述体骨架＋形式自检，含写作工作流、23 条投稿自检、范文库与精炼提纯原则）：zh「引言→方法→结果→讨论→结论」/ en「Introduction→Methods→Results→Discussion→Conclusion」 |
 | 综述 review | [references/review.md](references/review.md) | 叙事性综述：zh「引言→文献检索方法→主题分析→讨论与展望→结论」/ en「Introduction→Literature Search→Thematic Synthesis→Discussion & Outlook→Conclusion」 |
 | 书稿 book | [references/book.md](references/book.md) | 书籍/专著：中文编号体系，章节为自洽论证单元 |
 | 标书 proposal | `.litkit/proposal-zh/manuscript-spec.yaml` | 学术标书/课题申请书（中文）：`citation_mode: endnote`，正文不得内联引用 |
