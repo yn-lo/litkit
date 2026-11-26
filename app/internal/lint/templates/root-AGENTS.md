@@ -49,6 +49,19 @@
 - 标书（proposal）封面字段（负责人、单位、电话等）写在首个正文章节标题之前，不参与字数与用词审查；占位符 `〔　〕` 会被 R10.4 提示
 - 所有撰写硬性规定（字数、引用数、章节结构、标题层级、格式要求等）见 `.litkit/<type-lang>/manuscript-spec.yaml` 顶部注释
 
+## 输出版本：默认草稿版
+
+三种版本；**用户不明确要求其他版本时，一律输出草稿版**：
+
+| 版本 | 何时用 | 产出 / 命令 |
+|---|---|---|
+| 草稿版（默认） | 所有撰写与修改 | 只写 `manuscript/*.md`，引用保持 `[@citeKey]`；**不运行 `litkit manuscript`**；verify 用 `--mode chapter|draft` |
+| 校对版 | 用户明确要求核对引用/清样 | `litkit manuscript draft.md --preview` → `{base}_{时间戳}.preview.md`（自描述标记 + 文末核对清单），仅供人工核对，不投稿 |
+| 投稿版 | 用户明确要求成稿/投稿/送审 | `litkit manuscript draft.md [-s gb7714-2025|apa|ieee|<.csl>] [--docx]` → `{base}_{时间戳}.md`（CSL 渲染正文 + 文末参考文献）+ `.bib` + `.ris`（+ `.docx`，需 Pandoc）；前置 `litkit verify --mode final` 全过 |
+
+- 回复中必须说明本次生成的是哪一版。
+- 产物默认落 `outputs/`（`WORK_DIR/outputs`），文件名带毫秒时间戳，不覆盖上一版。
+
 ## 撰写工作流（AI 必读）
 
 **核心原则：分工，不是取舍。** 文献提供事实，作者提供逻辑与综合——两件事各有规则，互不竞争：

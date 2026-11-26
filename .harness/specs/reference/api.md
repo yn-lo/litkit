@@ -114,7 +114,7 @@ litkit manuscript <draft.md> [--lang zh|en] [-s style] [--preview] [--docx] [-o 
 |---|---|---|
 | `--lang` | 写作语言模式 | zh（`LITKIT_LANG`） |
 | `-s, --style` | 引用样式：`gb7714-2025` / `apa` / `ieee` / `.csl` 路径 / `WORK_DIR/styles/<name>.csl` | 按 lang |
-| `--preview` | 额外产出草稿/调试视图 md（与正常版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末附核对清单；**不经过 CSL 引擎** | 关 |
+| `--preview` | 生成**校对版** md（与投稿版并存）：正文用自描述标记（`[@doi:{DOI} — 标题]`；无 DOI 用 `[@标题]`），文末附核对清单；**不经过 CSL 引擎**，仅供人工核对，不用于投稿 | 关 |
 | `--docx` | 生成 Word（需 Pandoc） | 关 |
 | `-o, --output-dir` | 输出目录（默认 WORK_DIR/outputs） | WORK_DIR/outputs |
 

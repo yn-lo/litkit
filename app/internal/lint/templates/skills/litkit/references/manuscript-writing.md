@@ -6,6 +6,13 @@
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
 - 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`
 
+## 输出版本
+
+默认**草稿版**：只写 `manuscript/*.md`（`[@citeKey]` 占位），不运行 `litkit manuscript`；用户明确要求前不生成格式化产物。用户明确要求时：
+
+- **校对版**（核对引用指向与编号）：`litkit manuscript draft.md --preview` → `{base}_{ts}.preview.md`，自描述标记 + 核对清单，不投稿
+- **投稿版**（投稿/送审）：`litkit manuscript draft.md [-s <样式>] [--docx]` → `{base}_{ts}.md` + `.bib` + `.ris`（+ `.docx`）；前置 `litkit verify --mode final` 全过
+
 ## 撰写工作流
 
 **核心原则：分工，不是取舍。** 文献提供事实，作者提供逻辑与综合。

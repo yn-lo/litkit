@@ -83,17 +83,23 @@ litkit fetch Kxq             # 或 litkit fetch 10.1000/xyz
 - **正文写作方法**（结构、写作质量自省、摘要规范、修辞）见 **academic-style** 技能
 - **叙事格式（八股骨架）**：按论文类型规划章节结构，写作前读 **manuscript-format** 技能（references/ 下按类型取文档）
 
-### 成稿与引用格式化
+### 输出版本（草稿版 / 校对版 / 投稿版）
+
+**默认草稿版**：撰写与修改只写 `manuscript/*.md`，引用保持 `[@citeKey]`，不运行 `litkit manuscript`；用户明确要求其他版本前不生成任何格式化产物。
+
+用户明确要求时按版本执行：
 
 ```bash
-litkit manuscript draft.md --lang zh -s gb7714-2025   # 产出 formatted.md + refs.bib + refs.ris
-litkit styles list                                     # 内置样式 + WORK_DIR/styles/*.csl
-litkit styles export apa                               # 导出 apa-custom.csl 供自定义
+# 校对版：核对引用指向与编号（自描述标记 + 核对清单，不投稿）
+litkit manuscript draft.md --preview
+
+# 投稿版：投稿/送审（CSL 渲染正文 + 文末参考文献）
+litkit manuscript draft.md --lang zh -s gb7714-2025 [--docx]
 ```
 
-- 正式引用样式由 CSL 渲染；`-s` 接受内置名（`gb7714-2025`/`apa`/`ieee`）、`.csl` 路径或 `WORK_DIR/styles/<name>`
-- `--preview` 额外产出草稿/调试视图（自描述标记，不经过 CSL），用于人工核查引用指向
-- 改样式不要改 Go 代码：放 `.csl` 到 `WORK_DIR/styles/` 即可
+- 校对版产物 `{base}_{ts}.preview.md`；投稿版产物 `{base}_{ts}.md` + `.bib` + `.ris`（`--docx` 另出 `.docx`，需 Pandoc）
+- 投稿版前置 `litkit verify --mode final` 全过；回复中说明本次生成的是哪一版
+- `litkit styles list` 查看内置样式与 `WORK_DIR/styles/*.csl`；`litkit styles export apa` 导出自定义
 
 ### 验证与自动修正
 

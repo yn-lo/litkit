@@ -1,8 +1,8 @@
 // manuscript_cmd.go 实现 `litkit manuscript` 命令（FR-REF-08/09/11）。
 //
-// 解析手稿占位符 [@token]，产出 formatted.md + refs.bib + refs.ris
-// +（可选）formatted.docx（需 Pandoc，缺失优雅降级）。
-// --preview 额外产出独立的草稿/调试视图，不经过 CSL 引擎。
+// 解析手稿占位符 [@token]，产出投稿版 {base}_{ts}.md + .bib + .ris
+// +（可选）.docx（需 Pandoc，缺失优雅降级）。
+// --preview 产出校对版视图（自描述标记），不经过 CSL 引擎。
 package main
 
 import (
@@ -40,7 +40,7 @@ func newManuscriptCmd(d *deps) *cobra.Command {
 	cfg := d.cfg
 	cmd := &cobra.Command{
 		Use:   "manuscript <draft.md>",
-		Short: "手稿流水线（解析 [@token] 占位符、生成引用与产物）",
+		Short: "手稿流水线（草稿版 → 校对版/投稿版，解析 [@token] 占位符）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireWorkDir(cfg); err != nil {
@@ -109,7 +109,7 @@ func newManuscriptCmd(d *deps) *cobra.Command {
 	}
 	cmd.Flags().String("lang", defaultLang(cfg), "写作语言模式 zh|en（默认 LITKIT_LANG）")
 	cmd.Flags().StringP("style", "s", "", "引用样式：gb7714-2025|apa|ieee 或 .csl 路径（默认按 --lang）")
-	cmd.Flags().Bool("preview", false, "额外生成草稿/调试视图 md：内联自描述标记 [@doi:{DOI} — 标题]/[@标题]")
+	cmd.Flags().Bool("preview", false, "生成校对版 md：内联自描述标记 [@doi:{DOI} — 标题]/[@标题]，用于核对引用指向，不经过 CSL")
 	cmd.Flags().Bool("docx", false, "生成 Word（需 Pandoc）")
 	cmd.Flags().StringP("output-dir", "o", "", "输出目录（默认 WORK_DIR/outputs）")
 	return cmd
