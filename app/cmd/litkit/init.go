@@ -97,6 +97,22 @@ const gitignoreBlock = "# >>> litkit（由 `litkit init` 生成，勿删） >>>\
 // gitignoreMarker 受管区块起始标记（存在即视为已写入，避免重复追加）。
 const gitignoreMarker = "# >>> litkit（由 `litkit init` 生成，勿删） >>>"
 
+// 根 AGENTS.md 受管区块：AI 工具自动读取根 AGENTS.md，此处只放摘要与指路，
+// 完整规则地图留在 .litkit/AGENTS.md，阈值以 manuscript-spec.yaml 为准。
+const (
+	rootAGENTSBegin = "<!-- >>> litkit（由 `litkit init` 生成，勿删） >>> -->"
+	rootAGENTSEnd   = "<!-- <<< litkit <<< -->"
+	rootAGENTSBlock = rootAGENTSBegin + "\n" +
+		"## litkit 项目约定\n" +
+		"\n" +
+		"- **动笔前必读**：`.litkit/<type-lang>/manuscript-spec.yaml` 顶部注释（撰写硬性规定唯一事实源）；完整使用地图见 `.litkit/AGENTS.md`\n" +
+		"- **默认草稿版**：撰写与修改只写 `manuscript/*.md`，引用保持 `[@citeKey]`；用户明确要求时才输出校对版（`litkit manuscript --preview`）或投稿版（`litkit manuscript [-s 样式] [--docx]`）\n" +
+		"- **完成后必验**：`litkit verify manuscript/*.md --type <type> --lang <lang>`；投稿版须 `--mode final` 全过\n" +
+		"- **技能**：`.agents/skills/` 下 litkit（检索/引用/验证）、academic-style（语言风格）、manuscript-format（叙事格式，按类型读 references/）\n" +
+		"- **红线**：不编造文献（citeKey 必须来自文献库）、不编造事实（无支撑用 `[待引证]`）、不篡改引用结论\n" +
+		rootAGENTSEnd + "\n"
+)
+
 // 文件权限常量（mnd：避免魔法值）。
 const (
 	initDirPerm  = 0o750
@@ -235,6 +251,13 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	}
 	created = append(created, infraFiles...)
 
+	// 根 AGENTS.md 受管区块：AI 工具自动加载根 AGENTS.md，避免用户还要指路
+	if ok, err := ensureRootAGENTS(dir, force); err != nil {
+		return nil, err
+	} else if ok {
+		created = append(created, "AGENTS.md")
+	}
+
 	// AGENTS.md（项目级通用信息，从 embed 模板复制到 .litkit/）
 	rootAgents, err := lint.RootAgentsContent()
 	if err != nil {
@@ -267,6 +290,46 @@ func ensureProjectInfra(dir string, force bool) ([]string, error) {
 	}
 
 	return created, nil
+}
+
+// ensureRootAGENTS 在项目根 AGENTS.md 维护 litkit 受管区块。
+//
+// 根 AGENTS.md 是多数 AI 工具自动加载的位置；只增改自己的标记区块，
+// 用户原有内容原样保留。区块已存在时仅在 force 下刷新。返回是否写入。
+func ensureRootAGENTS(dir string, force bool) (bool, error) {
+	path := filepath.Join(dir, "AGENTS.md")
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("init: read %s: %w", path, err)
+	}
+	content := string(data)
+	begin := strings.Index(content, rootAGENTSBegin)
+	if begin >= 0 {
+		rest := content[begin+len(rootAGENTSBegin):]
+		relEnd := strings.Index(rest, rootAGENTSEnd)
+		if relEnd >= 0 {
+			if !force {
+				return false, nil
+			}
+			end := begin + len(rootAGENTSBegin) + relEnd + len(rootAGENTSEnd)
+			updated := content[:begin] + strings.TrimSuffix(rootAGENTSBlock, "\n") + content[end:]
+			if updated == content {
+				return false, nil
+			}
+			return true, os.WriteFile(path, []byte(updated), initFilePerm)
+		}
+	}
+
+	prefix := ""
+	if content != "" {
+		if strings.HasSuffix(content, "\n") {
+			prefix = "\n"
+		} else {
+			prefix = "\n\n"
+		}
+	}
+	updated := content + prefix + rootAGENTSBlock
+	return true, os.WriteFile(path, []byte(updated), initFilePerm)
 }
 
 // ensureGitignore 在项目 .gitignore 追加 litkit 受管区块；已存在区块时跳过。

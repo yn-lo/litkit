@@ -116,6 +116,65 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 			t.Errorf("AGENTS.md 应含 %q", want)
 		}
 	}
+
+	// 根 AGENTS.md：AI 工具自动加载，须含受管区块与必读指路
+	rootAgents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("应生成根 AGENTS.md：%v", err)
+	}
+	for _, want := range []string{rootAGENTSBegin, rootAGENTSEnd, "动笔前必读", "manuscript-spec.yaml", "默认草稿版", "不编造文献"} {
+		if !strings.Contains(string(rootAgents), want) {
+			t.Errorf("根 AGENTS.md 应含 %q", want)
+		}
+	}
+}
+
+// 已有根 AGENTS.md 时只追加受管区块，重复 init 不产生重复区块。
+func TestInitRootAGENTS_preservesUserContentAndIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	custom := "# 我的规则\n\n自定义内容，不得被覆盖。\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := initWorkdir(dir, false, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+			t.Fatalf("initWorkdir: %v", err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "自定义内容，不得被覆盖。") {
+		t.Error("用户原有内容被覆盖")
+	}
+	if n := strings.Count(got, rootAGENTSBegin); n != 1 {
+		t.Errorf("受管区块应恰好 1 个，got %d", n)
+	}
+}
+
+// force 刷新受管区块，不影响区块外的用户内容。
+func TestInitRootAGENTS_forceRefreshesBlock(t *testing.T) {
+	dir := t.TempDir()
+	stale := "# 用户内容\n\n" + rootAGENTSBegin + "\n旧内容\n" + rootAGENTSEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := initWorkdir(dir, true, lint.PaperTypeEmpirical, lint.LangZH, ""); err != nil {
+		t.Fatalf("initWorkdir: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if strings.Contains(got, "旧内容") {
+		t.Error("force 应刷新受管区块")
+	}
+	if !strings.Contains(got, "# 用户内容") || !strings.Contains(got, "默认草稿版") {
+		t.Errorf("force 后应保留区块外内容并写入新区块，got:\n%s", got)
+	}
 }
 
 func TestInitWorkdir_createsMissingDir(t *testing.T) {

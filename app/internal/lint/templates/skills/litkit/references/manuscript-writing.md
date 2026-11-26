@@ -4,7 +4,7 @@
 
 - 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
-- 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`
+- **动笔前必须先读** `.litkit/<type-lang>/manuscript-spec.yaml` 顶部注释（撰写硬性规定唯一事实源）；所有字数、引用、章节与格式阈值以它为准
 
 ## 输出版本
 

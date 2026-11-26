@@ -65,6 +65,7 @@ litkit init --type review|empirical|qualitative|book|proposal --lang zh|en [--fo
 
 > 初始化当前工作目录：生成 `.env`（默认配置）、`.litkit/`（`AGENTS.md` + `verifier_models.json` + `litkit.db`）、
 > `.agents/skills/`（litkit / academic-style / manuscript-format 技能）、`.litkit/<type-lang>/manuscript-spec.yaml`，
+> 在项目根 `AGENTS.md` 注入 litkit 受管区块（`<!-- >>> litkit >>> -->` 标记，保留用户内容；`--force` 刷新区块），
 > 并在 `.gitignore` 追加 litkit 受管区块（`.env`、`.litkit/litkit.db*`、`.litkit/verifier_models.json`、`outputs/`、`downloads/`）。
 > 已存在文件默认不覆盖；`--force` 刷新模板，但 `.env` 与 `verifier_models.json` 永不覆盖。换新工作目录 → `litkit init`。
 > 撰写硬性规定即 `manuscript-spec.yaml` 顶部注释（单一事实源），`AGENTS.md` 只是指向它的地图，

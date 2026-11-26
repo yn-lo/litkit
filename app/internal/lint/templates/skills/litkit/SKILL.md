@@ -76,7 +76,7 @@ litkit fetch Kxq             # 或 litkit fetch 10.1000/xyz
 
 - 手稿文件（`manuscript/*.md`）**仅含正文**，不写摘要、关键词、参考文献列表
 - 引用用 `[@<citeKey>]` 占位符，不展开元数据
-- 撰写硬性规定见 `.litkit/<type-lang>/manuscript-spec.yaml`
+- **动笔前必须先读** `.litkit/<type-lang>/manuscript-spec.yaml` 顶部注释；所有字数、引用、章节与格式阈值以它为准
 - **撰写工作流**（立意 → 撰写/边写边检索 → 回填复核 → 验证）见 `references/manuscript-writing.md`；
   核心原则：文献提供事实、作者提供逻辑与综合；**事实断言必须可溯源**，缺支撑时以 `[待引证]` 占位
   （逻辑连接与推论不需要引用，也不标占位）
