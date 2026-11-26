@@ -120,6 +120,10 @@ litkit fix manuscript/*.md
 P 值 R2.1、标题标点 R1.2/R7.1、引用位置 R6.1 等）可由 `litkit fix` 一次改完；
 顶层 `fixHint` 字段直接给出建议命令。不要逐行手改标点。
 
+**人类可读报告**：每次 verify 自动覆盖写 `outputs/verify-report.md`（含正文字数、摘要/章节字数、
+按类别分组的违规、引用时效与人工核对清单）；`--no-md` 关闭，`--md <path>` 改路径。
+向用户汇报时可指向该文件；判定仍以 JSON 的 `exitHint` 为准。
+
 **检查类别**：`language` `structure` `heading` `statistics` `punctuation` `style` `citation` `boast_words` `word_counts` `todo`
 
 **验证模式**（递增）：`chapter`（结构）→ `draft`（+数据/标点/引用）→ `final`（+字数/行文）

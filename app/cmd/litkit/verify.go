@@ -73,6 +73,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 			checkFlag, _ := cmd.Flags().GetString("check")
 			skipCheckFlag, _ := cmd.Flags().GetString("skip-check")
 			reportFlag, _ := cmd.Flags().GetString("report")
+			noMD, _ := cmd.Flags().GetBool("no-md")
+			mdPath, _ := cmd.Flags().GetString("md")
 
 			mode := lint.Mode(modeStr)
 			switch mode {
@@ -142,6 +144,8 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 				report.CitationRefs = cr
 			}
 
+			maybeWriteVerifyReport(noMD, mdPath, cfg, &report, spec, mode)
+
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Println(string(out))
 
@@ -159,7 +163,52 @@ AI 应读取 JSON 中 exitHint 字段决定下一步动作。`,
 	cmd.Flags().String("check", "", "仅运行指定检查类别（逗号分隔，如 citation,word_counts）")
 	cmd.Flags().String("skip-check", "", "跳过指定检查类别（逗号分隔）")
 	cmd.Flags().String("report", "json", "报告格式：json（默认）| citation-refs（引用评分）")
+	cmd.Flags().String("md", "", "人类可读报告输出路径（默认 WORK_DIR/outputs/verify-report.md，覆盖写）")
+	cmd.Flags().Bool("no-md", false, "不生成人类可读 Markdown 报告")
 	return cmd
+}
+
+// defaultVerifyReportName verify 人类可读报告的默认文件名。
+const defaultVerifyReportName = "verify-report.md"
+
+// verifyReportPerm 报告文件权限（与其余生成文件一致）。
+const verifyReportPerm = 0o600
+
+// maybeWriteVerifyReport 生成人类可读报告；写盘失败仅提示，不改变验证结论与退出码。
+func maybeWriteVerifyReport(noMD bool, mdPath string, cfg *config.Config, rep *lint.Report, spec *lint.ManuscriptSpec, mode lint.Mode) {
+	if noMD {
+		return
+	}
+	path, err := writeVerifyMarkdown(cfg, rep, spec, mode, mdPath, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "litkit: 生成 Markdown 报告失败: %v\n", err)
+		return
+	}
+	rep.ReportPath = path
+}
+
+// writeVerifyMarkdown 将验证结果渲染为 Markdown 并覆盖写入。
+// 默认 WORK_DIR/outputs/verify-report.md；mdPath 非空时按其写入（相对路径按当前工作目录）。
+func writeVerifyMarkdown(cfg *config.Config, rep *lint.Report, spec *lint.ManuscriptSpec, mode lint.Mode, mdPath string, now time.Time) (string, error) {
+	path := mdPath
+	if path == "" {
+		path = filepath.Join(cfg.WorkDir, "outputs", defaultVerifyReportName)
+	}
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, outDirPerm); err != nil {
+			return "", fmt.Errorf("verify: 创建报告目录 %s: %w", dir, err)
+		}
+	}
+	content := lint.RenderMarkdown(rep, spec, lint.ReportMeta{
+		Generated: now,
+		Mode:      mode,
+		Lang:      spec.Lang,
+		PaperType: spec.PaperType,
+	})
+	if err := os.WriteFile(path, []byte(content), verifyReportPerm); err != nil {
+		return "", fmt.Errorf("verify: 写入报告 %s: %w", path, err)
+	}
+	return path, nil
 }
 
 // runCitationRelevance 对文稿执行引用相关性评分（FR-LINT-08）。

@@ -8,8 +8,12 @@ import (
 	"litkit/internal/storage"
 )
 
-// exitPass 全部通过时的退出提示字面量。
-const exitPass = "pass"
+// verify 报告的 exitHint 取值（JSON 契约，多处复用）。
+const (
+	exitPass         = "pass"
+	exitFixAndRerun  = "fix_and_rerun"
+	exitManualReview = "manual_review"
+)
 
 // Options 一次多文件验证的聚合配置。
 type Options struct {
@@ -33,6 +37,9 @@ type Report struct {
 	// FixHint 存在可自动修正的违规时的下一步动作建议（如 "litkit fix chapter1.md"）。
 	// 避免 AI 看到 R3.1/R3.2 类违规就逐行手改标点。
 	FixHint string `json:"fixHint,omitempty"`
+	// ReportPath 人类可读 Markdown 报告的落盘路径（默认 outputs/verify-report.md；
+	// --no-md 时不生成；写盘失败时省略）。JSON 契约仍以本结构为准。
+	ReportPath string `json:"reportPath,omitempty"`
 }
 
 // RecencySummary 被引文献时效分档统计（R5.8）。
@@ -186,9 +193,9 @@ func RunFiles(paths []string, spec *ManuscriptSpec, opts Options) (Report, error
 	}
 	switch {
 	case hasA:
-		report.ExitHint = "fix_and_rerun"
+		report.ExitHint = exitFixAndRerun
 	case hasS:
-		report.ExitHint = "manual_review"
+		report.ExitHint = exitManualReview
 	default:
 		report.ExitHint = exitPass
 	}
@@ -352,9 +359,9 @@ func RunFilesWithStore(paths []string, spec *ManuscriptSpec, opts Options, store
 	hasA, hasS := recomputeExitHint(method, report)
 	switch {
 	case hasA:
-		report.ExitHint = "fix_and_rerun"
+		report.ExitHint = exitFixAndRerun
 	case hasS:
-		report.ExitHint = "manual_review"
+		report.ExitHint = exitManualReview
 	default:
 		report.ExitHint = exitPass
 	}

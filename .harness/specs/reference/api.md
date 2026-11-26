@@ -231,7 +231,7 @@ litkit fix <file.md> [file2.md ...] [--rule R3.1,R3.2] [--skip R2.1]
 > 输出：`{ files: { "<path>": { applied: { "R3.1": 1, ... } } } }`（applied = 规则 ID → 修正行数）。
 
 ```
-litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|qualitative|book|proposal] [--rule R2.1,R7.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs]
+litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|final] [--type review|empirical|qualitative|book|proposal] [--rule R2.1,R7.1] [--skip R4.2] [--check CAT] [--skip-check CAT] [--report json|citation-refs] [--md PATH] [--no-md]
 ```
 
 | 参数 | 说明 | 默认 |
@@ -244,6 +244,8 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
 | `--skip` | 跳过指定规则（逗号分隔，未知 ID 报错） | 无 |
 | `--check` / `--skip-check` | 仅运行/跳过指定检查类别（逗号分隔） | 无 |
 | `--report` | `json`（默认）\| `citation-refs`（附加 LLM 引用评分）；其他值报参数错误 | json |
+| `--md` | 人类可读 Markdown 报告输出路径（覆盖写；相对路径按当前工作目录） | `<WORK_DIR>/outputs/verify-report.md` |
+| `--no-md` | 不生成人类可读报告（与 `--md` 同时给出时以 `--no-md` 为准） | 关 |
 
 > 需要 `LITKIT_WORK_DIR`（读取 `.litkit/<type-lang>/manuscript-spec.yaml` 阈值配置）。显式类型/语言不会被自动检测覆盖；文件缺失时使用匹配预设，无可用预设（如 book/en）或规范文件无效时返回错误。
 > 查库类附加检查（R5.6 引用存在 / R5.7 撤稿 / R5.8 时效 / R5.9 自引）已纳入规则列表，归属 citation 类别，draft 起启用；同样遵循 `--rule`/`--skip` 和 `--check`/`--skip-check` 筛选：局部验证（如 `--rule R3.1` 或 `--check punctuation`）不会被缺失引用阻断。
@@ -271,13 +273,17 @@ litkit verify <file.md> [file2.md ...] [--lang zh|en] [--mode chapter|draft|fina
   "exitHint": "fix_and_rerun",
   "fixHint": "1 处可自动修正，先运行：litkit fix chapter1.md",
   "manualChecklist": ["数据一致性：核对正文数据与表格/图片是否一致", "术语缩写：核对缩写首次出现是否给出全称"],
-  "recency": { "total": 24, "within5": 15, "over5": 9, "over10": 3, "recentRatio": 0.625 }
+  "recency": { "total": 24, "within5": 15, "over5": 9, "over10": 3, "recentRatio": 0.625 },
+  "reportPath": "outputs/verify-report.md"
 }
 ```
 
 `fixable`（violation 级）：该违规可由 `litkit fix` 自动修正（字符级确定性替换）。
 `fixHint`（报告级）：仅存在可自动修正的违规时输出，直接给出下一步命令——
 AI 应先跑 `litkit fix` 再重跑 verify，不要逐行手改标点。
+`reportPath`（报告级）：本次自动生成的人类可读 Markdown 报告路径（默认覆盖写
+`<WORK_DIR>/outputs/verify-report.md`，含正文字数/摘要字数/章节字数、按类别分组的违规明细、
+引用时效与人工核对清单）；`--no-md` 或写盘失败时省略。报告只做事实呈现，判定以本 JSON 为准。
 
 `recency`（R5.8 引用时效两档统计，S 类提示，`total>0` 且已解析出年份时才输出）：
 - `total`：已解析出年份的被引文献总数（按 citeKey 去重）

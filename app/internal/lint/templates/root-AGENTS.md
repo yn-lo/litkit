@@ -23,6 +23,7 @@
 - `litkit verify manuscript/*.md --type <type> --lang <lang>` — 验证文稿格式
   - `--check citation,word_counts` 仅运行指定检查类别；`--skip-check boast_words` 跳过
   - 可用类别：language, structure, statistics, punctuation, style, citation, heading, boast_words, word_counts, todo
+  - 每次运行自动覆盖写 `outputs/verify-report.md`（人类可读：字数/违规明细/下一步）；`--no-md` 关闭，`--md <path>` 改路径
 - `litkit fix manuscript/*.md` — **自动修正确定性格式违规**（全半角/直引号/P 值/标题标点/引用位置等）
   - verify 报告里 `fixable: true` 的违规先跑 fix，再处理剩余；不要逐行手改标点
 - `litkit rules` — 列出全部规则 ID（`--rule`/`--skip` 与 spec `skip_rules` 用）
