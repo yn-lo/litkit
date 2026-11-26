@@ -100,6 +100,7 @@ func TestInitWorkdir_createsFiles(t *testing.T) {
 		".agents/skills/manuscript-format/SKILL.md",
 		".agents/skills/manuscript-format/references/empirical.md",
 		".agents/skills/manuscript-format/references/qualitative.md",
+		".agents/skills/manuscript-format/references/figures-tables.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("应生成 %s：%v", rel, err)

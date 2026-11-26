@@ -38,6 +38,10 @@ description: 学术论文叙事格式（"科研八股文"）总技能，中英�
 | 书稿 book | [references/book.md](references/book.md) | 书籍/专著：中文编号体系，章节为自洽论证单元 |
 | 标书 proposal | `.litkit/proposal-zh/manuscript-spec.yaml` | 学术标书/课题申请书（中文）：`citation_mode: endnote`，正文不得内联引用 |
 
+## 图表规范（所有类型共享）
+
+图与表的配色、字号、分辨率、三线表、图注/表注、统计标注与脱敏 → [references/figures-tables.md](references/figures-tables.md)。与各类型文档中的"图表"小节配合使用；目标期刊作者指南优先。
+
 ## 通用叙事骨架（所有类型共享）
 
 全文只讲"一件事"（一条主线），整体呈**沙漏形**：宽（引言）→ 窄（方法+结果）→ 宽（讨论）。
