@@ -5,6 +5,9 @@
 # - Write in academic English; define abbreviations at first use
 # - Heading structure: first heading is the paper title (unnumbered); chapters numbered from 1, aligned with # level (# 1, ## 1.1, ### 1.1.1)
 # - No lists or bold in body text; no back-references or self-promotion
+# - No self-defense, disclaimers, or defensive meta-discourse ("it should be noted", "it must be admitted",
+#   "this paper does not intend to", "of course, this does not mean", "to avoid misunderstanding"):
+#   downgrade the claim or mark [待引证]; state limitations once, in the limitations subsection
 # - Report statistics with consistent decimals; percentages rounded to 1 decimal
 
 paper_type: empirical
